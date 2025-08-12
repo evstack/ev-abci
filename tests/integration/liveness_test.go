@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/celestiaorg/tastora/framework/testutil/broadcast"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wallet"
 	"github.com/cometbft/cometbft/crypto"
@@ -16,6 +17,7 @@ import (
 	"go.uber.org/zap/zaptest"
 	"os"
 	"testing"
+	"time"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -133,7 +135,7 @@ func CreateDANetwork(ctx context.Context, t *testing.T, dockerClient *client.Cli
 
 	// fund the bridge node wallet
 	daFundingAmount := sdk.NewCoins(sdk.NewCoin("utia", math.NewInt(10_000_000)))
-	err = sendFunds(ctx, celestiaChain, fundingWallet, bridgeWallet, daFundingAmount)
+	err = sendFunds(ctx, celestiaChain, fundingWallet, bridgeWallet, daFundingAmount, 0)
 	require.NoError(t, err, "failed to fund bridge node DA wallet")
 
 	return daNetwork, bridgeNode, nil
@@ -155,6 +157,9 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
 	namespace := generateValidNamespace()
 
+	// create the closure for consistent genesis across all nodes
+	addSingleSequencer := CreateAddSingleSequencer()
+
 	// bank and auth modules required to deal with bank send tx's
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 	rollkitChain, err := docker.NewChainBuilder(t).
@@ -169,19 +174,44 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 		WithBinaryName("gmd").
 		// explicitly set 0 gas so that we can make exact assertions when sending balances.
 		WithGasPrices(fmt.Sprintf("0.00%s", denom)).
-		WithNode(docker.NewChainNodeConfigBuilder().
-			// Create aggregator node with rollkit-specific start arguments
-			WithAdditionalStartArgs(
-				"--rollkit.node.aggregator",
-				"--rollkit.signer.passphrase", "12345678",
-				"--rollkit.da.address", daAddress,
-				"--rollkit.da.gas_price", "0.000001",
-				"--rollkit.da.auth_token", authToken,
-				"--rollkit.rpc.address", "0.0.0.0:7331", // bind to 0.0.0.0 so rpc is reachable from test host.
-				"--rollkit.da.namespace", namespace,
-			).
-			WithPostInit(AddSingleSequencer).
-			Build()).
+		WithNodes(
+			docker.NewChainNodeConfigBuilder().
+				// Create aggregator node with rollkit-specific start arguments
+				WithAdditionalStartArgs(
+					"--rollkit.node.aggregator",
+					"--rollkit.signer.passphrase", "12345678",
+					"--rollkit.da.address", daAddress,
+					"--rollkit.da.gas_price", "0.000001",
+					"--rollkit.da.auth_token", authToken,
+					"--rollkit.rpc.address", "0.0.0.0:7331",
+					"--rollkit.da.namespace", namespace,
+				).
+				WithGenTX(true).
+				WithPostInit(addSingleSequencer).
+				Build(),
+			docker.NewChainNodeConfigBuilder().
+				WithAdditionalStartArgs(
+					"--rollkit.da.address", daAddress,
+					"--rollkit.da.gas_price", "0.000001",
+					"--rollkit.da.auth_token", authToken,
+					"--rollkit.rpc.address", "0.0.0.0:7331",
+					"--rollkit.da.namespace", namespace,
+				).
+				WithGenTX(false).
+				WithPostInit(addSingleSequencer).
+				Build(),
+			docker.NewChainNodeConfigBuilder().
+				WithAdditionalStartArgs(
+					"--rollkit.da.address", daAddress,
+					"--rollkit.da.gas_price", "0.000001",
+					"--rollkit.da.auth_token", authToken,
+					"--rollkit.rpc.address", "0.0.0.0:7331",
+					"--rollkit.da.namespace", namespace,
+				).
+				WithGenTX(false).
+				WithPostInit(addSingleSequencer).
+				Build(),
+		).
 		Build(ctx)
 
 	if err != nil {
@@ -246,7 +276,7 @@ func queryBankBalance(ctx context.Context, grpcAddress string, walletAddress str
 }
 
 // sendFunds sends funds from one wallet to another using bank transfer
-func sendFunds(ctx context.Context, chain *docker.Chain, fromWallet, toWallet types.Wallet, amount sdk.Coins) error {
+func sendFunds(ctx context.Context, chain *docker.Chain, fromWallet, toWallet types.Wallet, amount sdk.Coins, nodeIdx int) error {
 	fromAddress, err := sdkacc.AddressFromWallet(fromWallet)
 	if err != nil {
 		return fmt.Errorf("failed to get sender address: %w", err)
@@ -257,8 +287,10 @@ func sendFunds(ctx context.Context, chain *docker.Chain, fromWallet, toWallet ty
 		return fmt.Errorf("failed to get destination address: %w", err)
 	}
 
+	chainNode := chain.GetNodes()[nodeIdx]
+
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
-	resp, err := chain.BroadcastMessages(ctx, fromWallet, msg)
+	resp, err := broadcast.MessagesForNode(ctx, fromWallet, chain, chainNode.(*docker.ChainNode), msg)
 	if err != nil {
 		return fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
@@ -289,7 +321,8 @@ func testTransactionSubmissionAndQuery(t *testing.T, ctx context.Context, rollki
 	t.Logf("Sending 100%s from Bob to Carol...", denom)
 	transferAmount := sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100)))
 
-	err = sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount)
+	// send funds broadcasting to a node that is not the aggregator.
+	err = sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 1)
 	require.NoError(t, err, "failed to send funds from Bob to Carol")
 
 	finalBalance, err := queryBankBalance(ctx, rollkitChain.GetGRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
@@ -339,6 +372,8 @@ func TestLivenessWithCelestiaDA(t *testing.T) {
 	// Test transaction submission and query
 	t.Log("Testing transaction submission and query...")
 	testTransactionSubmissionAndQuery(t, ctx, rollkitChain)
+
+	time.Sleep(time.Hour)
 }
 
 // getPubKey returns the validator public key.
@@ -370,9 +405,26 @@ func getRollkitAppContainer() container.Image {
 	return container.NewImage(imageRepo, imageTag, "10001:10001")
 }
 
-// AddSingleSequencer modifies the genesis file to add a single sequencer with specified power and public key.
+// CreateAddSingleSequencer returns a closure that stores the first node's genesis configuration
+// and applies it to all subsequent nodes to ensure they have identical validator setups.
+func CreateAddSingleSequencer() func(context.Context, *docker.ChainNode) error {
+	var storedAggregatorGenesis []byte
+
+	return func(ctx context.Context, node *docker.ChainNode) error {
+		// if we already have stored genesis from the aggregator, use it
+		if storedAggregatorGenesis != nil {
+			return node.WriteFile(ctx, "config/genesis.json", storedAggregatorGenesis)
+		}
+
+		// this is the first call (aggregator node), process and store the genesis
+		return addSingleSequencerFirstTime(ctx, node, &storedAggregatorGenesis)
+	}
+}
+
+// addSingleSequencerFirstTime modifies the genesis file to add a single sequencer with specified power and public key.
 // Reads the genesis file from the node, updates the validators with the sequencer info, and writes the updated file back.
-func AddSingleSequencer(ctx context.Context, node *docker.ChainNode) error {
+// Also removes any additional validators from genesis transactions to ensure only one validator exists.
+func addSingleSequencerFirstTime(ctx context.Context, node *docker.ChainNode, storedGenesis *[]byte) error {
 	genesisBz, err := node.ReadFile(ctx, "config/genesis.json")
 	if err != nil {
 		return fmt.Errorf("failed to read genesis.json: %w", err)
@@ -388,6 +440,17 @@ func AddSingleSequencer(ctx context.Context, node *docker.ChainNode) error {
 		return fmt.Errorf("failed to parse genesis.json: %w", err)
 	}
 
+	// remove additional validators from genesis transactions
+	if appState, ok := genDoc["app_state"].(map[string]interface{}); ok {
+		if genutil, ok := appState["genutil"].(map[string]interface{}); ok {
+			if genTxs, ok := genutil["gen_txs"].([]interface{}); ok && len(genTxs) > 1 {
+				// keep only the first genesis transaction to ensure single validator
+				genutil["gen_txs"] = []interface{}{genTxs[0]}
+			}
+		}
+	}
+
+	// set consensus validators to only include the first validator
 	consensus, ok := genDoc["consensus"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("genesis.json does not contain a valid 'consensus' object")
@@ -408,5 +471,9 @@ func AddSingleSequencer(ctx context.Context, node *docker.ChainNode) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal genesis: %w", err)
 	}
+
+	// store the genesis for subsequent nodes
+	*storedGenesis = updatedGenesis
+
 	return node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
 }
