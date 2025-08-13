@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/celestiaorg/tastora/framework/testutil/broadcast"
+	//"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wallet"
+	//cometcfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
 	cmprivval "github.com/cometbft/cometbft/privval"
@@ -142,7 +144,7 @@ func CreateDANetwork(ctx context.Context, t *testing.T, dockerClient *client.Cli
 }
 
 // CreateRollkitChain sets up the rollkit chain connected to the DA network
-func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.Client, networkID string, bridgeNode types.DANode) (*docker.Chain, error) {
+func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.Client, networkID string, bridgeNode types.DANode, celestiaChain types.Chain) (*docker.Chain, error) {
 	// Get DA connection details
 	authToken, err := bridgeNode.GetAuthToken()
 	if err != nil {
@@ -157,8 +159,14 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
 	namespace := generateValidNamespace()
 
+	celestiaHeight, err := celestiaChain.Height(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get celestia chain height: %w", err)
+	}
+	daStartHeight := fmt.Sprintf("%d", celestiaHeight)
+
 	// create the closure for consistent genesis across all nodes
-	addSingleSequencer := CreateAddSingleSequencer()
+	addSingleSequencer := CreateAddSingleSequencer(daAddress, authToken, namespace, daStartHeight)
 
 	// bank and auth modules required to deal with bank send tx's
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
@@ -185,6 +193,9 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 					"--rollkit.da.auth_token", authToken,
 					"--rollkit.rpc.address", "0.0.0.0:7331",
 					"--rollkit.da.namespace", namespace,
+					"--rollkit.da.start_height", daStartHeight,
+					"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+					"--log_level", "*:info,rollkit:debug,p2p:debug",
 				).
 				WithGenTX(true).
 				WithPostInit(addSingleSequencer).
@@ -196,6 +207,9 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 					"--rollkit.da.auth_token", authToken,
 					"--rollkit.rpc.address", "0.0.0.0:7331",
 					"--rollkit.da.namespace", namespace,
+					"--rollkit.da.start_height", daStartHeight,
+					"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+					"--log_level", "*:info,rollkit:debug,p2p:debug",
 				).
 				WithGenTX(false).
 				WithPostInit(addSingleSequencer).
@@ -207,6 +221,9 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 					"--rollkit.da.auth_token", authToken,
 					"--rollkit.rpc.address", "0.0.0.0:7331",
 					"--rollkit.da.namespace", namespace,
+					"--rollkit.da.start_height", daStartHeight,
+					"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+					"--log_level", "*:info,rollkit:debug,p2p:debug",
 				).
 				WithGenTX(false).
 				WithPostInit(addSingleSequencer).
@@ -355,7 +372,7 @@ func TestLivenessWithCelestiaDA(t *testing.T) {
 
 	t.Log("Bridge node started")
 
-	rollkitChain, err := CreateRollkitChain(ctx, t, dockerClient, networkID, bridgeNode)
+	rollkitChain, err := CreateRollkitChain(ctx, t, dockerClient, networkID, bridgeNode, celestiaChain)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		if err := rollkitChain.Stop(ctx); err != nil {
@@ -407,24 +424,29 @@ func getRollkitAppContainer() container.Image {
 
 // CreateAddSingleSequencer returns a closure that stores the first node's genesis configuration
 // and applies it to all subsequent nodes to ensure they have identical validator setups.
-func CreateAddSingleSequencer() func(context.Context, *docker.ChainNode) error {
+func CreateAddSingleSequencer(daAddress, authToken, namespace, daStartHeight string) func(context.Context, *docker.ChainNode) error {
 	var storedAggregatorGenesis []byte
 
 	return func(ctx context.Context, node *docker.ChainNode) error {
-		// if we already have stored genesis from the aggregator, use it
+
+		// if we already have stored genesis from the aggregator, use it for followers
 		if storedAggregatorGenesis != nil {
-			return node.WriteFile(ctx, "config/genesis.json", storedAggregatorGenesis)
+			err := node.WriteFile(ctx, "config/genesis.json", storedAggregatorGenesis)
+			if err != nil {
+				return fmt.Errorf("failed to write genesis.json: %w", err)
+			}
+			return nil
 		}
 
 		// this is the first call (aggregator node), process and store the genesis
-		return addSingleSequencerFirstTime(ctx, node, &storedAggregatorGenesis)
+		return addSingleSequencerFirstTime(ctx, node, &storedAggregatorGenesis, daAddress, authToken, namespace, daStartHeight)
 	}
 }
 
 // addSingleSequencerFirstTime modifies the genesis file to add a single sequencer with specified power and public key.
 // Reads the genesis file from the node, updates the validators with the sequencer info, and writes the updated file back.
 // Also removes any additional validators from genesis transactions to ensure only one validator exists.
-func addSingleSequencerFirstTime(ctx context.Context, node *docker.ChainNode, storedGenesis *[]byte) error {
+func addSingleSequencerFirstTime(ctx context.Context, node *docker.ChainNode, storedGenesis *[]byte, daAddress, authToken, namespace, daStartHeight string) error {
 	genesisBz, err := node.ReadFile(ctx, "config/genesis.json")
 	if err != nil {
 		return fmt.Errorf("failed to read genesis.json: %w", err)
@@ -475,5 +497,12 @@ func addSingleSequencerFirstTime(ctx context.Context, node *docker.ChainNode, st
 	// store the genesis for subsequent nodes
 	*storedGenesis = updatedGenesis
 
-	return node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
+	err = node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
+	if err != nil {
+		return fmt.Errorf("failed to write genesis.json: %w", err)
+	}
+
+	return nil
+	// create rollkit config for the aggregator (first node)
+	//return createRollkitConfig(ctx, node, true, daAddress, authToken, namespace, daStartHeight)
 }
