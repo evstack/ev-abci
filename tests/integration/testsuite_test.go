@@ -47,49 +47,45 @@ type DockerIntegrationTestSuite struct {
 }
 
 // SetupTest initializes the Docker environment for each test
-func (suite *DockerIntegrationTestSuite) SetupTest() {
+// celestia is deployed, a single bridge node and the rollkit chain.
+func (s *DockerIntegrationTestSuite) SetupTest() {
 	ctx := context.Background()
-	suite.dockerClient, suite.networkID = docker.DockerSetup(suite.T())
+	s.dockerClient, s.networkID = docker.DockerSetup(s.T())
 
-	suite.celestiaChain = suite.CreateCelestiaChain(ctx)
-	suite.T().Log("Celestia app chain started")
+	s.celestiaChain = s.CreateCelestiaChain(ctx)
+	s.T().Log("Celestia app chain started")
 
-	suite.bridgeNode = suite.CreateDANetwork(ctx)
-	suite.T().Log("Bridge node started")
+	s.bridgeNode = s.CreateDANetwork(ctx)
+	s.T().Log("Bridge node started")
 
-	suite.rollkitChain = suite.CreateRollkitChain(ctx)
-	suite.T().Log("Rollkit chain started")
+	s.rollkitChain = s.CreateRollkitChain(ctx)
+	s.T().Log("Rollkit chain started")
 }
 
 // TearDownTest cleans up resources after each test
-func (suite *DockerIntegrationTestSuite) TearDownTest() {
+func (s *DockerIntegrationTestSuite) TearDownTest() {
 	ctx := context.Background()
 
-	if suite.rollkitChain != nil {
-		if err := suite.rollkitChain.Stop(ctx); err != nil {
-			suite.T().Logf("failed to stop rollkit chain: %v", err)
+	if s.rollkitChain != nil {
+		if err := s.rollkitChain.Stop(ctx); err != nil {
+			s.T().Logf("failed to stop rollkit chain: %v", err)
 		}
-		suite.rollkitChain = nil
 	}
 
-	if suite.celestiaChain != nil {
-		if err := suite.celestiaChain.Stop(ctx); err != nil {
-			suite.T().Logf("failed to stop celestia chain: %v", err)
+	if s.celestiaChain != nil {
+		if err := s.celestiaChain.Stop(ctx); err != nil {
+			s.T().Logf("failed to stop celestia chain: %v", err)
 		}
-		suite.celestiaChain = nil
 	}
-
-	// TODO: cleanup daNetwork
-	suite.daNetwork = nil
 }
 
 // CreateCelestiaChain sets up a Celestia app chain for DA and stores it in the suite
-func (suite *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *docker.Chain {
+func (s *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *docker.Chain {
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
-	celestia, err := docker.NewChainBuilder(suite.T()).
+	celestia, err := docker.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
-		WithDockerClient(suite.dockerClient).
-		WithDockerNetworkID(suite.networkID).
+		WithDockerClient(s.dockerClient).
+		WithDockerNetworkID(s.networkID).
 		WithImage(container.NewImage(celestiaAppRepo, celestiaAppTag, "10001:10001")).
 		WithAdditionalStartArgs(
 			"--force-no-bbr",
@@ -102,42 +98,42 @@ func (suite *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context
 		WithNode(docker.NewChainNodeConfigBuilder().Build()).
 		Build(ctx)
 
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	err = celestia.Start(ctx)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 	return celestia
 }
 
 // CreateDANetwork sets up the DA network with bridge and full nodes and stores it in the suite
-func (suite *DockerIntegrationTestSuite) CreateDANetwork(ctx context.Context) types.DANode {
+func (s *DockerIntegrationTestSuite) CreateDANetwork(ctx context.Context) types.DANode {
 	config := &docker.Config{
-		Logger:          zaptest.NewLogger(suite.T()),
-		DockerClient:    suite.dockerClient,
-		DockerNetworkID: suite.networkID,
+		Logger:          zaptest.NewLogger(s.T()),
+		DockerClient:    s.dockerClient,
+		DockerNetworkID: s.networkID,
 		DataAvailabilityNetworkConfig: &docker.DataAvailabilityNetworkConfig{
 			Image:           container.NewImage(celestiaNodeRepo, celestiaNodeTag, "10001:10001"),
 			BridgeNodeCount: 1,
 		},
 	}
 
-	provider := docker.NewProvider(*config, suite.T())
+	provider := docker.NewProvider(*config, s.T())
 	daNetwork, err := provider.GetDataAvailabilityNetwork(ctx)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
-	suite.daNetwork = daNetwork
+	s.daNetwork = daNetwork
 
-	genesisHash, err := getGenesisHash(ctx, suite.celestiaChain)
-	suite.Require().NoError(err)
+	genesisHash, err := getGenesisHash(ctx, s.celestiaChain)
+	s.Require().NoError(err)
 
 	bridgeNodes := daNetwork.GetBridgeNodes()
-	suite.Require().NotEmpty(bridgeNodes, "no bridge nodes available")
+	s.Require().NotEmpty(bridgeNodes, "no bridge nodes available")
 
 	bridgeNode := bridgeNodes[0]
 
-	chainID := suite.celestiaChain.GetChainID()
-	celestiaNodeHostname, err := suite.celestiaChain.GetNodes()[0].GetInternalHostName(ctx)
-	suite.Require().NoError(err)
+	chainID := s.celestiaChain.GetChainID()
+	celestiaNodeHostname, err := s.celestiaChain.GetNodes()[0].GetInternalHostName(ctx)
+	s.Require().NoError(err)
 
 	err = bridgeNode.Start(ctx,
 		types.WithChainID(chainID),
@@ -148,42 +144,40 @@ func (suite *DockerIntegrationTestSuite) CreateDANetwork(ctx context.Context) ty
 			"P2P_NETWORK":     chainID,
 		}),
 	)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	// Fund the bridge node DA wallet to enable blob submission
-	suite.fundBridgeNodeWallet(ctx, bridgeNode)
+	s.fundBridgeNodeWallet(ctx, bridgeNode)
 
 	return bridgeNode
 }
 
 // CreateRollkitChain sets up the rollkit chain connected to the DA network and returns it
-func (suite *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context) *docker.Chain {
+func (s *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context) *docker.Chain {
 	// Get DA connection details
-	authToken, err := suite.bridgeNode.GetAuthToken()
-	suite.Require().NoError(err)
+	authToken, err := s.bridgeNode.GetAuthToken()
+	s.Require().NoError(err)
 
-	bridgeRPCAddress, err := suite.bridgeNode.GetInternalRPCAddress()
-	suite.Require().NoError(err)
+	bridgeRPCAddress, err := s.bridgeNode.GetInternalRPCAddress()
+	s.Require().NoError(err)
 
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
 	namespace := generateValidNamespace()
 
-	celestiaHeight, err := suite.celestiaChain.Height(ctx)
-	suite.Require().NoError(err)
+	celestiaHeight, err := s.celestiaChain.Height(ctx)
+	s.Require().NoError(err)
 	daStartHeight := fmt.Sprintf("%d", celestiaHeight)
-
-	// use the single sequencer genesis function for the aggregator node
 
 	// bank and auth modules required to deal with bank send tx's
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 	// Create chain with only the aggregator node initially
-	rollkitChain, err := docker.NewChainBuilder(suite.T()).
+	rollkitChain, err := docker.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getRollkitAppContainer()).
 		WithDenom("stake").
-		WithDockerClient(suite.dockerClient).
+		WithDockerClient(s.dockerClient).
 		WithName("rollkit").
-		WithDockerNetworkID(suite.networkID).
+		WithDockerNetworkID(s.networkID).
 		WithChainID("rollkit-test").
 		WithBech32Prefix("gm").
 		WithBinaryName("gmd").
@@ -210,17 +204,17 @@ func (suite *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context)
 		).
 		Build(ctx)
 
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	// Start the aggregator node first so that we can query the p2p
 	err = rollkitChain.Start(ctx)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
-	aggregatorPeer := suite.GetNodeMultiAddr(ctx, rollkitChain.GetNode())
-	suite.T().Logf("Aggregator peer: %s", aggregatorPeer)
+	aggregatorPeer := s.GetNodeMultiAddr(ctx, rollkitChain.GetNode())
+	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
 
 	// Add follower nodes
-	suite.T().Logf("Adding first follower node...")
+	s.T().Logf("Adding first follower node...")
 	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--rollkit.da.address", daAddress,
@@ -235,9 +229,9 @@ func (suite *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context)
 		).
 		WithGenTX(false).
 		Build())
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
-	suite.T().Logf("Adding second follower node...")
+	s.T().Logf("Adding second follower node...")
 	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--rollkit.da.address", daAddress,
@@ -252,34 +246,34 @@ func (suite *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context)
 		).
 		WithGenTX(false).
 		Build())
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	return rollkitChain
 }
 
 // GetNodeMultiAddr extracts the multiaddr from a rollkit chain node
 // Returns the multiaddr in the format: /ip4/{IP}/tcp/36656/p2p/{PEER_ID}
-func (suite *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node *docker.ChainNode) string {
+func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node *docker.ChainNode) string {
 	// Get the node ID
 	nodeID, err := node.NodeID(ctx)
-	suite.Require().NoError(err)
-	suite.Require().NotEmpty(nodeID, "node ID is empty")
+	s.Require().NoError(err)
+	s.Require().NotEmpty(nodeID, "node ID is empty")
 
 	// Get the node's internal IP address
 	nodeIP, err := node.GetInternalIP(ctx)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	// Convert hex node ID to libp2p peer ID
 	nodeIDBytes, err := hex.DecodeString(nodeID)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	// Create a multihash from the node ID bytes (using identity hash since it's already hashed)
 	mh, err := multihash.Sum(nodeIDBytes, multihash.IDENTITY, -1)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	// Create peer ID from multihash
 	peerID, err := peer.IDFromBytes(mh)
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	// Construct the multiaddr with default rollkit P2P port
 	multiAddr := fmt.Sprintf("/ip4/%s/tcp/36656/p2p/%s", nodeIP, peerID.String())
@@ -310,7 +304,7 @@ func getGenesisHash(ctx context.Context, chain types.Chain) (string, error) {
 }
 
 // sendFunds sends funds from one wallet to another using bank transfer
-func (suite *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *docker.Chain, fromWallet, toWallet types.Wallet, amount sdk.Coins, nodeIdx int) error {
+func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *docker.Chain, fromWallet, toWallet types.Wallet, amount sdk.Coins, nodeIdx int) error {
 	fromAddress, err := sdkacc.AddressFromWallet(fromWallet)
 	if err != nil {
 		return fmt.Errorf("failed to get sender address: %w", err)
@@ -413,19 +407,19 @@ func getPubKey(ctx context.Context, chainNode *docker.ChainNode) (crypto.PubKey,
 }
 
 // fundBridgeNodeWallet funds the bridge node's DA wallet for blob submission
-func (suite *DockerIntegrationTestSuite) fundBridgeNodeWallet(ctx context.Context, bridgeNode types.DANode) {
+func (s *DockerIntegrationTestSuite) fundBridgeNodeWallet(ctx context.Context, bridgeNode types.DANode) {
 	// hack to get around global, need to set the address prefix before use.
 	sdk.GetConfig().SetBech32PrefixForAccount("celestia", "celestiapub")
 
-	suite.T().Log("Funding bridge node DA wallet...")
-	fundingWallet := suite.celestiaChain.GetFaucetWallet()
+	s.T().Log("Funding bridge node DA wallet...")
+	fundingWallet := s.celestiaChain.GetFaucetWallet()
 
 	// Get the bridge node's wallet
 	bridgeWallet, err := bridgeNode.GetWallet()
-	suite.Require().NoError(err)
+	s.Require().NoError(err)
 
 	// fund the bridge node wallet
 	daFundingAmount := sdk.NewCoins(sdk.NewCoin("utia", math.NewInt(10_000_000)))
-	err = suite.sendFunds(ctx, suite.celestiaChain, fundingWallet, bridgeWallet, daFundingAmount, 0)
-	suite.Require().NoError(err)
+	err = s.sendFunds(ctx, s.celestiaChain, fundingWallet, bridgeWallet, daFundingAmount, 0)
+	s.Require().NoError(err)
 }
