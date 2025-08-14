@@ -199,7 +199,7 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 					"--rollkit.da.namespace", namespace,
 					"--rollkit.da.start_height", daStartHeight,
 					"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-					"--log_level", "*:info,rollkit:debug,p2p:debug",
+					"--log_level", "*:debug,rollkit:debug,p2p:debug",
 				).
 				WithGenTX(true).
 				WithPostInit(addSingleSequencer).
@@ -211,11 +211,15 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 		return nil, fmt.Errorf("failed to build rollkit chain: %w", err)
 	}
 
-	// Start the aggregator node first so its node_key.json gets created
+	// Start ONLY the aggregator node first and let it stabilize
 	err = rollkitChain.Start(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start rollkit chain: %w", err)
 	}
+
+	// Wait for aggregator to fully start and be ready
+	t.Logf("Waiting for aggregator node to stabilize...")
+	time.Sleep(10 * time.Second)
 
 	// Query the aggregator node ID for P2P connectivity
 	aggregatorNode := rollkitChain.Nodes()[0] // aggregator is the first (and only) node
@@ -252,8 +256,13 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 	// Construct the aggregator peer in multiaddr format
 	aggregatorPeer := fmt.Sprintf("/ip4/%s/tcp/36656/p2p/%s", aggregatorIP, peerID.String())
 	t.Logf("Constructed aggregator peer: %s", aggregatorPeer)
+	t.Logf("Aggregator Node ID (hex): %s", aggregatorNodeID)
+	t.Logf("Aggregator Node ID (base58): %s", peerID.String())
+	t.Logf("Aggregator IP: %s", aggregatorIP)
+	t.Logf("Aggregator Hostname: %s", aggregatorNode.HostName())
 
-	// Add first follower node with P2P peers pointing to aggregator
+	// Now add follower nodes one by one, with delays between them
+	t.Logf("Adding first follower node...")
 	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--rollkit.da.address", daAddress,
@@ -263,8 +272,8 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 			"--rollkit.da.namespace", namespace,
 			"--rollkit.da.start_height", daStartHeight,
 			"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			"--rollkit.p2p.peers", aggregatorPeer,
-			"--log_level", "*:info,rollkit:debug,p2p:debug",
+			//"--rollkit.p2p.peers", aggregatorPeer,
+			"--log_level", "*:debug,rollkit:debug,p2p:debug",
 		).
 		WithGenTX(false).
 		Build())
@@ -272,7 +281,10 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 		return nil, fmt.Errorf("failed to add first follower node: %w", err)
 	}
 
-	// Add second follower node with P2P peers pointing to aggregator
+	// Wait a bit before adding the second follower
+	time.Sleep(5 * time.Second)
+
+	t.Logf("Adding second follower node...")
 	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--rollkit.da.address", daAddress,
@@ -282,8 +294,8 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 			"--rollkit.da.namespace", namespace,
 			"--rollkit.da.start_height", daStartHeight,
 			"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			"--rollkit.p2p.peers", aggregatorPeer,
-			"--log_level", "*:info,rollkit:debug,p2p:debug",
+			//"--rollkit.p2p.peers", aggregatorPeer,
+			"--log_level", "*:debug,rollkit:debug,p2p:debug",
 		).
 		WithGenTX(false).
 		Build())
@@ -433,6 +445,18 @@ func TestLivenessWithCelestiaDA(t *testing.T) {
 
 	t.Log("Rollkit chain started")
 
+	// Debug: Check node states before testing
+	t.Log("Debug: Checking rollkit chain node states...")
+	for i, node := range rollkitChain.Nodes() {
+		hostname, _ := node.GetInternalHostName(ctx)
+		ip, _ := node.GetInternalIP(ctx)
+		t.Logf("Node %d - Hostname: %s, IP: %s", i, hostname, ip)
+	}
+
+	// Add a small delay to let P2P connections stabilize
+	t.Log("Waiting for P2P connections to stabilize...")
+	time.Sleep(5 * time.Second)
+
 	// Test block production - wait for rollkit chain to produce blocks
 	t.Log("Testing block production...")
 	require.NoError(t, wait.ForBlocks(ctx, 5, rollkitChain))
@@ -440,6 +464,14 @@ func TestLivenessWithCelestiaDA(t *testing.T) {
 	// Test transaction submission and query
 	t.Log("Testing transaction submission and query...")
 	testTransactionSubmissionAndQuery(t, ctx, rollkitChain)
+
+	// Debug: Test with just aggregator first
+	t.Log("Testing aggregator alone for 30 seconds...")
+	time.Sleep(30 * time.Second)
+
+	// Check if we can query the aggregator's net_info
+	height, _ := rollkitChain.Height(ctx)
+	t.Logf("Current chain height: %d", height)
 
 	time.Sleep(time.Hour)
 }
