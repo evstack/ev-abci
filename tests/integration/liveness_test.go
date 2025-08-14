@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/celestiaorg/tastora/framework/testutil/broadcast"
+	"github.com/multiformats/go-multihash"
+
 	//"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wallet"
@@ -16,6 +18,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"go.uber.org/zap/zaptest"
 	"os"
 	"testing"
@@ -165,11 +168,12 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 	}
 	daStartHeight := fmt.Sprintf("%d", celestiaHeight)
 
-	// create the closure for consistent genesis across all nodes
+	// create the single sequencer genesis function for the aggregator node
 	addSingleSequencer := CreateAddSingleSequencer(daAddress, authToken, namespace, daStartHeight)
 
 	// bank and auth modules required to deal with bank send tx's
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	// Create chain with only the aggregator node initially
 	rollkitChain, err := docker.NewChainBuilder(t).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getRollkitAppContainer()).
@@ -200,34 +204,6 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 				WithGenTX(true).
 				WithPostInit(addSingleSequencer).
 				Build(),
-			docker.NewChainNodeConfigBuilder().
-				WithAdditionalStartArgs(
-					"--rollkit.da.address", daAddress,
-					"--rollkit.da.gas_price", "0.000001",
-					"--rollkit.da.auth_token", authToken,
-					"--rollkit.rpc.address", "0.0.0.0:7331",
-					"--rollkit.da.namespace", namespace,
-					"--rollkit.da.start_height", daStartHeight,
-					"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-					"--log_level", "*:info,rollkit:debug,p2p:debug",
-				).
-				WithGenTX(false).
-				WithPostInit(addSingleSequencer).
-				Build(),
-			docker.NewChainNodeConfigBuilder().
-				WithAdditionalStartArgs(
-					"--rollkit.da.address", daAddress,
-					"--rollkit.da.gas_price", "0.000001",
-					"--rollkit.da.auth_token", authToken,
-					"--rollkit.rpc.address", "0.0.0.0:7331",
-					"--rollkit.da.namespace", namespace,
-					"--rollkit.da.start_height", daStartHeight,
-					"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-					"--log_level", "*:info,rollkit:debug,p2p:debug",
-				).
-				WithGenTX(false).
-				WithPostInit(addSingleSequencer).
-				Build(),
 		).
 		Build(ctx)
 
@@ -235,9 +211,84 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 		return nil, fmt.Errorf("failed to build rollkit chain: %w", err)
 	}
 
+	// Start the aggregator node first so its node_key.json gets created
 	err = rollkitChain.Start(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start rollkit chain: %w", err)
+	}
+
+	// Query the aggregator node ID for P2P connectivity
+	aggregatorNode := rollkitChain.Nodes()[0] // aggregator is the first (and only) node
+	aggregatorNodeID, err := aggregatorNode.NodeID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get aggregator node ID: %w", err)
+	}
+	require.NotEmpty(t, aggregatorNodeID, "aggregator node ID is empty")
+
+	// Get the aggregator's internal IP address
+	aggregatorIP, err := aggregatorNode.GetInternalIP(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get aggregator internal IP: %w", err)
+	}
+
+	// Convert hex node ID to libp2p peer ID
+	nodeIDBytes, err := hex.DecodeString(aggregatorNodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode node ID: %w", err)
+	}
+
+	// Create a multihash from the node ID bytes (using identity hash since it's already hashed)
+	mh, err := multihash.Sum(nodeIDBytes, multihash.IDENTITY, -1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multihash: %w", err)
+	}
+
+	// Create peer ID from multihash
+	peerID, err := peer.IDFromBytes(mh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create peer ID: %w", err)
+	}
+
+	// Construct the aggregator peer in multiaddr format
+	aggregatorPeer := fmt.Sprintf("/ip4/%s/tcp/36656/p2p/%s", aggregatorIP, peerID.String())
+	t.Logf("Constructed aggregator peer: %s", aggregatorPeer)
+
+	// Add first follower node with P2P peers pointing to aggregator
+	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
+		WithAdditionalStartArgs(
+			"--rollkit.da.address", daAddress,
+			"--rollkit.da.gas_price", "0.000001",
+			"--rollkit.da.auth_token", authToken,
+			"--rollkit.rpc.address", "0.0.0.0:7331",
+			"--rollkit.da.namespace", namespace,
+			"--rollkit.da.start_height", daStartHeight,
+			"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			"--rollkit.p2p.peers", aggregatorPeer,
+			"--log_level", "*:info,rollkit:debug,p2p:debug",
+		).
+		WithGenTX(false).
+		Build())
+	if err != nil {
+		return nil, fmt.Errorf("failed to add first follower node: %w", err)
+	}
+
+	// Add second follower node with P2P peers pointing to aggregator
+	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
+		WithAdditionalStartArgs(
+			"--rollkit.da.address", daAddress,
+			"--rollkit.da.gas_price", "0.000001",
+			"--rollkit.da.auth_token", authToken,
+			"--rollkit.rpc.address", "0.0.0.0:7331",
+			"--rollkit.da.namespace", namespace,
+			"--rollkit.da.start_height", daStartHeight,
+			"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			"--rollkit.p2p.peers", aggregatorPeer,
+			"--log_level", "*:info,rollkit:debug,p2p:debug",
+		).
+		WithGenTX(false).
+		Build())
+	if err != nil {
+		return nil, fmt.Errorf("failed to add second follower node: %w", err)
 	}
 
 	return rollkitChain, nil

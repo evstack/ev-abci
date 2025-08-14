@@ -987,6 +987,8 @@ github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFR
 github.com/rogpeppe/go-internal v1.9.0/go.mod h1:WtVeX8xhTBvf0smdhujwtBcq4Qrzq/fJaraNFVN+nFs=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
+github.com/rollkit/go-execution-abci v0.3.0 h1:KGpkMbxfBnpQNguuxq00mbyi1gElfSunBAns2ZKgybY=
+github.com/rollkit/go-execution-abci v0.3.0/go.mod h1:VNT1Kd01625fXz14SiMLkeCwnxuVZ6lJ/DRWDTJGm3g=
 github.com/rollkit/rollkit v1.0.0-beta.2 h1:g9NISvSWLkFzoGufVxDAofRd4gweRewTtqW8RASW5Ss=
 github.com/rollkit/rollkit v1.0.0-beta.2/go.mod h1:6OYfH1dYTOhqg+bCMxvkrb4qe7SruYoSup5zxQNyrKs=
 github.com/rollkit/rollkit/core v1.0.0-beta.1 h1:lAcFWOTUaNGDWEDIjVv07FWizJswBsF3JWi9jEScV7k=
