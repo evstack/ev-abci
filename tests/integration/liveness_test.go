@@ -85,17 +85,17 @@ func sendFunds(ctx context.Context, chain *docker.Chain, fromWallet, toWallet ty
 }
 
 // TestLivenessWithCelestiaDA tests the liveness of rollkit with Celestia DA
-func (suite *DockerIntegrationTestSuite) TestLivenessWithCelestiaDA() {
+func (s *DockerIntegrationTestSuite) TestLivenessWithCelestiaDA() {
 	ctx := context.Background()
 	// Test block production - wait for rollkit chain to produce blocks
-	suite.T().Log("Testing block production...")
-	suite.Require().NoError(wait.ForBlocks(ctx, 5, suite.rollkitChain))
+	s.T().Log("Testing block production...")
+	s.Require().NoError(wait.ForBlocks(ctx, 5, s.rollkitChain))
 
 	// Test transaction submission and query
-	suite.T().Log("Testing transaction submission and query...")
-	testTransactionSubmissionAndQuery(suite.T(), ctx, suite.rollkitChain)
+	s.T().Log("Testing transaction submission and query...")
+	testTransactionSubmissionAndQuery(s.T(), ctx, s.rollkitChain)
 
-	suite.T().Log("Test completed successfully")
+	s.T().Log("Test completed successfully")
 }
 
 // testTransactionSubmissionAndQuery tests sending transactions and querying results using tastora API
