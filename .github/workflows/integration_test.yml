@@ -1,4 +1,4 @@
-name: Rollkit Integration & IBC Tests
+name: Ev-ABCI Integration & IBC Tests
 
 on:
   push:
@@ -12,12 +12,12 @@ concurrency:
 
 jobs:
   liveness-tastora:
-    name: Test with Rollkit Chain (Tastora)
+    name: Test with EV-ABCI Chain (Tastora)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       ROLLKIT_VERSION: "v1.0.0-beta.2"
-      IGNITE_VERSION: "v29.2.0"
+      IGNITE_VERSION: "v29.3.1"
       IGNITE_ROLLKIT_APP_VERSION: "rollkit/v0.3.0"
       ROLLKIT_IMAGE_REPO: "rollkit-gm"
       ROLLKIT_IMAGE_TAG: "latest"
@@ -36,7 +36,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Rollkit Docker Image
+      - name: Build Evolve Docker Image
         run: |
           docker build \
             --build-arg ROLLKIT_VERSION=${{ env.ROLLKIT_VERSION }} \
@@ -60,7 +60,7 @@ jobs:
     env:
       DO_NOT_TRACK: true
       ROLLKIT_VERSION: "v1.0.0-beta.2"
-      IGNITE_VERSION: "v29.2.0"
+      IGNITE_VERSION: "v29.3.1"
       IGNITE_ROLLKIT_APP_VERSION: "rollkit/v0.3.0"
     outputs:
       carol_mnemonic: ${{ steps.save_mnemonic.outputs.carol_mnemonic }}
@@ -97,7 +97,7 @@ jobs:
         run: |
           cd gm
           # start the local da in the background
-          go tool github.com/rollkit/rollkit/da/cmd/local-da &
+          go tool github.com/evstack/ev-node/da/cmd/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start
@@ -105,18 +105,18 @@ jobs:
 
       - name: Replace ABCI Module with Current Branch And Prepare Chain
         run: |
-          # get the path to the current checkout of go-execution-abci
+          # get the path to the current checkout of ev-abci
           CURRENT_DIR=$(pwd)
           GO_EXECUTION_ABCI_DIR=$CURRENT_DIR
 
           # enter the gm directory
           cd gm
 
-          # replace the github.com/rollkit/rollkit module with tagged version
-          go mod edit -replace github.com/rollkit/rollkit=github.com/rollkit/rollkit@$ROLLKIT_VERSION
+          # replace the github.com/evstack/ev-node module with tagged version
+          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$ROLLKIT_VERSION
 
-          # replace the github.com/rollkit/go-execution-abci module with the local version
-          go mod edit -replace github.com/rollkit/go-execution-abci=$GO_EXECUTION_ABCI_DIR
+          # replace the github.com/evstack/ev-abci module with the local version
+          go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
 
           # download dependencies and update go.mod/go.sum
           go mod tidy
@@ -174,14 +174,14 @@ jobs:
           while [ $BLOCKS_FOUND -lt 5 ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             sleep 2
             ATTEMPT=$((ATTEMPT+1))
-            
+
             # check if the chain is still running
             if ! ps -p $CHAIN_PID > /dev/null; then
               echo "Chain process died unexpectedly"
               cat chain.log
               exit 1
             fi
-            
+
             # query the node for the current block height
             BLOCKS_FOUND=$(gmd query block --output json | tail -n +2 | jq -r '.header.height')
             echo "Found $BLOCKS_FOUND blocks so far (attempt $ATTEMPT/$MAX_ATTEMPTS)"
@@ -256,7 +256,7 @@ jobs:
           fi
 
   ibc:
-    name: Test IBC Connection Rollkit <-> Celestia
+    name: Test IBC Connection Ev-ABCI <-> Celestia
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: liveness
@@ -308,7 +308,7 @@ jobs:
 
       - name: Start Local DA
         run: |
-          go install github.com/rollkit/rollkit/da/cmd/local-da@$ROLLKIT_DA_VERSION
+          go install github.com/evstack/ev-node/da/cmd/local-da@$ROLLKIT_DA_VERSION
           # start the local da in the background
           local-da &
           # capture the background process PID
@@ -396,7 +396,7 @@ jobs:
           BALANCE=$(celestia-appd query bank balances $CELESTIA_ADDR --output json --node http://localhost:26654 | jq '.balances')
           echo "Celestia balance after IBC transfer: $BALANCE"
           # TODO: check that the balance is correct
-          # ref: https://github.com/rollkit/go-execution-abci/pull/138#discussion_r2156332760
+          # ref: https://github.com/evstack/ev-abci/pull/138#discussion_r2156332760
 
       - name: ICS20 Transfer Celestia -> Rollkit
         run: |
@@ -413,7 +413,7 @@ jobs:
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ] && [ "$IBC_FOUND" = false ]; do
             sleep 3
             ATTEMPT=$((ATTEMPT+1))
-            
+
             BALANCE=$(./gmd/go/bin/gmd query bank balances $ROLLKIT_ADDR --output json --home ./gmd/.gm | jq '.balances')
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Gm balance: $BALANCE"
 

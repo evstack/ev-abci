@@ -25,15 +25,15 @@ import (
 	host "github.com/libp2p/go-libp2p/core/host"
 	ma "github.com/multiformats/go-multiaddr"
 
-	"github.com/rollkit/rollkit/core/execution"
-	rollnode "github.com/rollkit/rollkit/node"
-	rollkitp2p "github.com/rollkit/rollkit/pkg/p2p"
-	rstore "github.com/rollkit/rollkit/pkg/store"
-	"github.com/rollkit/rollkit/types"
+	"github.com/evstack/ev-node/core/execution"
+	rollnode "github.com/evstack/ev-node/node"
+	rollkitp2p "github.com/evstack/ev-node/pkg/p2p"
+	rstore "github.com/evstack/ev-node/pkg/store"
+	"github.com/evstack/ev-node/types"
 
-	"github.com/rollkit/go-execution-abci/pkg/cometcompat"
-	"github.com/rollkit/go-execution-abci/pkg/p2p"
-	execstore "github.com/rollkit/go-execution-abci/pkg/store"
+	"github.com/evstack/ev-abci/pkg/cometcompat"
+	"github.com/evstack/ev-abci/pkg/p2p"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 var _ execution.Executor = &Adapter{}
@@ -104,7 +104,7 @@ func NewABCIExecutor(
 	opts ...Option,
 ) *Adapter {
 	rollkitPrefixStore := kt.Wrap(store, &kt.PrefixTransform{
-		Prefix: ds.NewKey(rollnode.RollkitPrefix),
+		Prefix: ds.NewKey(rollnode.EvPrefix),
 	})
 	rollkitStore := rstore.New(rollkitPrefixStore)
 
