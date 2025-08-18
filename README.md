@@ -1,12 +1,12 @@
 # ev-abci
 
-An ABCI adapter for [Rollkit](https://github.com/rollkit/rollkit) that enables ABCI-compatible applications to be used with Rollkit's execution layer.
+An ABCI adapter for [Evolve](https://github.com/evstack/ev-node) that enables ABCI-compatible applications to be used with Evolve's execution layer.
 
 ## Overview
 
-`ev-abci` is a bridge between ABCI-compatible applications and Rollkit's execution layer. It implements the Rollkit execution interface and adapts it to the ABCI interface, allowing developers to use existing ABCI applications with Rollkit.
+`ev-abci` is a bridge between ABCI-compatible applications and Evolve's execution layer. It implements the Evolve execution interface and adapts it to the ABCI interface, allowing developers to use existing ABCI applications with Evolve.
 
-This adapter connects various components of the Rollkit ecosystem:
+This adapter connects various components of the Evolve ecosystem:
 
 - Provides compatibility with the Cosmos SDK and CometBFT ABCI applications
 - Implements transaction handling, state management, and blockchain operations
@@ -16,14 +16,14 @@ This adapter connects various components of the Rollkit ecosystem:
 
 ```mermaid
 graph TD
-    A[Rollkit Core] --> B[ev-abci Adapter]
+    A[ev-node] --> B[ev-abci Adapter]
     B --> C[ABCI Application]
     D[P2P Network] <--> B
     E[Mempool] <--> B
     F[RPC Server] --> B
     B --> G[Store]
 
-    subgraph "Rollkit"
+    subgraph "Evolve"
     A
     end
 
@@ -46,7 +46,7 @@ graph TD
 
 ## Features
 
-- **ABCI Compatibility**: Run any ABCI-compatible application with Rollkit.
+- **ABCI Compatibility**: Run any ABCI-compatible application with Evolve.
 - **Transaction Management**: Handles transaction receipt, validation, and execution.
 - **State Management**: Manages blockchain state including validators and consensus parameters.
 - **P2P Communication**: Implements transaction gossip across the network.
@@ -56,7 +56,7 @@ graph TD
 
 This adapter achieves compatibility with ABCI by calling the appropriate methods on the ABCI application during the execution lifecycle. It implements the necessary interfaces to ensure that transactions are processed correctly, blocks are finalized, and state is committed.
 
-Note, that because of the nature of Rollkit (single proposer), **Vote Extensions are not supported**. The adapter will not call the `VoteExtensions` methods on the ABCI application, and any logic related to vote extensions should be handled separately or not used at all.
+Note, that because of the nature of ev-node (single proposer), **Vote Extensions are not supported**. The adapter will not call the `VoteExtensions` methods on the ABCI application, and any logic related to vote extensions should be handled separately or not used at all.
 
 ## Installation
 
@@ -68,7 +68,7 @@ go get github.com/evstack/ev-abci
 
 The project relies on several key dependencies:
 
-- [Rollkit](https://github.com/rollkit/rollkit): For the core rollup functionality
+- [Evolve Node](https://github.com/evstack/ev-node): For the core rollup functionality
 - [Cosmos SDK](https://github.com/cosmos/cosmos-sdk): For the ABCI integration
 - [CometBFT](https://github.com/cometbft/cometbft): For consensus-related types and functionality
 - [libp2p](https://github.com/libp2p/go-libp2p): For peer-to-peer networking
@@ -83,22 +83,22 @@ index 310b195..19abe36 100644
 --- a/cmd/gmd/cmd/commands.go
 +++ b/cmd/gmd/cmd/commands.go
 @@ -2,6 +2,7 @@ package cmd
- 
+
  import (
  	"errors"
 +	"gm/app"
  	"io"
- 
+
  	"github.com/spf13/cobra"
 @@ -24,7 +25,8 @@ import (
  	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
  	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
- 
+
 -	"gm/app"
 +	abciserver "github.com/evstack/ev-abci/server"
 +	rollconf "github.com/rollkit/rollkit/pkg/config"
  )
- 
+
  func initRootCmd(
 @@ -32,8 +34,18 @@ func initRootCmd(
  	txConfig client.TxConfig,
@@ -122,7 +122,7 @@ index 310b195..19abe36 100644
  		debug.Cmd(),
 @@ -43,7 +55,10 @@ func initRootCmd(
  	)
- 
+
  	server.AddCommandsWithStartCmdOptions(rootCmd, app.DefaultNodeHome, newApp, appExport, server.StartCmdOptions{
 -		AddFlags: addModuleInitFlags,
 +		AddFlags: func(cmd *cobra.Command) {
@@ -209,7 +209,7 @@ classDiagram
     class Executor {
         <<interface>>
         +InitChain()
-        +ExecuteTxs() 
+        +ExecuteTxs()
         +GetTxs()
         +SetFinal()
     }
@@ -218,7 +218,7 @@ classDiagram
         <<interface>>
         +InitChain()
         +PrepareProposal()
-        +ProcessProposal() 
+        +ProcessProposal()
         +FinalizeBlock()
         +Commit()
     }
