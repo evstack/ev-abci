@@ -33,14 +33,14 @@ import (
 	ktds "github.com/ipfs/go-datastore/keytransform"
 	"github.com/spf13/cobra"
 
+	migrationmngr "github.com/evstack/ev-abci/modules/migrationmngr"
+	migrationmngrtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
+	execstore "github.com/evstack/ev-abci/pkg/store"
+
 	rollkitnode "github.com/evstack/ev-node/node"
 	rollkitgenesis "github.com/evstack/ev-node/pkg/genesis"
 	rollkitstore "github.com/evstack/ev-node/pkg/store"
 	rollkittypes "github.com/evstack/ev-node/types"
-
-	"github.com/evstack/ev-abci/modules/rollkitmngr"
-	rollkitmngrtypes "github.com/evstack/ev-abci/modules/rollkitmngr/types"
-	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 var (
@@ -48,8 +48,8 @@ var (
 	maxMissedBlock = 50
 )
 
-// rollkitMigrationGenesis represents the minimal genesis for rollkit migration.
-type rollkitMigrationGenesis struct {
+// evolveMigrationGenesis represents the minimal genesis for ev-abci migration.
+type evolveMigrationGenesis struct {
 	ChainID         string        `json:"chain_id"`
 	InitialHeight   uint64        `json:"initial_height"`
 	GenesisTime     int64         `json:"genesis_time"`
@@ -57,8 +57,8 @@ type rollkitMigrationGenesis struct {
 	SequencerPubKey crypto.PubKey `json:"sequencer_pub_key,omitempty"`
 }
 
-// ToRollkitGenesis converts the rollkit migration genesis to a Rollkit genesis.
-func (g rollkitMigrationGenesis) ToRollkitGenesis() *rollkitgenesis.Genesis {
+// ToEVGenesis converts the rollkit migration genesis to a ev-node genesis.
+func (g evolveMigrationGenesis) ToEVGenesis() *rollkitgenesis.Genesis {
 	genesis := rollkitgenesis.NewGenesis(
 		g.ChainID,
 		g.InitialHeight,
@@ -360,9 +360,9 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 		sequencerAddr = cometBFTState.LastValidators.Validators[0].Address.Bytes()
 		sequencerPubKey = cometBFTState.LastValidators.Validators[0].PubKey
 	} else if len(cometBFTState.LastValidators.Validators) > 1 {
-		sequencer, err := getSequencerFromRollkitMngrState(rootDir, cometBFTState)
+		sequencer, err := getSequencerFromMigrationMngrState(rootDir, cometBFTState)
 		if err != nil {
-			return fmt.Errorf("failed to get sequencer from rollkitmngr state: %w", err)
+			return fmt.Errorf("failed to get sequencer from migrationmngr state: %w", err)
 		}
 
 		sequencerAddr = sequencer.Address
@@ -371,7 +371,7 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 		return fmt.Errorf("no validators found in the last validators, cannot determine sequencer address")
 	}
 
-	migrationGenesis := rollkitMigrationGenesis{
+	migrationGenesis := evolveMigrationGenesis{
 		ChainID:         cometBFTState.ChainID,
 		InitialHeight:   uint64(cometBFTState.InitialHeight),
 		GenesisTime:     cometBFTState.LastBlockTime.UnixNano(),
@@ -385,7 +385,7 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 		return fmt.Errorf("failed to marshal rollkit migration genesis: %w", err)
 	}
 
-	genesisPath := filepath.Join(rootDir, rollkitGenesisFilename)
+	genesisPath := filepath.Join(rootDir, evolveGenesisFilename)
 	if err := os.WriteFile(genesisPath, genesisBytes, 0o644); err != nil {
 		return fmt.Errorf("failed to write rollkit migration genesis to %s: %w", genesisPath, err)
 	}
@@ -393,14 +393,14 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 	return nil
 }
 
-// sequencerInfo holds the sequencer information extracted from rollkitmngr state
+// sequencerInfo holds the sequencer information extracted from migrationmngr state
 type sequencerInfo struct {
 	Address []byte
 	PubKey  crypto.PubKey
 }
 
-// getSequencerFromRollkitMngrState attempts to load the sequencer information from the rollkitmngr module state
-func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State) (*sequencerInfo, error) {
+// getSequencerFromMigrationMngrState attempts to load the sequencer information from the migrationmngr module state
+func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.State) (*sequencerInfo, error) {
 	config := cfg.DefaultConfig()
 	config.SetRoot(rootDir)
 
@@ -421,14 +421,14 @@ func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State)
 	}
 	defer func() { _ = appDB.Close() }()
 
-	storeKey := storetypes.NewKVStoreKey(rollkitmngrtypes.ModuleName)
+	storeKey := storetypes.NewKVStoreKey(migrationmngrtypes.ModuleName)
 
-	encCfg := moduletestutil.MakeTestEncodingConfig(rollkitmngr.AppModuleBasic{})
+	encCfg := moduletestutil.MakeTestEncodingConfig(migrationmngr.AppModuleBasic{})
 	sequencerCollection := collections.NewItem(
 		collections.NewSchemaBuilder(runtime.NewKVStoreService(storeKey)),
-		rollkitmngrtypes.SequencerKey,
+		migrationmngrtypes.SequencerKey,
 		"sequencer",
-		codec.CollValue[rollkitmngrtypes.Sequencer](encCfg.Codec),
+		codec.CollValue[migrationmngrtypes.Sequencer](encCfg.Codec),
 	)
 
 	// create context and commit multi-store
@@ -445,9 +445,9 @@ func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State)
 
 	sequencer, err := sequencerCollection.Get(ctx)
 	if errors.Is(err, collections.ErrNotFound) {
-		return nil, fmt.Errorf("sequencer not found in rollkitmngr state, ensure the module is initialized and sequencer is set")
+		return nil, fmt.Errorf("sequencer not found in migrationmngr state, ensure the module is initialized and sequencer is set")
 	} else if err != nil {
-		return nil, fmt.Errorf("failed to get sequencer from rollkitmngr state: %w", err)
+		return nil, fmt.Errorf("failed to get sequencer from migrationmngr state: %w", err)
 	}
 
 	if err := sequencer.UnpackInterfaces(encCfg.InterfaceRegistry); err != nil {
@@ -479,7 +479,7 @@ func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State)
 	}
 
 	if !validatorFound {
-		return nil, fmt.Errorf("sequencer from rollkitmngr state (address: %x) is not found in the validator set", addr)
+		return nil, fmt.Errorf("sequencer from migrationmngr state (address: %x) is not found in the validator set", addr)
 	}
 
 	return &sequencerInfo{

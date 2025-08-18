@@ -75,7 +75,7 @@ The project relies on several key dependencies:
 
 ## Usage
 
-The adapter can be used to create a Rollkit node with an ABCI application, such as a Cosmos SDK chain.
+The adapter can be used to create a Evolve node with an ABCI application, such as a Cosmos SDK chain.
 
 ```diff
 diff --git a/cmd/gmd/cmd/commands.go b/cmd/gmd/cmd/commands.go
@@ -170,7 +170,7 @@ sequenceDiagram
 
 The adapter consists of several key components:
 
-1. **Adapter**: The core component that implements the Rollkit executor interface and delegates calls to the ABCI application. The adapter manages the blockchain state and coordinates between different components.
+1. **Adapter**: The core component that implements the Evolve (ev-node) executor interface and delegates calls to the ABCI application. The adapter manages the blockchain state and coordinates between different components.
 
 2. **Mempool**: Handles pending transactions before they're included in blocks. The mempool is responsible for:
    - Validating transactions before acceptance
@@ -269,7 +269,7 @@ ev-abci/
 │   ├── signer/       # Signers helpers functions
 │   ├── p2p/          # Peer-to-peer networking
 │   └── rpc/          # RPC server implementation
-├── modules/          # Optional Cosmos SDK modules for Rollkit
+├── modules/          # Optional Cosmos SDK modules for Evolve
 └── server/           # Server startup and configuration
 ```
 
