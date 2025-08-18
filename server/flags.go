@@ -20,7 +20,6 @@ func AddFlags(cmd *cobra.Command) {
 
 	// Add base flags
 	cmd.Flags().String(config.FlagDBPath, def.DBPath, "path for the node database")
-	cmd.Flags().String(config.FlagChainID, def.ChainID, "chain ID")
 	// Node configuration flags
 	cmd.Flags().BoolVar(&def.Node.Aggregator, config.FlagAggregator, def.Node.Aggregator, "run node in aggregator mode")
 	cmd.Flags().Bool(config.FlagLight, def.Node.Light, "run light client")

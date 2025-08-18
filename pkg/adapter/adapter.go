@@ -104,7 +104,7 @@ func NewABCIExecutor(
 	opts ...Option,
 ) *Adapter {
 	rollkitPrefixStore := kt.Wrap(store, &kt.PrefixTransform{
-		Prefix: ds.NewKey(rollnode.RollkitPrefix),
+		Prefix: ds.NewKey(rollnode.EvPrefix),
 	})
 	rollkitStore := rstore.New(rollkitPrefixStore)
 
