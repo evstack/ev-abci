@@ -23,7 +23,7 @@ jobs:
       ROLLKIT_IMAGE_TAG: "latest"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -67,7 +67,7 @@ jobs:
       gmd_home: ${{ steps.paths.outputs.GMD_HOME }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
