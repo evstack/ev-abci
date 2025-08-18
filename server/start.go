@@ -343,13 +343,13 @@ func setupNodeAndExecutor(
 	)
 
 	// determine the genesis source: rollkit genesis or app genesis
-	migrationGenesis, err := loadRollkitMigrationGenesis(cfg.RootDir)
+	migrationGenesis, err := loadEvolveMigrationGenesis(cfg.RootDir)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
 
 	if migrationGenesis != nil {
-		rollkitGenesis = migrationGenesis.ToRollkitGenesis()
+		rollkitGenesis = migrationGenesis.ToEVGenesis()
 
 		sdkLogger.Info("using rollkit migration genesis",
 			"chain_id", migrationGenesis.ChainID,
@@ -678,25 +678,25 @@ func initProxyApp(clientCreator proxy.ClientCreator, logger log.Logger, metrics 
 	return proxyApp, nil
 }
 
-const rollkitGenesisFilename = "ev_genesis.json"
+const evolveGenesisFilename = "ev_genesis.json"
 
-// loadRollkitMigrationGenesis loads a minimal rollkit genesis from a migration genesis file.
+// loadEvolveMigrationGenesis loads a minimal evolve genesis from a migration genesis file.
 // Returns nil if no migration genesis is found (normal startup scenario).
-func loadRollkitMigrationGenesis(rootDir string) (*rollkitMigrationGenesis, error) {
-	genesisPath := filepath.Join(rootDir, rollkitGenesisFilename)
+func loadEvolveMigrationGenesis(rootDir string) (*evolveMigrationGenesis, error) {
+	genesisPath := filepath.Join(rootDir, evolveGenesisFilename)
 	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
 		return nil, nil // no migration genesis found
 	}
 
 	genesisBytes, err := os.ReadFile(genesisPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read rollkit migration genesis: %w", err)
+		return nil, fmt.Errorf("failed to read evolve migration genesis: %w", err)
 	}
 
-	var migrationGenesis rollkitMigrationGenesis
+	var migrationGenesis evolveMigrationGenesis
 	// using cmtjson for unmarshalling to ensure compatibility with cometbft genesis format
 	if err := cmtjson.Unmarshal(genesisBytes, &migrationGenesis); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal rollkit migration genesis: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal evolve migration genesis: %w", err)
 	}
 
 	return &migrationGenesis, nil
