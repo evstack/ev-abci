@@ -10,7 +10,7 @@ import (
 	"github.com/evstack/ev-abci/modules/migrationmngr/types"
 )
 
-func TestMigrateToRollkit_AuthorityError(t *testing.T) {
+func TestMigrateToEvolve_AuthorityError(t *testing.T) {
 	s := initFixture(t)
 	msg := &types.MsgMigrateToEvolve{Authority: "bad"}
 	_, err := s.msgServer.MigrateToEvolve(s.ctx, msg)
@@ -18,7 +18,7 @@ func TestMigrateToRollkit_AuthorityError(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid authority")
 }
 
-func TestMigrateToRollkit_BlockHeightError(t *testing.T) {
+func TestMigrateToEvolve_BlockHeightError(t *testing.T) {
 	s := initFixture(t)
 	auth := sdk.AccAddress(address.Module(types.ModuleName)).String()
 	msg := &types.MsgMigrateToEvolve{Authority: auth, BlockHeight: 1}
@@ -28,7 +28,7 @@ func TestMigrateToRollkit_BlockHeightError(t *testing.T) {
 	require.Contains(t, err.Error(), "block height")
 }
 
-func TestMigrateToRollkit_Success(t *testing.T) {
+func TestMigrateToEvolve_Success(t *testing.T) {
 	s := initFixture(t)
 	auth := sdk.AccAddress(address.Module(types.ModuleName)).String()
 	msg := &types.MsgMigrateToEvolve{Authority: auth, BlockHeight: 10}
