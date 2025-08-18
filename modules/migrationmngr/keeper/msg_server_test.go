@@ -5,8 +5,9 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/address"
-	"github.com/evstack/ev-abci/modules/migrationmngr/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/evstack/ev-abci/modules/migrationmngr/types"
 )
 
 func TestMigrateToRollkit_AuthorityError(t *testing.T) {
