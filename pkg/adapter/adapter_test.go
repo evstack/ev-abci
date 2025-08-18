@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rollkit/rollkit/types"
+	"github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/pkg/cometcompat"
 	execstore "github.com/evstack/ev-abci/pkg/store"

@@ -33,10 +33,10 @@ import (
 	ktds "github.com/ipfs/go-datastore/keytransform"
 	"github.com/spf13/cobra"
 
-	rollkitnode "github.com/rollkit/rollkit/node"
-	rollkitgenesis "github.com/rollkit/rollkit/pkg/genesis"
-	rollkitstore "github.com/rollkit/rollkit/pkg/store"
-	rollkittypes "github.com/rollkit/rollkit/types"
+	rollkitnode "github.com/evstack/ev-node/node"
+	rollkitgenesis "github.com/evstack/ev-node/pkg/genesis"
+	rollkitstore "github.com/evstack/ev-node/pkg/store"
+	rollkittypes "github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/modules/rollkitmngr"
 	rollkitmngrtypes "github.com/evstack/ev-abci/modules/rollkitmngr/types"

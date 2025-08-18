@@ -97,7 +97,7 @@ jobs:
         run: |
           cd gm
           # start the local da in the background
-          go tool github.com/rollkit/rollkit/da/cmd/local-da &
+          go tool github.com/evstack/ev-node/da/cmd/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start
@@ -112,8 +112,8 @@ jobs:
           # enter the gm directory
           cd gm
 
-          # replace the github.com/rollkit/rollkit module with tagged version
-          go mod edit -replace github.com/rollkit/rollkit=github.com/rollkit/rollkit@$ROLLKIT_VERSION
+          # replace the github.com/evstack/ev-node module with tagged version
+          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$ROLLKIT_VERSION
 
           # replace the github.com/evstack/ev-abci module with the local version
           go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
@@ -308,7 +308,7 @@ jobs:
 
       - name: Start Local DA
         run: |
-          go install github.com/rollkit/rollkit/da/cmd/local-da@$ROLLKIT_DA_VERSION
+          go install github.com/evstack/ev-node/da/cmd/local-da@$ROLLKIT_DA_VERSION
           # start the local da in the background
           local-da &
           # capture the background process PID

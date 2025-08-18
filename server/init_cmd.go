@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	rollconf "github.com/rollkit/rollkit/pkg/config"
+	rollconf "github.com/evstack/ev-node/pkg/config"
 )
 
 // InitCmd is meant to be used for initializing the rollkit config.

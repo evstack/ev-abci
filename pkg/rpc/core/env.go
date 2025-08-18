@@ -8,7 +8,7 @@ import (
 	"github.com/cometbft/cometbft/state/indexer"
 	"github.com/cometbft/cometbft/state/txindex"
 
-	"github.com/rollkit/rollkit/pkg/signer"
+	"github.com/evstack/ev-node/pkg/signer"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
 )

@@ -12,7 +12,7 @@ import (
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	rlktypes "github.com/rollkit/rollkit/types"
+	rlktypes "github.com/evstack/ev-node/types"
 )
 
 // Tx allows you to query the transaction results. `nil` could mean the

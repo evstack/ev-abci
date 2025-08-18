@@ -24,7 +24,7 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/rollkit@${IGNITE_ROLLKIT_APP_VERSION} && \
     ignite rollkit add
 
-RUN go mod edit -replace github.com/rollkit/rollkit=github.com/rollkit/rollkit@${ROLLKIT_VERSION} && \
+RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${ROLLKIT_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy
 

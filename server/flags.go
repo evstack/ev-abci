@@ -3,7 +3,7 @@ package server
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/rollkit/rollkit/pkg/config"
+	"github.com/evstack/ev-node/pkg/config"
 )
 
 const FlagNetworkSoftConfirmation = "rollkit.network.soft-confirmation"

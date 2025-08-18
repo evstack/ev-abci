@@ -96,7 +96,7 @@ index 310b195..19abe36 100644
 
 -	"gm/app"
 +	abciserver "github.com/evstack/ev-abci/server"
-+	rollconf "github.com/rollkit/rollkit/pkg/config"
++	rollconf "github.com/evstack/ev-node/pkg/config"
  )
 
  func initRootCmd(

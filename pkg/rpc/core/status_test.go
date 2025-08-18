@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	rollkitmocks "github.com/rollkit/rollkit/test/mocks"
-	rlktypes "github.com/rollkit/rollkit/types"
+	rollkitmocks "github.com/evstack/ev-node/test/mocks"
+	rlktypes "github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
 )

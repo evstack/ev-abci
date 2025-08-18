@@ -6,7 +6,7 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	"github.com/rollkit/rollkit/types"
+	"github.com/evstack/ev-node/types"
 
 	abciexecstore "github.com/evstack/ev-abci/pkg/store"
 )
