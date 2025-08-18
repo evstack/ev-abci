@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wallet"
 	"github.com/cometbft/cometbft/crypto"
@@ -14,8 +17,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	"go.uber.org/zap/zaptest"
-	"os"
-	"testing"
 
 	"cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -185,12 +186,12 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 		Build(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to build rollkit chain: %w", err)
+		return nil, fmt.Errorf("failed to build evolve chain: %w", err)
 	}
 
 	err = rollkitChain.Start(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to start rollkit chain: %w", err)
+		return nil, fmt.Errorf("failed to start evolve chain: %w", err)
 	}
 
 	return rollkitChain, nil
@@ -394,7 +395,7 @@ func AddSingleSequencer(ctx context.Context, node *docker.ChainNode) error {
 	}
 	consensus["validators"] = []map[string]interface{}{
 		{
-			"name":    "Rollkit Sequencer",
+			"name":    "Ev Node Sequencer",
 			"address": pubKey.Address(),
 			"pub_key": map[string]interface{}{
 				"type":  "tendermint/PubKeyEd25519",

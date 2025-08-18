@@ -60,7 +60,7 @@ func (f *NetworkSoftConfirmationBlockFilter) IsPublishable(ctx context.Context, 
 
 	// Query soft confirmation status
 	softConfirmReq := &abci.RequestQuery{
-		Path: "/rollkitsdk.network.v1.Query/SoftConfirmationStatus",
+		Path: "/evabci.network.v1.Query/SoftConfirmationStatus",
 		Data: reqData,
 	}
 
