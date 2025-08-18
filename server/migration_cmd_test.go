@@ -12,7 +12,7 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/stretchr/testify/require"
 
-	rollkittypes "github.com/rollkit/rollkit/types"
+	rollkittypes "github.com/evstack/ev-node/types"
 )
 
 func TestCometBlockToRollkit(t *testing.T) {

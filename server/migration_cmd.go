@@ -33,14 +33,14 @@ import (
 	ktds "github.com/ipfs/go-datastore/keytransform"
 	"github.com/spf13/cobra"
 
-	rollkitnode "github.com/rollkit/rollkit/node"
-	rollkitgenesis "github.com/rollkit/rollkit/pkg/genesis"
-	rollkitstore "github.com/rollkit/rollkit/pkg/store"
-	rollkittypes "github.com/rollkit/rollkit/types"
+	rollkitnode "github.com/evstack/ev-node/node"
+	rollkitgenesis "github.com/evstack/ev-node/pkg/genesis"
+	rollkitstore "github.com/evstack/ev-node/pkg/store"
+	rollkittypes "github.com/evstack/ev-node/types"
 
-	"github.com/rollkit/go-execution-abci/modules/rollkitmngr"
-	rollkitmngrtypes "github.com/rollkit/go-execution-abci/modules/rollkitmngr/types"
-	execstore "github.com/rollkit/go-execution-abci/pkg/store"
+	"github.com/evstack/ev-abci/modules/rollkitmngr"
+	rollkitmngrtypes "github.com/evstack/ev-abci/modules/rollkitmngr/types"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 var (
@@ -69,19 +69,19 @@ func (g rollkitMigrationGenesis) ToRollkitGenesis() *rollkitgenesis.Genesis {
 	return &genesis
 }
 
-// MigrateToRollkitCmd returns a command that migrates the data from the CometBFT chain to Rollkit.
-func MigrateToRollkitCmd() *cobra.Command {
+// MigrateToEvolveCmd returns a command that migrates the data from the CometBFT chain to Evolve.
+func MigrateToEvolveCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "rollkit-migrate",
-		Short: "Migrate the data from the CometBFT chain to Rollkit",
-		Long: `Migrate the data from the CometBFT chain to Rollkit. This command should be used to migrate nodes or the sequencer.
+		Use:   "evolve-migrate",
+		Short: "Migrate the data from the CometBFT chain to Evolve",
+		Long: `Migrate the data from the CometBFT chain to Evolve. This command should be used to migrate nodes or the sequencer.
 
 This command will:
-1. Migrate all blocks from the CometBFT blockstore to the Rollkit store
-2. Convert the CometBFT state to Rollkit state format
-3. Create a minimal rollkit_genesis.json file for subsequent startups
+1. Migrate all blocks from the CometBFT blockstore to the Evolve store
+2. Convert the CometBFT state to Evolve state format
+3. Create a minimal evolve_genesis.json file for subsequent startups
 
-After migration, start the node normally - it will automatically detect and use the rollkit_genesis.json file.`,
+After migration, start the node normally - it will automatically detect and use the ev_genesis.json.json file.`,
 		Args: cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -125,17 +125,17 @@ After migration, start the node normally - it will automatically detect and use 
 			}
 
 			if err = rollkitStores.rollkitStore.UpdateState(ctx, rollkitState); err != nil {
-				return fmt.Errorf("failed to update Rollkit state: %w", err)
+				return fmt.Errorf("failed to update evolve state: %w", err)
 			}
 
 			// create minimal rollkit genesis file for future startups
 			if err := createRollkitMigrationGenesis(config.RootDir, cometBFTstate); err != nil {
-				return fmt.Errorf("failed to create rollkit migration genesis: %w", err)
+				return fmt.Errorf("failed to create evolve migration genesis: %w", err)
 			}
 
-			cmd.Println("Created rollkit_genesis.json for migration - the node will use this on subsequent startups")
+			cmd.Println("Created ev_genesis.json.json for migration - the node will use this on subsequent startups")
 
-			// migrate all the blocks from the CometBFT block store to the rollkit store
+			// migrate all the blocks from the CometBFT block store to the evolve store
 			// the migration is done in reverse order, starting from the last block
 			missedBlocks := make(map[int64]bool)
 			initSyncStores := true
@@ -177,7 +177,7 @@ After migration, start the node normally - it will automatically detect and use 
 				// Only save extended commit info if vote extensions are enabled
 				if enabled := cometBFTstate.ConsensusParams.ABCI.VoteExtensionsEnabled(block.Height); enabled {
 					cmd.Printf("⚠️⚠️⚠️ Vote extensions were enabled at height %d ⚠️⚠️⚠️\n", block.Height)
-					cmd.Println("⚠️⚠️⚠️ Vote extensions have no effect when using Rollkit ⚠️⚠️⚠️")
+					cmd.Println("⚠️⚠️⚠️ Vote extensions have no effect when using Evolve ⚠️⚠️⚠️")
 					cmd.Println("⚠️⚠️⚠️ Please consult the docs ⚠️⚠️⚠️")
 				}
 
@@ -186,7 +186,7 @@ After migration, start the node normally - it will automatically detect and use 
 
 			// set the last height in the Rollkit store
 			if err = rollkitStores.rollkitStore.SetHeight(ctx, uint64(lastBlockHeight)); err != nil {
-				return fmt.Errorf("failed to set last height in Rollkit store: %w", err)
+				return fmt.Errorf("failed to set last height in Evolve store: %w", err)
 			}
 
 			cmd.Println("Migration completed successfully")
@@ -194,7 +194,7 @@ After migration, start the node normally - it will automatically detect and use 
 		},
 	}
 
-	cmd.Flags().Uint64(flagDaHeight, 1, "The DA height to set in the Rollkit state. Defaults to 1.")
+	cmd.Flags().Uint64(flagDaHeight, 1, "The DA height to set in the Evolve state. Defaults to 1.")
 
 	return cmd
 }
@@ -292,13 +292,13 @@ type rollkitStores struct {
 }
 
 func loadRollkitStores(rootDir string) (rollkitStores, error) {
-	store, err := rollkitstore.NewDefaultKVStore(rootDir, "data", "rollkit")
+	store, err := rollkitstore.NewDefaultKVStore(rootDir, "data", "evolve")
 	if err != nil {
 		return rollkitStores{}, fmt.Errorf("failed to create rollkit store: %w", err)
 	}
 
 	rollkitPrefixStore := ktds.Wrap(store, &ktds.PrefixTransform{
-		Prefix: ds.NewKey(rollkitnode.RollkitPrefix),
+		Prefix: ds.NewKey(rollkitnode.EvPrefix),
 	})
 
 	ds, err := goheaderstore.NewStore[*rollkittypes.Data](

@@ -10,7 +10,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
-	rollkittypes "github.com/rollkit/rollkit/types"
+	rollkittypes "github.com/evstack/ev-node/types"
 )
 
 // ValidatorHasher returns a function that calculates the ValidatorHash
