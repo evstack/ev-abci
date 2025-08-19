@@ -267,7 +267,7 @@ jobs:
       HERMES_VERSION: "v1.13.1"
       CEL_VERSION: "v4.0.3-arabica"
       EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
-      ROLLKIT_DA_VERSION: "v1.0.0-beta.1"
+      EVNODE_DA_VERSION: "v1.0.0-beta.1"
     steps:
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -307,7 +307,7 @@ jobs:
 
       - name: Start Local DA
         run: |
-          go install github.com/evstack/ev-node/da/cmd/local-da@$ROLLKIT_DA_VERSION
+          go install github.com/rollkit/rollkit/da/cmd/local-da@$EVNODE_DA_VERSION # TODO rename after tag and replaces gone
           # start the local da in the background
           local-da &
           # capture the background process PID
