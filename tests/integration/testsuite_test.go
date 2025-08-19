@@ -210,40 +210,10 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *doc
 	aggregatorPeer := s.GetNodeMultiAddr(ctx, evolveChain.GetNode())
 	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
 
-	// Add follower nodes
 	s.T().Logf("Adding first follower node...")
-	err = evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
-		WithAdditionalStartArgs(
-			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
-			"--evnode.da.auth_token", authToken,
-			"--evnode.rpc.address", "0.0.0.0:7331",
-			"--evnode.da.header_namespace", "ev-header",
-			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", daStartHeight,
-			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
-			"--log_level", "*:info",
-		).
-		Build())
-	s.Require().NoError(err)
-
+	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight)
 	s.T().Logf("Adding second follower node...")
-	err = evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
-		WithAdditionalStartArgs(
-			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
-			"--evnode.da.auth_token", authToken,
-			"--evnode.rpc.address", "0.0.0.0:7331",
-			"--evnode.da.header_namespace", "ev-header",
-			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", daStartHeight,
-			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
-			"--log_level", "*:info",
-		).
-		Build())
-	s.Require().NoError(err)
+	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight)
 
 	return evolveChain
 }
@@ -276,6 +246,25 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node 
 	multiAddr := fmt.Sprintf("/ip4/%s/tcp/36656/p2p/%s", nodeIP, peerID.String())
 
 	return multiAddr
+}
+
+// addFollowerNode adds a follower node to the evolve chain.
+func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *docker.Chain, daAddress, authToken, daStartHeight string) {
+	err := evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
+		WithAdditionalStartArgs(
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.header_namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--evnode.da.start_height", daStartHeight,
+			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
+			"--log_level", "*:info",
+		).
+		Build())
+	s.Require().NoError(err)
 }
 
 // getGenesisHash retrieves the genesis hash from the celestia chain
