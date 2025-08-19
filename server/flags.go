@@ -8,7 +8,7 @@ import (
 
 const FlagNetworkSoftConfirmation = config.FlagPrefixEvnode + "network.soft-confirmation"
 
-// AddFlags adds Rollkit specific configuration options to cobra Command.
+// AddFlags adds Evolve specific configuration options to cobra Command.
 func AddFlags(cmd *cobra.Command) {
 	// Add ev-node flags
 	config.AddFlags(cmd)

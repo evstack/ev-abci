@@ -140,8 +140,8 @@ func CreateDANetwork(ctx context.Context, t *testing.T, dockerClient *client.Cli
 	return daNetwork, bridgeNode, nil
 }
 
-// CreateRollkitChain sets up the rollkit chain connected to the DA network
-func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.Client, networkID string, bridgeNode types.DANode) (*docker.Chain, error) {
+// CreateEvolveChain sets up the evolve chain connected to the DA network
+func CreateEvolveChain(ctx context.Context, t *testing.T, dockerClient *client.Client, networkID string, bridgeNode types.DANode) (*docker.Chain, error) {
 	// Get DA connection details
 	authToken, err := bridgeNode.GetAuthToken()
 	if err != nil {
@@ -160,7 +160,7 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 	rollkitChain, err := docker.NewChainBuilder(t).
 		WithEncodingConfig(&testEncCfg).
-		WithImage(getRollkitAppContainer()).
+		WithImage(getEvolveAppContainer()).
 		WithDenom(denom).
 		WithDockerClient(dockerClient).
 		WithName("rollkit").
@@ -171,7 +171,7 @@ func CreateRollkitChain(ctx context.Context, t *testing.T, dockerClient *client.
 		// explicitly set 0 gas so that we can make exact assertions when sending balances.
 		WithGasPrices(fmt.Sprintf("0.00%s", denom)).
 		WithNode(docker.NewChainNodeConfigBuilder().
-			// Create aggregator node with rollkit-specific start arguments
+			// Create aggregator node with evolve-specific start arguments
 			WithAdditionalStartArgs(
 				"--rollkit.node.aggregator",
 				"--rollkit.signer.passphrase", "12345678",
@@ -323,17 +323,17 @@ func TestLivenessWithCelestiaDA(t *testing.T) {
 
 	t.Log("Bridge node started")
 
-	rollkitChain, err := CreateRollkitChain(ctx, t, dockerClient, networkID, bridgeNode)
+	rollkitChain, err := CreateEvolveChain(ctx, t, dockerClient, networkID, bridgeNode)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		if err := rollkitChain.Stop(ctx); err != nil {
-			t.Logf("failed to stop rollkit chain: %v", err)
+			t.Logf("failed to stop evolve chain: %v", err)
 		}
 	})
 
-	t.Log("Rollkit chain started")
+	t.Log("Evolve chain started")
 
-	// Test block production - wait for rollkit chain to produce blocks
+	// Test block production - wait for evolve chain to produce blocks
 	t.Log("Testing block production...")
 	require.NoError(t, wait.ForBlocks(ctx, 5, rollkitChain))
 
@@ -355,16 +355,16 @@ func getPubKey(ctx context.Context, chainNode *docker.ChainNode) (crypto.PubKey,
 	return pvKey.PubKey, nil
 }
 
-// getRollkitAppContainer returns the rollkit app container image.
-// uses the ROLLKIT_IMAGE_REPO and ROLLKIT_IMAGE_TAG environment variables.
-func getRollkitAppContainer() container.Image {
+// getEvolveAppContainer returns the evolve app container image.
+// uses the EVOLVE_IMAGE_REPO and EVOLVE_IMAGE_TAG environment variables.
+func getEvolveAppContainer() container.Image {
 	// get image repo and tag from environment variables
-	imageRepo := os.Getenv("ROLLKIT_IMAGE_REPO")
+	imageRepo := os.Getenv("EVOLVE_IMAGE_REPO")
 	if imageRepo == "" {
-		imageRepo = "rollkit-gm" // fallback default
+		imageRepo = "evolve-gm" // fallback default
 	}
 
-	imageTag := os.Getenv("ROLLKIT_IMAGE_TAG")
+	imageTag := os.Getenv("EVOLVE_IMAGE_TAG")
 	if imageTag == "" {
 		imageTag = "latest" // fallback default
 	}

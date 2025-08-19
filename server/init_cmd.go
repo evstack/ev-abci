@@ -8,11 +8,11 @@ import (
 	rollconf "github.com/evstack/ev-node/pkg/config"
 )
 
-// InitCmd is meant to be used for initializing the rollkit config.
+// InitCmd is meant to be used for initializing the Evolve config.
 func InitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize rollkit configuration files.",
+		Short: "Initialize Evolve configuration files.",
 		Args:  cobra.NoArgs,
 		RunE:  InitRunE,
 	}
@@ -41,7 +41,7 @@ func InitRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := cfg.SaveAsYaml(); err != nil {
-		return fmt.Errorf("error writing rollkit.yaml file: %w", err)
+		return fmt.Errorf("error writing evnode.yaml file: %w", err)
 	}
 
 	return nil

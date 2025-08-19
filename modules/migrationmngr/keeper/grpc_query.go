@@ -41,7 +41,7 @@ func (q queryServer) Attesters(ctx context.Context, _ *types.QueryAttestersReque
 	}, nil
 }
 
-// IsMigrating checks if the migration to Rollkit is in progress.
+// IsMigrating checks if the migration to Evolve is in progress.
 func (q queryServer) IsMigrating(ctx context.Context, _ *types.QueryIsMigratingRequest) (*types.QueryIsMigratingResponse, error) {
 	start, end, isMigrating := q.Keeper.IsMigrating(ctx)
 
