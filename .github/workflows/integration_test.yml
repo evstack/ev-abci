@@ -300,7 +300,6 @@ jobs:
           gaiad genesis collect-gentxs
           gaiad config set app minimum-gas-prices 0.025uatom
           gaiad config set app grpc.enable true
-          gaiad config set app api.enable true
           gaiad start --rpc.laddr tcp://0.0.0.0:26654 --rpc.pprof_laddr localhost:6061 --p2p.laddr tcp://0.0.0.0:26653 --grpc.address 0.0.0.0:9091 --log_format=json > cosmos.log 2>&1 &
           echo "COSMOS_PID=$!" >> $GITHUB_ENV
           sleep 5
