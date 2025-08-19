@@ -160,7 +160,6 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *doc
 	s.Require().NoError(err)
 
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
-	namespace := generateValidNamespace()
 
 	celestiaHeight, err := s.celestiaChain.Height(ctx)
 	s.Require().NoError(err)
@@ -185,18 +184,18 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *doc
 			docker.NewChainNodeConfigBuilder().
 				// Create aggregator node with rollkit-specific start arguments
 				WithAdditionalStartArgs(
-					"--rollkit.node.aggregator",
-					"--rollkit.signer.passphrase", "12345678",
-					"--rollkit.da.address", daAddress,
-					"--rollkit.da.gas_price", "0.000001",
-					"--rollkit.da.auth_token", authToken,
-					"--rollkit.rpc.address", "0.0.0.0:7331",
-					"--rollkit.da.namespace", namespace,
-					"--rollkit.da.start_height", daStartHeight,
-					"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+					"--evnode.node.aggregator",
+					"--evnode.signer.passphrase", "12345678",
+					"--evnode.da.address", daAddress,
+					"--evnode.da.gas_price", "0.000001",
+					"--evnode.da.auth_token", authToken,
+					"--evnode.rpc.address", "0.0.0.0:7331",
+					"--evnode.da.header_namespace", "ev-header",
+					"--evnode.da.data_namespace", "ev-data",
+					"--evnode.da.start_height", daStartHeight,
+					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 					"--log_level", "*:info",
 				).
-				WithGenTX(true).
 				WithPostInit(addSingleSequencer).
 				Build(),
 		).
@@ -215,34 +214,34 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *doc
 	s.T().Logf("Adding first follower node...")
 	err = evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
-			"--rollkit.da.address", daAddress,
-			"--rollkit.da.gas_price", "0.000001",
-			"--rollkit.da.auth_token", authToken,
-			"--rollkit.rpc.address", "0.0.0.0:7331",
-			"--rollkit.da.namespace", namespace,
-			"--rollkit.da.start_height", daStartHeight,
-			"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			//"--rollkit.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.header_namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--evnode.da.start_height", daStartHeight,
+			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
 			"--log_level", "*:info",
 		).
-		WithGenTX(false).
 		Build())
 	s.Require().NoError(err)
 
 	s.T().Logf("Adding second follower node...")
 	err = evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
-			"--rollkit.da.address", daAddress,
-			"--rollkit.da.gas_price", "0.000001",
-			"--rollkit.da.auth_token", authToken,
-			"--rollkit.rpc.address", "0.0.0.0:7331",
-			"--rollkit.da.namespace", namespace,
-			"--rollkit.da.start_height", daStartHeight,
-			"--rollkit.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			//"--rollkit.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.header_namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--evnode.da.start_height", daStartHeight,
+			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
 			"--log_level", "*:info",
 		).
-		WithGenTX(false).
 		Build())
 	s.Require().NoError(err)
 
