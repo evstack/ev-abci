@@ -423,7 +423,7 @@ jobs:
         run: |
           ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
           COSMOS_ADDR=$(gaiad keys show validator -a --keyring-backend test)
-          gaiad tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100stake --from validator --node http://localhost:26654 --fees 1stake --keyring-backend test -y
+          gaiad tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100stake --from validator --node http://localhost:26654 --fees 200000stake --keyring-backend test -y
 
           # Wait for IBC transfer to complete with retry logic
           echo "Waiting for IBC transfer to complete..."
