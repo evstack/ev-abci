@@ -318,7 +318,7 @@ func (a *Adapter) ExecuteTxs(
 
 	header, ok := types.HeaderFromContext(ctx)
 	if !ok {
-		return nil, 0, fmt.Errorf("rollkit header not found in context")
+		return nil, 0, fmt.Errorf("ev-node header not found in context")
 	}
 
 	lastCommit, err := a.GetLastCommit(ctx, blockHeight)

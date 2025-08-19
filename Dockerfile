@@ -7,9 +7,9 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV ROLLKIT_VERSION=v1.0.0-beta.2
+ENV EVNODE_VERSION=v1.0.0-beta.2.0.20250818133040-d096a24e7052
 ENV IGNITE_VERSION=v29.3.1
-ENV IGNITE_ROLLKIT_APP_VERSION=rollkit/v0.3.0
+ENV IGNITE_EVOLVE_APP_VERSION=main
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
@@ -21,10 +21,10 @@ RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 
 WORKDIR /workspace/gm
 
-RUN ignite app install github.com/ignite/apps/rollkit@${IGNITE_ROLLKIT_APP_VERSION} && \
-    ignite rollkit add
+RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
+    ignite evolve add
 
-RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${ROLLKIT_VERSION} && \
+RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy
 
