@@ -48,7 +48,7 @@ jobs:
       - name: Run Liveness Test
         run: |
           cd tests/integration
-          go test -v -run TestLivenessWithCelestiaDA -timeout 30m
+          go test -v -run TestDockerIntegrationTestSuite/TestLivenessWithCelestiaDA -timeout 30m
         env:
           EVOLVE_IMAGE_REPO: ${{ env.EVOLVE_IMAGE_REPO }}
           EVOLVE_IMAGE_TAG: ${{ env.EVOLVE_IMAGE_TAG }}
