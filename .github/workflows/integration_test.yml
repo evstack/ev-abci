@@ -291,14 +291,14 @@ jobs:
 
       - name: Start Cosmos Hub Chain
         run: |
-          gaiad init cosmos-local --chain-id cosmos-local --default-denom uatom
+          gaiad init cosmos-local --chain-id cosmos-local
           echo "$CAROL_MNEMONIC" | gaiad keys add validator \
             --keyring-backend test \
             --recover > /dev/null 2>&1
-          gaiad genesis add-genesis-account $(gaiad keys show validator -a --keyring-backend test) 1000000000uatom
-          gaiad genesis gentx validator 100000000uatom --fees 1uatom --chain-id cosmos-local --keyring-backend test
+          gaiad genesis add-genesis-account $(gaiad keys show validator -a --keyring-backend test) 1000000000stake
+          gaiad genesis gentx validator 100000000stake --fees 1stake --chain-id cosmos-local --keyring-backend test
           gaiad genesis collect-gentxs
-          gaiad config set app minimum-gas-prices 0.025uatom
+          gaiad config set app minimum-gas-prices 0.025stake
           gaiad config set app grpc.enable true
           gaiad start --rpc.laddr tcp://0.0.0.0:26654 --rpc.pprof_laddr localhost:6061 --p2p.laddr tcp://0.0.0.0:26653 --grpc.address 0.0.0.0:9091 --log_format=json > cosmos.log 2>&1 &
           echo "COSMOS_PID=$!" >> $GITHUB_ENV
@@ -352,7 +352,7 @@ jobs:
           store_prefix = "ibc"
           account_prefix = "cosmos"
           key_name = "validator"
-          gas_price = { price = 0.025, denom = "uatom" }
+          gas_price = { price = 0.025, denom = "stake" }
           gas_multiplier = 1.2
           rpc_timeout = "10s"
           trusting_period = "503h"
@@ -423,7 +423,7 @@ jobs:
         run: |
           ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
           COSMOS_ADDR=$(gaiad keys show validator -a --keyring-backend test)
-          gaiad tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100uatom --from validator --node http://localhost:26654 --fees 1uatom --keyring-backend test -y
+          gaiad tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100stake --from validator --node http://localhost:26654 --fees 1stake --keyring-backend test -y
 
           # Wait for IBC transfer to complete with retry logic
           echo "Waiting for IBC transfer to complete..."
