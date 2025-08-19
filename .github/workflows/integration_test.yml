@@ -256,7 +256,7 @@ jobs:
           fi
 
   ibc:
-    name: Test IBC Connection Ev-ABCI <-> Celestia
+    name: Test IBC Connection Ev-ABCI <-> Cosmos Hub
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: liveness
@@ -265,7 +265,7 @@ jobs:
       CAROL_MNEMONIC: ${{ needs.liveness.outputs.carol_mnemonic }}
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
-      CEL_VERSION: "v5.0.2"
+      GAIA_VERSION: "v25.1.0"
       EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
       EVNODE_DA_VERSION: "v1.0.0-beta.1"
     steps:
@@ -277,11 +277,11 @@ jobs:
       - name: Download gm Binary and gmd Home Directory
         uses: actions/download-artifact@v4 # keep v4.
 
-      - name: Download Celestia App Binary
+      - name: Download Gaia Binary
         run: |
-          wget https://github.com/celestiaorg/celestia-app/releases/download/${CEL_VERSION}/celestia-app-standalone_Linux_x86_64.tar.gz
-          tar -xzf celestia-app-standalone_Linux_x86_64.tar.gz
-          sudo mv celestia-appd /usr/local/bin/celestia-appd
+          wget https://github.com/cosmos/gaia/releases/download/${GAIA_VERSION}/gaiad-${GAIA_VERSION}-linux-amd64
+          chmod +x gaiad-${GAIA_VERSION}-linux-amd64
+          sudo mv gaiad-${GAIA_VERSION}-linux-amd64 /usr/local/bin/gaiad
 
       - name: Download Hermes Binary
         run: |
@@ -289,20 +289,20 @@ jobs:
           tar -xzf hermes-${HERMES_VERSION}-x86_64-unknown-linux-gnu.tar.gz
           sudo mv hermes /usr/local/bin/hermes
 
-      - name: Start Celestia App Chain
+      - name: Start Cosmos Hub Chain
         run: |
-          celestia-appd init celestia-local --chain-id celestia-local
-          echo "$CAROL_MNEMONIC" | celestia-appd keys add validator \
+          gaiad init cosmos-local --chain-id cosmos-local
+          echo "$CAROL_MNEMONIC" | gaiad keys add validator \
             --keyring-backend test \
             --recover > /dev/null 2>&1
-          celestia-appd genesis add-genesis-account $(celestia-appd keys show validator -a --keyring-backend test) 1000000000utia
-          celestia-appd genesis gentx validator 100000000utia --fees 1utia --chain-id celestia-local --keyring-backend test
-          celestia-appd genesis collect-gentxs
-          celestia-appd config set app grpc.enable true
-          sed -i 's/indexer = "null"/indexer = "kv"/' ~/.celestia-app/config/config.toml # enable tx indexing
-          sed -i 's/discard_abci_responses = true/discard_abci_responses = false/' ~/.celestia-app/config/config.toml # disable discard abci responses
-          celestia-appd start --force-no-bbr --rpc.laddr tcp://0.0.0.0:26654 --rpc.pprof_laddr localhost:6061 --p2p.laddr tcp://0.0.0.0:26653 --grpc.address 0.0.0.0:9091 --log_format=json > celestia.log 2>&1 &
-          echo "CELESTIA_PID=$!" >> $GITHUB_ENV
+          gaiad genesis add-genesis-account $(gaiad keys show validator -a --keyring-backend test) 1000000000uatom
+          gaiad genesis gentx validator 100000000uatom --fees 1uatom --chain-id cosmos-local --keyring-backend test
+          gaiad genesis collect-gentxs
+          gaiad config set app grpc.enable true
+          sed -i 's/indexer = "null"/indexer = "kv"/' ~/.gaia/config/config.toml # enable tx indexing
+          sed -i 's/discard_abci_responses = true/discard_abci_responses = false/' ~/.gaia/config/config.toml # disable discard abci responses
+          gaiad start --rpc.laddr tcp://0.0.0.0:26654 --rpc.pprof_laddr localhost:6061 --p2p.laddr tcp://0.0.0.0:26653 --grpc.address 0.0.0.0:9091 --log_format=json > cosmos.log 2>&1 &
+          echo "COSMOS_PID=$!" >> $GITHUB_ENV
           sleep 5
 
       - name: Start Local DA
@@ -346,14 +346,14 @@ jobs:
             enabled = true
 
           [[chains]]
-          id = "celestia-local"
+          id = "cosmos-local"
           rpc_addr = "http://localhost:26654"
           grpc_addr = "http://localhost:9091"
           event_source = { mode = "pull", interval = "1s", max_retries = 4 }
           store_prefix = "ibc"
-          account_prefix = "celestia"
+          account_prefix = "cosmos"
           key_name = "validator"
-          gas_price = { price = 3.5, denom = "utia" }
+          gas_price = { price = 0.025, denom = "uatom" }
           gas_multiplier = 1.2
           rpc_timeout = "10s"
           trusting_period = "503h"
@@ -378,19 +378,19 @@ jobs:
           tmp=$(mktemp)
           echo "$CAROL_MNEMONIC" > $tmp
           hermes keys add --chain gm --mnemonic-file $tmp
-          hermes keys add --chain celestia-local --mnemonic-file $tmp
+          hermes keys add --chain cosmos-local --mnemonic-file $tmp
           hermes start > hermes.log 2>&1 &
           echo "HERMES_PID=$!" >> $GITHUB_ENV
 
       - name: Create IBC Connection and Channel
         run: |
-          hermes create channel --a-chain gm --a-port transfer --b-chain celestia-local --b-port transfer --order unordered --new-client-connection --yes
+          hermes create channel --a-chain gm --a-port transfer --b-chain cosmos-local --b-port transfer --order unordered --new-client-connection --yes
 
-      - name: ICS20 Transfer Evolve -> Celestia
+      - name: ICS20 Transfer Evolve -> Cosmos Hub
         run: |
           ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
-          CELESTIA_ADDR=$(celestia-appd keys show validator -a --keyring-backend test)
-          ./gmd/go/bin/gmd tx ibc-transfer transfer transfer channel-0 $CELESTIA_ADDR 100stake --from carol -y --home ./gmd/.gm
+          COSMOS_ADDR=$(gaiad keys show validator -a --keyring-backend test)
+          ./gmd/go/bin/gmd tx ibc-transfer transfer transfer channel-0 $COSMOS_ADDR 100stake --from carol -y --home ./gmd/.gm
 
           # Wait for IBC transfer to complete with retry logic
           echo "Waiting for IBC transfer to complete..."
@@ -402,7 +402,7 @@ jobs:
             sleep 3
             ATTEMPT=$((ATTEMPT+1))
 
-            BALANCE=$(celestia-appd query bank balances $CELESTIA_ADDR --output json --node http://localhost:26654 | jq '.balances')
+            BALANCE=$(gaiad query bank balances $COSMOS_ADDR --output json --node http://localhost:26654 | jq '.balances')
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Gm balance: $BALANCE"
 
             # Check if any denom starts with ibc/
@@ -420,11 +420,11 @@ jobs:
             exit 1
           fi
 
-      - name: ICS20 Transfer Celestia -> Evolve
+      - name: ICS20 Transfer Cosmos Hub -> Evolve
         run: |
           ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
-          CELESTIA_ADDR=$(celestia-appd keys show validator -a --keyring-backend test)
-          celestia-appd tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100utia --from validator --node http://localhost:26654 --fees 400utia --keyring-backend test -y
+          COSMOS_ADDR=$(gaiad keys show validator -a --keyring-backend test)
+          gaiad tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100uatom --from validator --node http://localhost:26654 --fees 400uatom --keyring-backend test -y
 
           # Wait for IBC transfer to complete with retry logic
           echo "Waiting for IBC transfer to complete..."
@@ -459,8 +459,8 @@ jobs:
         run: |
           echo '--- chain.log ---'
           cat chain.log || true
-          echo '--- celestia.log ---'
-          cat celestia.log || true
+          echo '--- cosmos.log ---'
+          cat cosmos.log || true
           echo '--- hermes.log ---'
           cat hermes.log || true
 
@@ -470,8 +470,8 @@ jobs:
           if [[ -n "${CHAIN_PID}" ]]; then
             kill -9 $CHAIN_PID || true
           fi
-          if [[ -n "${CELESTIA_PID}" ]]; then
-            kill -9 $CELESTIA_PID || true
+          if [[ -n "${COSMOS_PID}" ]]; then
+            kill -9 $COSMOS_PID || true
           fi
           if [[ -n "${DA_PID}" ]]; then
             kill -9 $DA_PID || true
