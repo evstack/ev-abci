@@ -3,8 +3,8 @@ module github.com/evstack/ev-abci/tests/integration
 go 1.24.1
 
 require (
-	github.com/celestiaorg/go-square/v2 v2.2.0
-	github.com/celestiaorg/tastora v0.2.3-0.20250819132555-866c7cbf3f7c
+	github.com/celestiaorg/go-square/v2 v2.2.0 // indirect
+	github.com/celestiaorg/tastora v0.2.3
 	github.com/moby/moby v27.5.1+incompatible
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
