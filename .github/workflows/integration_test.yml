@@ -301,8 +301,6 @@ jobs:
           gaiad config set app minimum-gas-prices 0.025uatom
           gaiad config set app grpc.enable true
           gaiad config set app api.enable true
-          sed -i 's/indexer = "null"/indexer = "kv"/' ~/.gaia/config/config.toml # enable tx indexing
-          sed -i 's/discard_abci_responses = true/discard_abci_responses = false/' ~/.gaia/config/config.toml # disable discard abci responses
           gaiad start --rpc.laddr tcp://0.0.0.0:26654 --rpc.pprof_laddr localhost:6061 --p2p.laddr tcp://0.0.0.0:26653 --grpc.address 0.0.0.0:9091 --log_format=json > cosmos.log 2>&1 &
           echo "COSMOS_PID=$!" >> $GITHUB_ENV
           sleep 5
@@ -426,7 +424,7 @@ jobs:
         run: |
           ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
           COSMOS_ADDR=$(gaiad keys show validator -a --keyring-backend test)
-          gaiad tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100uatom --from validator --node http://localhost:26654 --fees 400uatom --keyring-backend test -y
+          gaiad tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100uatom --from validator --node http://localhost:26654 --fees 1uatom --keyring-backend test -y
 
           # Wait for IBC transfer to complete with retry logic
           echo "Waiting for IBC transfer to complete..."
