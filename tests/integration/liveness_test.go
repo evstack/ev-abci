@@ -2,14 +2,12 @@ package integration_test
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"os"
 	"testing"
 
 	"cosmossdk.io/math"
-	"github.com/celestiaorg/go-square/v2/share"
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/testutil/wallet"
@@ -27,10 +25,6 @@ const (
 
 func TestDockerIntegrationTestSuite(t *testing.T) {
 	suite.Run(t, new(DockerIntegrationTestSuite))
-}
-
-func generateValidNamespace() string {
-	return hex.EncodeToString(share.RandomBlobNamespace().Bytes())
 }
 
 // queryBankBalance queries the balance of an address using RPC calls.

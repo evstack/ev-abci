@@ -60,23 +60,6 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 	s.T().Log("Evolve chain started")
 }
 
-// TearDownTest cleans up resources after each test
-func (s *DockerIntegrationTestSuite) TearDownTest() {
-	ctx := context.Background()
-
-	if s.evolveChain != nil {
-		if err := s.evolveChain.Stop(ctx); err != nil {
-			s.T().Logf("failed to stop evolve chain: %v", err)
-		}
-	}
-
-	if s.celestiaChain != nil {
-		if err := s.celestiaChain.Stop(ctx); err != nil {
-			s.T().Logf("failed to stop celestia chain: %v", err)
-		}
-	}
-}
-
 // CreateCelestiaChain sets up a Celestia app chain for DA and stores it in the suite
 func (s *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *docker.Chain {
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
