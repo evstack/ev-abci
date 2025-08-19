@@ -265,7 +265,7 @@ jobs:
       CAROL_MNEMONIC: ${{ needs.liveness.outputs.carol_mnemonic }}
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
-      CEL_VERSION: "v5.0.1-arabica"
+      CEL_VERSION: "v5.0.2"
       EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
       EVNODE_DA_VERSION: "v1.0.0-beta.1"
     steps:
@@ -279,8 +279,8 @@ jobs:
 
       - name: Download Celestia App Binary
         run: |
-          wget https://github.com/celestiaorg/celestia-app/releases/download/${CEL_VERSION}/celestia-app_Linux_x86_64.tar.gz
-          tar -xzf celestia-app_Linux_x86_64.tar.gz
+          wget https://github.com/celestiaorg/celestia-app/releases/download/${CEL_VERSION}/celestia-app-standalone_Linux_x86_64.tar.gz
+          tar -xzf celestia-app-standalone_Linux_x86_64.tar.gz
           sudo mv celestia-appd /usr/local/bin/celestia-appd
 
       - name: Download Hermes Binary
