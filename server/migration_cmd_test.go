@@ -12,7 +12,7 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/stretchr/testify/require"
 
-	rollkittypes "github.com/rollkit/rollkit/types"
+	rollkittypes "github.com/evstack/ev-node/types"
 )
 
 func TestCometBlockToRollkit(t *testing.T) {
@@ -227,7 +227,7 @@ func TestRollkitMigrationGenesis(t *testing.T) {
 	validatorSet := cmttypes.NewValidatorSet(validators)
 
 	// create migration genesis
-	genesis := rollkitMigrationGenesis{
+	genesis := evolveMigrationGenesis{
 		ChainID:         chainID,
 		InitialHeight:   uint64(initialHeight),
 		GenesisTime:     blockTime.UnixNano(),
@@ -235,8 +235,8 @@ func TestRollkitMigrationGenesis(t *testing.T) {
 		SequencerPubKey: pubKey,
 	}
 
-	// convert to rollkit genesis
-	rollkitGenesis := genesis.ToRollkitGenesis()
+	// convert to evolve genesis
+	rollkitGenesis := genesis.ToEVGenesis()
 
 	// verify conversion
 	require.NotNil(t, rollkitGenesis)
@@ -425,7 +425,7 @@ func TestMigrationWithSingleValidator(t *testing.T) {
 	require.Equal(t, uint64(50), rollkitState.DAHeight)
 
 	// create migration genesis
-	genesis := rollkitMigrationGenesis{
+	genesis := evolveMigrationGenesis{
 		ChainID:         cometBFTState.ChainID,
 		InitialHeight:   uint64(cometBFTState.InitialHeight),
 		GenesisTime:     cometBFTState.LastBlockTime.UnixNano(),
@@ -439,7 +439,7 @@ func TestMigrationWithSingleValidator(t *testing.T) {
 	require.Equal(t, validator.PubKey, genesis.SequencerPubKey)
 
 	// verify rollkit genesis conversion
-	rollkitGenesis := genesis.ToRollkitGenesis()
+	rollkitGenesis := genesis.ToEVGenesis()
 	require.Equal(t, "test-chain", rollkitGenesis.ChainID)
 	require.Equal(t, validator.Address.Bytes(), rollkitGenesis.ProposerAddress)
 

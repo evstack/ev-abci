@@ -1,4 +1,4 @@
-name: Cosmos SDK to Rollkit Migration Test
+name: Cosmos SDK to Evolve Migration Test
 
 on:
   push:
@@ -8,16 +8,16 @@ on:
 
 jobs:
   migration-test:
-    name: Test Migration from Cosmos SDK to Rollkit
+    name: Test Migration from Cosmos SDK to Evolve
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       DO_NOT_TRACK: true
-      ROLLKIT_VERSION: "v1.0.0-beta.2"
-      IGNITE_VERSION: "v29.2.0"
-      IGNITE_ROLLKIT_APP_VERSION: "rollkit/v0.3.0"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
+      IGNITE_VERSION: "v29.3.1"
+      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -33,7 +33,7 @@ jobs:
 
       - name: Scaffold Standard Cosmos SDK Chain
         run: |
-          # scaffold a new chain without rollkit
+          # scaffold a new chain without evolve
           ignite scaffold chain gm --no-module --skip-git --address-prefix gm
           cd gm
 
@@ -61,14 +61,14 @@ jobs:
           while [ $BLOCKS_FOUND -lt 5 ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             sleep 2
             ATTEMPT=$((ATTEMPT+1))
-            
+
             # check if the chain is still running
             if ! ps -p $COSMOS_PID > /dev/null; then
               echo "Chain process died unexpectedly"
               cat cosmos-chain.log
               exit 1
             fi
-            
+
             # count blocks in log
             BLOCKS_FOUND=$(gmd query block --output json | tail -n +2 | jq -r '.header.height')
             echo "Found $BLOCKS_FOUND blocks so far (attempt $ATTEMPT/$MAX_ATTEMPTS)"
@@ -164,30 +164,30 @@ jobs:
           fi
           echo "Cosmos SDK chain stopped"
 
-      - name: Add Rollkit Wiring to Chain
+      - name: Add Evolve Wiring to Chain
         run: |
           cd gm
 
-          # get the path to the current checkout of go-execution-abci
+          # get the path to the current checkout of ev-abci
           CURRENT_DIR=$(pwd)/..
           GO_EXECUTION_ABCI_DIR=$CURRENT_DIR
 
-          # install rollkit app
-          ignite app install github.com/ignite/apps/rollkit@$IGNITE_ROLLKIT_APP_VERSION
+          # install evolve app
+          ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
 
-          # add rollkit to the chain + wire optional modules
-          ignite rollkit add --migrate
+          # add evolve to the chain + wire optional modules
+          ignite evolve add --migrate
 
-          # replace the github.com/rollkit/rollkit module with tagged version
-          go mod edit -replace github.com/rollkit/rollkit=github.com/rollkit/rollkit@$ROLLKIT_VERSION
+          # replace the github.com/evstack/ev-node module with tagged version
+          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
 
-          # replace the github.com/rollkit/go-execution-abci module with the local version
-          go mod edit -replace github.com/rollkit/go-execution-abci=$GO_EXECUTION_ABCI_DIR
+          # replace the github.com/evstack/ev-abci module with the local version
+          go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
 
           # download dependencies and update go.mod/go.sum
           go mod tidy
 
-          # rebuild the chain with rollkit
+          # rebuild the chain with evolve
           ignite chain build --skip-proto
 
       - name: Migrate Chain Data
@@ -195,32 +195,32 @@ jobs:
           cd gm
 
           echo "Running migration command..."
-          # migrate the chain data from cosmos sdk to rollkit
-          gmd rollkit-migrate --home ~/.gm
+          # migrate the chain data from cosmos sdk to evolve
+          gmd evolve-migrate --home ~/.gm
 
       - name: Start Local DA
         run: |
           cd gm
           # start the local da in the background
-          go tool github.com/rollkit/rollkit/da/cmd/local-da &
+          go tool github.com/evstack/ev-node/da/cmd/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start
           sleep 3
 
-      - name: Start Rollkit Chain After Migration
+      - name: Start Evolve Chain After Migration
         run: |
           cd gm
 
-          echo "Starting Rollkit chain after migration..."
-          # start the rollkit chain
+          echo "Starting Evolve chain after migration..."
+          # start the evolve chain
           gmd start --rollkit.node.aggregator --log_format=json > rollkit-chain.log 2>&1 &
           ROLLKIT_PID=$!
           echo "ROLLKIT_PID=$ROLLKIT_PID" >> $GITHUB_ENV
 
           echo "Waiting for Rollkit chain to start and produce blocks..."
 
-          # wait for rollkit chain to start and produce new blocks
+          # wait for evolve chain to start and produce new blocks
           INITIAL_HEIGHT=$PRE_MIGRATION_HEIGHT
           BLOCKS_FOUND=0
           MAX_ATTEMPTS=60
@@ -229,14 +229,14 @@ jobs:
           while [ $BLOCKS_FOUND -lt 5 ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             sleep 2
             ATTEMPT=$((ATTEMPT+1))
-            
+
             # check if the chain is still running
             if ! ps -p $ROLLKIT_PID > /dev/null; then
-              echo "Rollkit chain process died unexpectedly"
+              echo "Evolve chain process died unexpectedly"
               cat rollkit-chain.log
               exit 1
             fi
-            
+
             # get current block height
             CURRENT_HEIGHT=$(gmd query block --output json | tail -n +2 | jq -r '.header.height')
             BLOCKS_FOUND=$((CURRENT_HEIGHT - INITIAL_HEIGHT))
@@ -249,13 +249,13 @@ jobs:
             exit 1
           fi
 
-          echo "Success! Rollkit chain produced $BLOCKS_FOUND new blocks after migration."
+          echo "Success! Evolve chain produced $BLOCKS_FOUND new blocks after migration."
 
-      - name: Send Transactions on Rollkit Chain
+      - name: Send Transactions on Evolve Chain
         run: |
           cd gm
 
-          echo "Sending transactions on migrated Rollkit chain..."
+          echo "Sending transactions on migrated Evolve chain..."
 
           # get addresses
           BOB_ADDRESS=$(gmd keys show bob -a)
@@ -268,7 +268,7 @@ jobs:
           echo "Bob's balance before: $BOB_BALANCE_BEFORE stake"
           echo "Carol's balance before: $CAROL_BALANCE_BEFORE stake"
 
-          # send transactions on rollkit chain
+          # send transactions on evolve chain
           TX_HASH_4=$(gmd tx bank send $BOB_ADDRESS $CAROL_ADDRESS 4000stake -y --output json | jq -r .txhash)
           sleep 3
           TX_HASH_5=$(gmd tx bank send $CAROL_ADDRESS $BOB_ADDRESS 1000stake -y --output json | jq -r .txhash)
@@ -282,7 +282,7 @@ jobs:
               echo "Error: Transaction $tx_hash failed with code $TX_CODE"
               exit 1
             fi
-            echo "Transaction $tx_hash successful on Rollkit chain"
+            echo "Transaction $tx_hash successful on Evolve chain"
           done
 
           # check final balances
@@ -306,7 +306,7 @@ jobs:
             exit 1
           fi
 
-          echo "✅ All transactions successful on Rollkit chain"
+          echo "✅ All transactions successful on Evolve chain"
 
       - name: Query Old Blocks After Migration
         run: |
@@ -355,7 +355,7 @@ jobs:
       - name: Cleanup Processes
         if: always()
         run: |
-          # kill rollkit chain process if it exists
+          # kill Evolve chain process if it exists
           if [[ -n "${ROLLKIT_PID}" ]]; then
             kill -9 $ROLLKIT_PID || true
           fi

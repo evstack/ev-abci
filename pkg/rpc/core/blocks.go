@@ -12,10 +12,10 @@ import (
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	storepkg "github.com/rollkit/rollkit/pkg/store"
-	rlktypes "github.com/rollkit/rollkit/types"
+	storepkg "github.com/evstack/ev-node/pkg/store"
+	rlktypes "github.com/evstack/ev-node/types"
 
-	"github.com/rollkit/go-execution-abci/pkg/cometcompat"
+	"github.com/evstack/ev-abci/pkg/cometcompat"
 )
 
 // BlockSearch searches for a paginated set of blocks matching BeginBlock and

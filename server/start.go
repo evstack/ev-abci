@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -32,27 +33,28 @@ import (
 	"github.com/cosmos/cosmos-sdk/version"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/hashicorp/go-metrics"
+	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	rollkitblock "github.com/rollkit/rollkit/block"
-	"github.com/rollkit/rollkit/da/jsonrpc"
-	"github.com/rollkit/rollkit/node"
-	"github.com/rollkit/rollkit/pkg/config"
-	"github.com/rollkit/rollkit/pkg/genesis"
-	"github.com/rollkit/rollkit/pkg/p2p"
-	"github.com/rollkit/rollkit/pkg/p2p/key"
-	"github.com/rollkit/rollkit/pkg/signer"
-	"github.com/rollkit/rollkit/pkg/store"
-	"github.com/rollkit/rollkit/sequencers/single"
+	rollkitblock "github.com/evstack/ev-node/block"
+	"github.com/evstack/ev-node/da/jsonrpc"
+	"github.com/evstack/ev-node/node"
+	"github.com/evstack/ev-node/pkg/config"
+	"github.com/evstack/ev-node/pkg/genesis"
+	"github.com/evstack/ev-node/pkg/p2p"
+	"github.com/evstack/ev-node/pkg/p2p/key"
+	"github.com/evstack/ev-node/pkg/signer"
+	"github.com/evstack/ev-node/pkg/store"
+	"github.com/evstack/ev-node/sequencers/single"
 
-	"github.com/rollkit/go-execution-abci/pkg/adapter"
-	"github.com/rollkit/go-execution-abci/pkg/cometcompat"
-	"github.com/rollkit/go-execution-abci/pkg/rpc"
-	"github.com/rollkit/go-execution-abci/pkg/rpc/core"
-	execsigner "github.com/rollkit/go-execution-abci/pkg/signer"
-	execstore "github.com/rollkit/go-execution-abci/pkg/store"
+	"github.com/evstack/ev-abci/pkg/adapter"
+	"github.com/evstack/ev-abci/pkg/cometcompat"
+	"github.com/evstack/ev-abci/pkg/rpc"
+	"github.com/evstack/ev-abci/pkg/rpc/core"
+	execsigner "github.com/evstack/ev-abci/pkg/signer"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 const (
@@ -138,12 +140,12 @@ func startInProcess(svrCtx *server.Context, svrCfg serverconfig.Config, clientCt
 		defer cleanupFn()
 
 		g.Go(func() error {
-			svrCtx.Logger.Info("rollkit node run loop launched in background goroutine")
+			svrCtx.Logger.Info("evolve node run loop launched in background goroutine")
 			err := rollkitNode.Run(ctx)
 			if err == context.Canceled {
-				svrCtx.Logger.Info("rollkit node run loop cancelled by context")
+				svrCtx.Logger.Info("evolve node run loop cancelled by context")
 			} else if err != nil {
-				return fmt.Errorf("rollkit node run failed: %w", err)
+				return fmt.Errorf("evolve node run failed: %w", err)
 			}
 
 			// cancel context to stop all other processes
@@ -301,8 +303,13 @@ func setupNodeAndExecutor(
 	cfg *cmtcfg.Config,
 	app sdktypes.Application,
 ) (rolllkitNode node.Node, executor *adapter.Adapter, cleanupFn func(), err error) {
-	logger := srvCtx.Logger.With("module", "rollkit")
-	logger.Info("starting node with Rollkit in-process")
+	sdkLogger := srvCtx.Logger.With("module", "evolve")
+	sdkLogger.Info("starting node with ev-node in-process")
+
+	evLogger, ok := sdkLogger.Impl().(*zerolog.Logger)
+	if !ok {
+		return nil, nil, cleanupFn, errors.New("failed to cast sdkLogger to zerolog.Logger")
+	}
 
 	pval := pvm.LoadOrGenFilePV(
 		cfg.PrivValidatorKeyFile(),
@@ -335,16 +342,16 @@ func setupNodeAndExecutor(
 		appGenesis     *genutiltypes.AppGenesis
 	)
 
-	// determine the genesis source: rollkit genesis or app genesis
-	migrationGenesis, err := loadRollkitMigrationGenesis(cfg.RootDir)
+	// determine the genesis source: evolve genesis or app genesis
+	migrationGenesis, err := loadEvolveMigrationGenesis(cfg.RootDir)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
 
 	if migrationGenesis != nil {
-		rollkitGenesis = migrationGenesis.ToRollkitGenesis()
+		rollkitGenesis = migrationGenesis.ToEVGenesis()
 
-		logger.Info("using rollkit migration genesis",
+		sdkLogger.Info("using evolve migration genesis",
 			"chain_id", migrationGenesis.ChainID,
 			"initial_height", migrationGenesis.InitialHeight)
 
@@ -364,7 +371,7 @@ func setupNodeAndExecutor(
 			},
 		}
 	} else {
-		// normal scenario: create rollkit genesis from full cometbft genesis
+		// normal scenario: create evolve genesis from full cometbft genesis
 		appGenesis, err = getAppGenesis(cfg)()
 		if err != nil {
 			return nil, nil, cleanupFn, err
@@ -375,13 +382,13 @@ func setupNodeAndExecutor(
 			return nil, nil, cleanupFn, err
 		}
 
-		rollkitGenesis = createRollkitGenesisFromCometBFT(cmtGenDoc)
-		logger.Info("created rollkit genesis from cometbft genesis",
+		rollkitGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc)
+		sdkLogger.Info("created evolve genesis from cometbft genesis",
 			"chain_id", cmtGenDoc.ChainID,
 			"initial_height", cmtGenDoc.InitialHeight)
 	}
 
-	database, err := store.NewDefaultKVStore(cfg.RootDir, "data", "rollkit")
+	database, err := store.NewDefaultKVStore(cfg.RootDir, "data", "evolve")
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -389,7 +396,12 @@ func setupNodeAndExecutor(
 	metrics := node.DefaultMetricsProvider(rollkitcfg.Instrumentation)
 
 	_, p2pMetrics := metrics(rollkitGenesis.ChainID)
-	p2pClient, err := p2p.NewClient(rollkitcfg, nodeKey, database, NewLogAdapter(logger.With("module", "p2p")), p2pMetrics)
+	p2pLogger, ok := sdkLogger.With("module", "p2p").Impl().(*zerolog.Logger)
+	if !ok {
+		return nil, nil, cleanupFn, fmt.Errorf("failed to get p2p logger")
+	}
+
+	p2pClient, err := p2p.NewClient(rollkitcfg.P2P, nodeKey.PrivKey, database, appGenesis.ChainID, *p2pLogger, p2pMetrics)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -409,7 +421,7 @@ func setupNodeAndExecutor(
 		database,
 		p2pClient,
 		p2pMetrics,
-		logger,
+		sdkLogger,
 		cfg,
 		appGenesis,
 		opts...,
@@ -418,7 +430,7 @@ func setupNodeAndExecutor(
 	cmtApp := server.NewCometABCIWrapper(app)
 	clientCreator := proxy.NewLocalClientCreator(cmtApp)
 
-	proxyApp, err := initProxyApp(clientCreator, logger, proxy.NopMetrics())
+	proxyApp, err := initProxyApp(clientCreator, sdkLogger, proxy.NopMetrics())
 	if err != nil {
 		panic(err)
 	}
@@ -431,7 +443,14 @@ func setupNodeAndExecutor(
 	executor.SetMempool(mempool)
 
 	// create the DA client
-	daClient, err := jsonrpc.NewClient(ctx, NewLogAdapter(logger), rollkitcfg.DA.Address, rollkitcfg.DA.AuthToken, rollkitcfg.DA.Namespace)
+	daClient, err := jsonrpc.NewClient(
+		ctx,
+		*evLogger,
+		rollkitcfg.DA.Address,
+		rollkitcfg.DA.AuthToken,
+		rollkitcfg.DA.GasPrice,
+		rollkitcfg.DA.GasMultiplier,
+	)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
 	}
@@ -450,7 +469,7 @@ func setupNodeAndExecutor(
 
 	sequencer, err := single.NewSequencer(
 		ctx,
-		NewLogAdapter(logger),
+		*evLogger,
 		database,
 		&daClient.DA,
 		[]byte(rollkitGenesis.ChainID),
@@ -473,7 +492,7 @@ func setupNodeAndExecutor(
 		*rollkitGenesis,
 		database,
 		metrics,
-		NewLogAdapter(logger),
+		*evLogger,
 		node.NodeOptions{
 			ManagerOptions: rollkitblock.ManagerOptions{
 				SignaturePayloadProvider: cometcompat.SignaturePayloadProvider(execstore.NewExecABCIStore(database)),
@@ -484,13 +503,13 @@ func setupNodeAndExecutor(
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
-	eventBus, err := createAndStartEventBus(logger)
+	eventBus, err := createAndStartEventBus(sdkLogger)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("setup event-bus: %w", err)
 	}
 	executor.EventBus = eventBus
 
-	idxSvc, txIndexer, blockIndexer, err := createAndStartIndexerService(cfg, rollkitGenesis.ChainID, cmtcfg.DefaultDBProvider, eventBus, logger)
+	idxSvc, txIndexer, blockIndexer, err := createAndStartIndexerService(cfg, rollkitGenesis.ChainID, cmtcfg.DefaultDBProvider, eventBus, sdkLogger)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("start indexer service: %w", err)
 	}
@@ -499,12 +518,12 @@ func setupNodeAndExecutor(
 		Adapter:      executor,
 		TxIndexer:    txIndexer,
 		BlockIndexer: blockIndexer,
-		Logger:       servercmtlog.CometLoggerWrapper{Logger: logger},
+		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
 		Config:       *cfg.RPC,
 	})
 
 	// Pass the created handler to the RPC server constructor
-	rpcServer := rpc.NewRPCServer(cfg.RPC, logger)
+	rpcServer := rpc.NewRPCServer(cfg.RPC, sdkLogger)
 	if err = rpcServer.Start(); err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to start rpc server: %w", err)
 	}
@@ -659,34 +678,34 @@ func initProxyApp(clientCreator proxy.ClientCreator, logger log.Logger, metrics 
 	return proxyApp, nil
 }
 
-const rollkitGenesisFilename = "rollkit_genesis.json"
+const evolveGenesisFilename = "ev_genesis.json"
 
-// loadRollkitMigrationGenesis loads a minimal rollkit genesis from a migration genesis file.
+// loadEvolveMigrationGenesis loads a minimal evolve genesis from a migration genesis file.
 // Returns nil if no migration genesis is found (normal startup scenario).
-func loadRollkitMigrationGenesis(rootDir string) (*rollkitMigrationGenesis, error) {
-	genesisPath := filepath.Join(rootDir, rollkitGenesisFilename)
+func loadEvolveMigrationGenesis(rootDir string) (*evolveMigrationGenesis, error) {
+	genesisPath := filepath.Join(rootDir, evolveGenesisFilename)
 	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
 		return nil, nil // no migration genesis found
 	}
 
 	genesisBytes, err := os.ReadFile(genesisPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read rollkit migration genesis: %w", err)
+		return nil, fmt.Errorf("failed to read evolve migration genesis: %w", err)
 	}
 
-	var migrationGenesis rollkitMigrationGenesis
+	var migrationGenesis evolveMigrationGenesis
 	// using cmtjson for unmarshalling to ensure compatibility with cometbft genesis format
 	if err := cmtjson.Unmarshal(genesisBytes, &migrationGenesis); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal rollkit migration genesis: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal evolve migration genesis: %w", err)
 	}
 
 	return &migrationGenesis, nil
 }
 
-// createRollkitGenesisFromCometBFT creates a rollkit genesis from cometbft genesis.
+// createEvolveGenesisFromCometBFT creates a evolve genesis from cometbft genesis.
 // This is used for normal startup scenarios where a full cometbft genesis document
 // is available and contains all the necessary information.
-func createRollkitGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Genesis {
+func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Genesis {
 	rollkitGenesis := genesis.NewGenesis(
 		cmtGenDoc.ChainID,
 		uint64(cmtGenDoc.InitialHeight),

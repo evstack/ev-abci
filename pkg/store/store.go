@@ -32,7 +32,7 @@ type Store struct {
 }
 
 // NewExecABCIStore creates a new Store with the ABCI prefix.
-// The data is stored under rollkit database and not in the app's database.
+// The data is stored under ev-node database and not in the app's database.
 func NewExecABCIStore(store ds.Batching) *Store {
 	return &Store{
 		prefixedStore: kt.Wrap(store, &kt.PrefixTransform{

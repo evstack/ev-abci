@@ -1,6 +1,6 @@
 // package staking wraps the Cosmos SDK default x/staking module.
 // But it nullifies any validator actions (jail, unjail, etc) and validator update
-// in order to match Rollkit single sequencer characteristic.
+// in order to match ev-node single sequencer characteristic.
 package staking
 
 import (
@@ -16,7 +16,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking/exported"
 	"github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	"github.com/rollkit/go-execution-abci/modules/staking/keeper"
+	"github.com/evstack/ev-abci/modules/staking/keeper"
 )
 
 var (

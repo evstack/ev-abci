@@ -2,14 +2,10 @@ package integration_test
 
 import (
 	"context"
+	"cosmossdk.io/math"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multihash"
-	"os"
-
-	"cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
@@ -22,7 +18,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/moby/moby/client"
+	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap/zaptest"
 )
@@ -42,7 +40,7 @@ type DockerIntegrationTestSuite struct {
 	networkID     string
 	celestiaChain *docker.Chain
 	daNetwork     types.DataAvailabilityNetwork
-	rollkitChain  *docker.Chain
+	evolveChain   *docker.Chain
 	bridgeNode    types.DANode
 }
 
@@ -58,17 +56,17 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 	s.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
 
-	s.rollkitChain = s.CreateRollkitChain(ctx)
-	s.T().Log("Rollkit chain started")
+	s.evolveChain = s.CreateEvolveChain(ctx)
+	s.T().Log("Evolve chain started")
 }
 
 // TearDownTest cleans up resources after each test
 func (s *DockerIntegrationTestSuite) TearDownTest() {
 	ctx := context.Background()
 
-	if s.rollkitChain != nil {
-		if err := s.rollkitChain.Stop(ctx); err != nil {
-			s.T().Logf("failed to stop rollkit chain: %v", err)
+	if s.evolveChain != nil {
+		if err := s.evolveChain.Stop(ctx); err != nil {
+			s.T().Logf("failed to stop evolve chain: %v", err)
 		}
 	}
 
@@ -152,8 +150,8 @@ func (s *DockerIntegrationTestSuite) CreateDANetwork(ctx context.Context) types.
 	return bridgeNode
 }
 
-// CreateRollkitChain sets up the rollkit chain connected to the DA network and returns it
-func (s *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context) *docker.Chain {
+// CreateEvolveChain sets up the rollkit chain connected to the DA network and returns it
+func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *docker.Chain {
 	// Get DA connection details
 	authToken, err := s.bridgeNode.GetAuthToken()
 	s.Require().NoError(err)
@@ -171,14 +169,14 @@ func (s *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context) *do
 	// bank and auth modules required to deal with bank send tx's
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 	// Create chain with only the aggregator node initially
-	rollkitChain, err := docker.NewChainBuilder(s.T()).
+	evolveChain, err := docker.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
-		WithImage(getRollkitAppContainer()).
+		WithImage(getEvolveAppContainer()).
 		WithDenom("stake").
 		WithDockerClient(s.dockerClient).
-		WithName("rollkit").
+		WithName("evolve").
 		WithDockerNetworkID(s.networkID).
-		WithChainID("rollkit-test").
+		WithChainID("evolve-test").
 		WithBech32Prefix("gm").
 		WithBinaryName("gmd").
 		// explicitly set 0 gas so that we can make exact assertions when sending balances.
@@ -207,15 +205,15 @@ func (s *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context) *do
 	s.Require().NoError(err)
 
 	// Start the aggregator node first so that we can query the p2p
-	err = rollkitChain.Start(ctx)
+	err = evolveChain.Start(ctx)
 	s.Require().NoError(err)
 
-	aggregatorPeer := s.GetNodeMultiAddr(ctx, rollkitChain.GetNode())
+	aggregatorPeer := s.GetNodeMultiAddr(ctx, evolveChain.GetNode())
 	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
 
 	// Add follower nodes
 	s.T().Logf("Adding first follower node...")
-	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
+	err = evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--rollkit.da.address", daAddress,
 			"--rollkit.da.gas_price", "0.000001",
@@ -232,7 +230,7 @@ func (s *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context) *do
 	s.Require().NoError(err)
 
 	s.T().Logf("Adding second follower node...")
-	err = rollkitChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
+	err = evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--rollkit.da.address", daAddress,
 			"--rollkit.da.gas_price", "0.000001",
@@ -248,7 +246,7 @@ func (s *DockerIntegrationTestSuite) CreateRollkitChain(ctx context.Context) *do
 		Build())
 	s.Require().NoError(err)
 
-	return rollkitChain
+	return evolveChain
 }
 
 // GetNodeMultiAddr extracts the multiaddr from a rollkit chain node
@@ -329,21 +327,6 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *docke
 	}
 
 	return nil
-}
-
-// getRollkitAppContainer returns the rollkit app container image
-func getRollkitAppContainer() container.Image {
-	// get image repo and tag from environment variables
-	imageRepo := os.Getenv("ROLLKIT_IMAGE_REPO")
-	if imageRepo == "" {
-		imageRepo = "rollkit-gm" // fallback default
-	}
-
-	imageTag := os.Getenv("ROLLKIT_IMAGE_TAG")
-	if imageTag == "" {
-		imageTag = "latest" // fallback default
-	}
-	return container.NewImage(imageRepo, imageTag, "10001:10001")
 }
 
 // addSingleSequencer modifies the genesis file to ensure single sequencer setup

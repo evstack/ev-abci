@@ -16,11 +16,11 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/mock"
 
-	rlkp2p "github.com/rollkit/rollkit/pkg/p2p"
-	rstore "github.com/rollkit/rollkit/pkg/store"
-	rollkitmocks "github.com/rollkit/rollkit/test/mocks"
+	rlkp2p "github.com/evstack/ev-node/pkg/p2p"
+	rstore "github.com/evstack/ev-node/pkg/store"
+	rollkitmocks "github.com/evstack/ev-node/test/mocks"
 
-	"github.com/rollkit/go-execution-abci/pkg/adapter"
+	"github.com/evstack/ev-abci/pkg/adapter"
 )
 
 var (

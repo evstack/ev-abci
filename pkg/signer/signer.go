@@ -9,7 +9,7 @@ import (
 	cmtp2p "github.com/cometbft/cometbft/p2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
-	"github.com/rollkit/rollkit/pkg/signer"
+	"github.com/evstack/ev-node/pkg/signer"
 )
 
 var (
