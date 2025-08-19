@@ -298,6 +298,7 @@ jobs:
           gaiad genesis add-genesis-account $(gaiad keys show validator -a --keyring-backend test) 1000000000uatom
           gaiad genesis gentx validator 100000000uatom --fees 1uatom --chain-id cosmos-local --keyring-backend test
           gaiad genesis collect-gentxs
+          gaiad config set app minimum-gas-prices 0.025uatom
           gaiad config set app grpc.enable true
           sed -i 's/indexer = "null"/indexer = "kv"/' ~/.gaia/config/config.toml # enable tx indexing
           sed -i 's/discard_abci_responses = true/discard_abci_responses = false/' ~/.gaia/config/config.toml # disable discard abci responses
