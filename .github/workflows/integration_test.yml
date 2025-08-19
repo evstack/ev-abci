@@ -291,7 +291,7 @@ jobs:
 
       - name: Start Cosmos Hub Chain
         run: |
-          gaiad init cosmos-local --chain-id cosmos-local
+          gaiad init cosmos-local --chain-id cosmos-local --default-denom uatom
           echo "$CAROL_MNEMONIC" | gaiad keys add validator \
             --keyring-backend test \
             --recover > /dev/null 2>&1
@@ -300,6 +300,7 @@ jobs:
           gaiad genesis collect-gentxs
           gaiad config set app minimum-gas-prices 0.025uatom
           gaiad config set app grpc.enable true
+          gaiad config set app api.enable true
           sed -i 's/indexer = "null"/indexer = "kv"/' ~/.gaia/config/config.toml # enable tx indexing
           sed -i 's/discard_abci_responses = true/discard_abci_responses = false/' ~/.gaia/config/config.toml # disable discard abci responses
           gaiad start --rpc.laddr tcp://0.0.0.0:26654 --rpc.pprof_laddr localhost:6061 --p2p.laddr tcp://0.0.0.0:26653 --grpc.address 0.0.0.0:9091 --log_format=json > cosmos.log 2>&1 &
