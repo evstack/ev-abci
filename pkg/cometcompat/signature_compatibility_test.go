@@ -11,9 +11,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rollkit/rollkit/types"
+	"github.com/evstack/ev-node/types"
 
-	execstore "github.com/rollkit/go-execution-abci/pkg/store"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {

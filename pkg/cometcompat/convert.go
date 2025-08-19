@@ -9,7 +9,7 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	cmtversion "github.com/cometbft/cometbft/version"
 
-	rlktypes "github.com/rollkit/rollkit/types"
+	rlktypes "github.com/evstack/ev-node/types"
 )
 
 // ToABCIHeader converts rollkit header format defined by ABCI.

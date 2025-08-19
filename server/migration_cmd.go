@@ -33,14 +33,14 @@ import (
 	ktds "github.com/ipfs/go-datastore/keytransform"
 	"github.com/spf13/cobra"
 
-	rollkitnode "github.com/rollkit/rollkit/node"
-	rollkitgenesis "github.com/rollkit/rollkit/pkg/genesis"
-	rollkitstore "github.com/rollkit/rollkit/pkg/store"
-	rollkittypes "github.com/rollkit/rollkit/types"
+	rollkitnode "github.com/evstack/ev-node/node"
+	rollkitgenesis "github.com/evstack/ev-node/pkg/genesis"
+	rollkitstore "github.com/evstack/ev-node/pkg/store"
+	rollkittypes "github.com/evstack/ev-node/types"
 
-	"github.com/rollkit/go-execution-abci/modules/rollkitmngr"
-	rollkitmngrtypes "github.com/rollkit/go-execution-abci/modules/rollkitmngr/types"
-	execstore "github.com/rollkit/go-execution-abci/pkg/store"
+	migrationmngr "github.com/evstack/ev-abci/modules/migrationmngr"
+	migrationmngrtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 var (
@@ -48,8 +48,8 @@ var (
 	maxMissedBlock = 50
 )
 
-// rollkitMigrationGenesis represents the minimal genesis for rollkit migration.
-type rollkitMigrationGenesis struct {
+// evolveMigrationGenesis represents the minimal genesis for ev-abci migration.
+type evolveMigrationGenesis struct {
 	ChainID         string        `json:"chain_id"`
 	InitialHeight   uint64        `json:"initial_height"`
 	GenesisTime     int64         `json:"genesis_time"`
@@ -57,8 +57,8 @@ type rollkitMigrationGenesis struct {
 	SequencerPubKey crypto.PubKey `json:"sequencer_pub_key,omitempty"`
 }
 
-// ToRollkitGenesis converts the rollkit migration genesis to a Rollkit genesis.
-func (g rollkitMigrationGenesis) ToRollkitGenesis() *rollkitgenesis.Genesis {
+// ToEVGenesis converts the rollkit migration genesis to a ev-node genesis.
+func (g evolveMigrationGenesis) ToEVGenesis() *rollkitgenesis.Genesis {
 	genesis := rollkitgenesis.NewGenesis(
 		g.ChainID,
 		g.InitialHeight,
@@ -69,19 +69,19 @@ func (g rollkitMigrationGenesis) ToRollkitGenesis() *rollkitgenesis.Genesis {
 	return &genesis
 }
 
-// MigrateToRollkitCmd returns a command that migrates the data from the CometBFT chain to Rollkit.
-func MigrateToRollkitCmd() *cobra.Command {
+// MigrateToEvolveCmd returns a command that migrates the data from the CometBFT chain to Evolve.
+func MigrateToEvolveCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "rollkit-migrate",
-		Short: "Migrate the data from the CometBFT chain to Rollkit",
-		Long: `Migrate the data from the CometBFT chain to Rollkit. This command should be used to migrate nodes or the sequencer.
+		Use:   "evolve-migrate",
+		Short: "Migrate the data from the CometBFT chain to Evolve",
+		Long: `Migrate the data from the CometBFT chain to Evolve. This command should be used to migrate nodes or the sequencer.
 
 This command will:
-1. Migrate all blocks from the CometBFT blockstore to the Rollkit store
-2. Convert the CometBFT state to Rollkit state format
-3. Create a minimal rollkit_genesis.json file for subsequent startups
+1. Migrate all blocks from the CometBFT blockstore to the Evolve store
+2. Convert the CometBFT state to Evolve state format
+3. Create a minimal evolve_genesis.json file for subsequent startups
 
-After migration, start the node normally - it will automatically detect and use the rollkit_genesis.json file.`,
+After migration, start the node normally - it will automatically detect and use the ev_genesis.json.json file.`,
 		Args: cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -125,17 +125,17 @@ After migration, start the node normally - it will automatically detect and use 
 			}
 
 			if err = rollkitStores.rollkitStore.UpdateState(ctx, rollkitState); err != nil {
-				return fmt.Errorf("failed to update Rollkit state: %w", err)
+				return fmt.Errorf("failed to update evolve state: %w", err)
 			}
 
 			// create minimal rollkit genesis file for future startups
 			if err := createRollkitMigrationGenesis(config.RootDir, cometBFTstate); err != nil {
-				return fmt.Errorf("failed to create rollkit migration genesis: %w", err)
+				return fmt.Errorf("failed to create evolve migration genesis: %w", err)
 			}
 
-			cmd.Println("Created rollkit_genesis.json for migration - the node will use this on subsequent startups")
+			cmd.Println("Created ev_genesis.json.json for migration - the node will use this on subsequent startups")
 
-			// migrate all the blocks from the CometBFT block store to the rollkit store
+			// migrate all the blocks from the CometBFT block store to the evolve store
 			// the migration is done in reverse order, starting from the last block
 			missedBlocks := make(map[int64]bool)
 			initSyncStores := true
@@ -177,7 +177,7 @@ After migration, start the node normally - it will automatically detect and use 
 				// Only save extended commit info if vote extensions are enabled
 				if enabled := cometBFTstate.ConsensusParams.ABCI.VoteExtensionsEnabled(block.Height); enabled {
 					cmd.Printf("⚠️⚠️⚠️ Vote extensions were enabled at height %d ⚠️⚠️⚠️\n", block.Height)
-					cmd.Println("⚠️⚠️⚠️ Vote extensions have no effect when using Rollkit ⚠️⚠️⚠️")
+					cmd.Println("⚠️⚠️⚠️ Vote extensions have no effect when using Evolve ⚠️⚠️⚠️")
 					cmd.Println("⚠️⚠️⚠️ Please consult the docs ⚠️⚠️⚠️")
 				}
 
@@ -186,7 +186,7 @@ After migration, start the node normally - it will automatically detect and use 
 
 			// set the last height in the Rollkit store
 			if err = rollkitStores.rollkitStore.SetHeight(ctx, uint64(lastBlockHeight)); err != nil {
-				return fmt.Errorf("failed to set last height in Rollkit store: %w", err)
+				return fmt.Errorf("failed to set last height in Evolve store: %w", err)
 			}
 
 			cmd.Println("Migration completed successfully")
@@ -194,7 +194,7 @@ After migration, start the node normally - it will automatically detect and use 
 		},
 	}
 
-	cmd.Flags().Uint64(flagDaHeight, 1, "The DA height to set in the Rollkit state. Defaults to 1.")
+	cmd.Flags().Uint64(flagDaHeight, 1, "The DA height to set in the Evolve state. Defaults to 1.")
 
 	return cmd
 }
@@ -292,13 +292,13 @@ type rollkitStores struct {
 }
 
 func loadRollkitStores(rootDir string) (rollkitStores, error) {
-	store, err := rollkitstore.NewDefaultKVStore(rootDir, "data", "rollkit")
+	store, err := rollkitstore.NewDefaultKVStore(rootDir, "data", "evolve")
 	if err != nil {
 		return rollkitStores{}, fmt.Errorf("failed to create rollkit store: %w", err)
 	}
 
 	rollkitPrefixStore := ktds.Wrap(store, &ktds.PrefixTransform{
-		Prefix: ds.NewKey(rollkitnode.RollkitPrefix),
+		Prefix: ds.NewKey(rollkitnode.EvPrefix),
 	})
 
 	ds, err := goheaderstore.NewStore[*rollkittypes.Data](
@@ -360,9 +360,9 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 		sequencerAddr = cometBFTState.LastValidators.Validators[0].Address.Bytes()
 		sequencerPubKey = cometBFTState.LastValidators.Validators[0].PubKey
 	} else if len(cometBFTState.LastValidators.Validators) > 1 {
-		sequencer, err := getSequencerFromRollkitMngrState(rootDir, cometBFTState)
+		sequencer, err := getSequencerFromMigrationMngrState(rootDir, cometBFTState)
 		if err != nil {
-			return fmt.Errorf("failed to get sequencer from rollkitmngr state: %w", err)
+			return fmt.Errorf("failed to get sequencer from migrationmngr state: %w", err)
 		}
 
 		sequencerAddr = sequencer.Address
@@ -371,7 +371,7 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 		return fmt.Errorf("no validators found in the last validators, cannot determine sequencer address")
 	}
 
-	migrationGenesis := rollkitMigrationGenesis{
+	migrationGenesis := evolveMigrationGenesis{
 		ChainID:         cometBFTState.ChainID,
 		InitialHeight:   uint64(cometBFTState.InitialHeight),
 		GenesisTime:     cometBFTState.LastBlockTime.UnixNano(),
@@ -382,25 +382,25 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 	// using cmtjson for marshalling to ensure compatibility with cometbft genesis format
 	genesisBytes, err := cmtjson.MarshalIndent(migrationGenesis, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal rollkit migration genesis: %w", err)
+		return fmt.Errorf("failed to marshal evolve migration genesis: %w", err)
 	}
 
-	genesisPath := filepath.Join(rootDir, rollkitGenesisFilename)
+	genesisPath := filepath.Join(rootDir, evolveGenesisFilename)
 	if err := os.WriteFile(genesisPath, genesisBytes, 0o644); err != nil {
-		return fmt.Errorf("failed to write rollkit migration genesis to %s: %w", genesisPath, err)
+		return fmt.Errorf("failed to write evolve migration genesis to %s: %w", genesisPath, err)
 	}
 
 	return nil
 }
 
-// sequencerInfo holds the sequencer information extracted from rollkitmngr state
+// sequencerInfo holds the sequencer information extracted from migrationmngr state
 type sequencerInfo struct {
 	Address []byte
 	PubKey  crypto.PubKey
 }
 
-// getSequencerFromRollkitMngrState attempts to load the sequencer information from the rollkitmngr module state
-func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State) (*sequencerInfo, error) {
+// getSequencerFromMigrationMngrState attempts to load the sequencer information from the migrationmngr module state
+func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.State) (*sequencerInfo, error) {
 	config := cfg.DefaultConfig()
 	config.SetRoot(rootDir)
 
@@ -421,14 +421,14 @@ func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State)
 	}
 	defer func() { _ = appDB.Close() }()
 
-	storeKey := storetypes.NewKVStoreKey(rollkitmngrtypes.ModuleName)
+	storeKey := storetypes.NewKVStoreKey(migrationmngrtypes.ModuleName)
 
-	encCfg := moduletestutil.MakeTestEncodingConfig(rollkitmngr.AppModuleBasic{})
+	encCfg := moduletestutil.MakeTestEncodingConfig(migrationmngr.AppModuleBasic{})
 	sequencerCollection := collections.NewItem(
 		collections.NewSchemaBuilder(runtime.NewKVStoreService(storeKey)),
-		rollkitmngrtypes.SequencerKey,
+		migrationmngrtypes.SequencerKey,
 		"sequencer",
-		codec.CollValue[rollkitmngrtypes.Sequencer](encCfg.Codec),
+		codec.CollValue[migrationmngrtypes.Sequencer](encCfg.Codec),
 	)
 
 	// create context and commit multi-store
@@ -445,9 +445,9 @@ func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State)
 
 	sequencer, err := sequencerCollection.Get(ctx)
 	if errors.Is(err, collections.ErrNotFound) {
-		return nil, fmt.Errorf("sequencer not found in rollkitmngr state, ensure the module is initialized and sequencer is set")
+		return nil, fmt.Errorf("sequencer not found in migrationmngr state, ensure the module is initialized and sequencer is set")
 	} else if err != nil {
-		return nil, fmt.Errorf("failed to get sequencer from rollkitmngr state: %w", err)
+		return nil, fmt.Errorf("failed to get sequencer from migrationmngr state: %w", err)
 	}
 
 	if err := sequencer.UnpackInterfaces(encCfg.InterfaceRegistry); err != nil {
@@ -479,7 +479,7 @@ func getSequencerFromRollkitMngrState(rootDir string, cometBFTState state.State)
 	}
 
 	if !validatorFound {
-		return nil, fmt.Errorf("sequencer from rollkitmngr state (address: %x) is not found in the validator set", addr)
+		return nil, fmt.Errorf("sequencer from migrationmngr state (address: %x) is not found in the validator set", addr)
 	}
 
 	return &sequencerInfo{

@@ -10,11 +10,11 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
-	rollkittypes "github.com/rollkit/rollkit/types"
+	rollkittypes "github.com/evstack/ev-node/types"
 )
 
 // ValidatorHasher returns a function that calculates the ValidatorHash
-// compatible with CometBFT. This function is intended to be injected into Rollkit's Manager.
+// compatible with CometBFT. This function is intended to be injected into ev-node's Manager.
 func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
 	return func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
 		var calculatedHash rollkittypes.Hash

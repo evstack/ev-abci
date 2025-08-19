@@ -7,7 +7,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 
-	"github.com/rollkit/go-execution-abci/modules/network/types"
+	"github.com/evstack/ev-abci/modules/network/types"
 )
 
 // Option is a functional option for configuring the Adapter.
@@ -60,7 +60,7 @@ func (f *NetworkSoftConfirmationBlockFilter) IsPublishable(ctx context.Context, 
 
 	// Query soft confirmation status
 	softConfirmReq := &abci.RequestQuery{
-		Path: "/rollkitsdk.network.v1.Query/SoftConfirmationStatus",
+		Path: "/evabci.network.v1.Query/SoftConfirmationStatus",
 		Data: reqData,
 	}
 

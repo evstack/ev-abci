@@ -4,16 +4,15 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/celestiaorg/tastora/framework/docker/container"
+	"os"
 	"testing"
 
 	"cosmossdk.io/math"
 	"github.com/celestiaorg/go-square/v2/share"
 	"github.com/celestiaorg/tastora/framework/docker"
-	"github.com/celestiaorg/tastora/framework/testutil/broadcast"
-	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/testutil/wallet"
-	"github.com/celestiaorg/tastora/framework/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
@@ -57,49 +56,22 @@ func queryBankBalance(ctx context.Context, grpcAddress string, walletAddress str
 	return resp.Balance, nil
 }
 
-// sendFunds sends funds from one wallet to another using bank transfer
-func sendFunds(ctx context.Context, chain *docker.Chain, fromWallet, toWallet types.Wallet, amount sdk.Coins, nodeIdx int) error {
-	fromAddress, err := sdkacc.AddressFromWallet(fromWallet)
-	if err != nil {
-		return fmt.Errorf("failed to get sender address: %w", err)
-	}
-
-	toAddress, err := sdkacc.AddressFromWallet(toWallet)
-	if err != nil {
-		return fmt.Errorf("failed to get destination address: %w", err)
-	}
-
-	chainNode := chain.GetNodes()[nodeIdx]
-
-	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
-	resp, err := broadcast.MessagesForNode(ctx, fromWallet, chain, chainNode.(*docker.ChainNode), msg)
-	if err != nil {
-		return fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-
-	if resp.Code != 0 {
-		return fmt.Errorf("transaction failed with code %d: %s", resp.Code, resp.RawLog)
-	}
-
-	return nil
-}
-
 // TestLivenessWithCelestiaDA tests the liveness of rollkit with Celestia DA
 func (s *DockerIntegrationTestSuite) TestLivenessWithCelestiaDA() {
 	ctx := context.Background()
 	// Test block production - wait for rollkit chain to produce blocks
 	s.T().Log("Testing block production...")
-	s.Require().NoError(wait.ForBlocks(ctx, 5, s.rollkitChain))
+	s.Require().NoError(wait.ForBlocks(ctx, 5, s.evolveChain))
 
 	// Test transaction submission and query
 	s.T().Log("Testing transaction submission and query...")
-	testTransactionSubmissionAndQuery(s.T(), ctx, s.rollkitChain)
+	s.testTransactionSubmissionAndQuery(s.T(), ctx, s.evolveChain)
 
 	s.T().Log("Test completed successfully")
 }
 
 // testTransactionSubmissionAndQuery tests sending transactions and querying results using tastora API
-func testTransactionSubmissionAndQuery(t *testing.T, ctx context.Context, rollkitChain *docker.Chain) {
+func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testing.T, ctx context.Context, rollkitChain *docker.Chain) {
 	// hack to get around global, need to set the address prefix before use.
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 
@@ -118,7 +90,7 @@ func testTransactionSubmissionAndQuery(t *testing.T, ctx context.Context, rollki
 	transferAmount := sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100)))
 
 	// send funds broadcasting to a node that is not the aggregator.
-	err = sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 1)
+	err = s.sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 1)
 	require.NoError(t, err, "failed to send funds from Bob to Carol")
 
 	finalBalance, err := queryBankBalance(ctx, rollkitChain.GetGRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
@@ -130,4 +102,20 @@ func testTransactionSubmissionAndQuery(t *testing.T, ctx context.Context, rollki
 	carolBalance, err := queryBankBalance(ctx, rollkitChain.GetGRPCAddress(), carolsWallet.GetFormattedAddress(), denom)
 	require.NoError(t, err, "failed to query carol's balance")
 	require.True(t, carolBalance.Amount.Equal(math.NewInt(100)), "carol should have received 100 tokens")
+}
+
+// getEvolveAppContainer returns the evolve app container image.
+// uses the EVOLVE_IMAGE_REPO and EVOLVE_IMAGE_TAG environment variables.
+func getEvolveAppContainer() container.Image {
+	// get image repo and tag from environment variables
+	imageRepo := os.Getenv("EVOLVE_IMAGE_REPO")
+	if imageRepo == "" {
+		imageRepo = "evolve-gm" // fallback default
+	}
+
+	imageTag := os.Getenv("EVOLVE_IMAGE_TAG")
+	if imageTag == "" {
+		imageTag = "latest" // fallback default
+	}
+	return container.NewImage(imageRepo, imageTag, "10001:10001")
 }

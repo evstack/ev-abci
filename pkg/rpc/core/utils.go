@@ -8,7 +8,7 @@ import (
 
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	"github.com/rollkit/go-execution-abci/pkg/cometcompat"
+	"github.com/evstack/ev-abci/pkg/cometcompat"
 )
 
 const NodeIDByteLength = 20
@@ -103,7 +103,7 @@ func filterMinMax(base, height, mini, maxi, limit int64) (int64, int64, error) {
 	return mini, maxi, nil
 }
 
-// TruncateNodeID from rollkit we receive a 32 bytes node id, but we only need the first 20 bytes
+// TruncateNodeID from Evolve we receive a 32 bytes node id, but we only need the first 20 bytes
 // to be compatible with the ABCI node info
 func TruncateNodeID(idStr string) (string, error) {
 	idBytes, err := hex.DecodeString(idStr)
