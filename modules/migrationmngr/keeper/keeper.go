@@ -65,7 +65,7 @@ func NewKeeper(
 		Migration: collections.NewItem(
 			sb,
 			types.MigrationKey,
-			"rollkit_migration",
+			"evolve_migration",
 			codec.CollValue[types.EvolveMigration](cdc),
 		),
 		MigrationStep: collections.NewItem(

@@ -16,11 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ROLLKIT_VERSION: "v1.0.0-beta.2"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
       IGNITE_VERSION: "v29.3.1"
-      IGNITE_ROLLKIT_APP_VERSION: "rollkit/v0.3.0"
-      ROLLKIT_IMAGE_REPO: "rollkit-gm"
-      ROLLKIT_IMAGE_TAG: "latest"
+      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
+      EVOLVE_IMAGE_REPO: "evolve-gm"
+      EVOLVE_IMAGE_TAG: "latest"
 
     steps:
       - uses: actions/checkout@v5
@@ -39,10 +39,10 @@ jobs:
       - name: Build Evolve Docker Image
         run: |
           docker build \
-            --build-arg ROLLKIT_VERSION=${{ env.ROLLKIT_VERSION }} \
+            --build-arg EVNODE_VERSION=${{ env.EVNODE_VERSION }} \
             --build-arg IGNITE_VERSION=${{ env.IGNITE_VERSION }} \
-            --build-arg IGNITE_ROLLKIT_APP_VERSION=${{ env.IGNITE_ROLLKIT_APP_VERSION }} \
-            -t ${{ env.ROLLKIT_IMAGE_REPO }}:${{ env.ROLLKIT_IMAGE_TAG }} \
+            --build-arg IGNITE_EVOLVE_APP_VERSION=${{ env.IGNITE_EVOLVE_APP_VERSION }} \
+            -t ${{ env.EVOLVE_IMAGE_REPO }}:${{ env.EVOLVE_IMAGE_TAG }} \
             .
 
       - name: Run Liveness Test
@@ -50,18 +50,18 @@ jobs:
           cd tests/integration
           go test -v -run TestLivenessWithCelestiaDA -timeout 30m
         env:
-          ROLLKIT_IMAGE_REPO: ${{ env.ROLLKIT_IMAGE_REPO }}
-          ROLLKIT_IMAGE_TAG: ${{ env.ROLLKIT_IMAGE_TAG }}
+          EVOLVE_IMAGE_REPO: ${{ env.EVOLVE_IMAGE_REPO }}
+          EVOLVE_IMAGE_TAG: ${{ env.EVOLVE_IMAGE_TAG }}
 
   liveness:
-    name: Test with Rollkit Chain
+    name: Test with Evolve Chain
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      ROLLKIT_VERSION: "v1.0.0-beta.2"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
       IGNITE_VERSION: "v29.3.1"
-      IGNITE_ROLLKIT_APP_VERSION: "rollkit/v0.3.0"
+      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
     outputs:
       carol_mnemonic: ${{ steps.save_mnemonic.outputs.carol_mnemonic }}
       gmd_home: ${{ steps.paths.outputs.GMD_HOME }}
@@ -81,17 +81,17 @@ jobs:
         run: |
           curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
 
-      - name: Scaffold Rollkit Chain
+      - name: Scaffold Evolve Chain
         run: |
           # scaffold a new chain
           ignite scaffold chain gm --no-module --skip-git --address-prefix gm
           cd gm
 
-          # install rollkit app
-          ignite app install github.com/ignite/apps/rollkit@$IGNITE_ROLLKIT_APP_VERSION
+          # install evolve app
+          ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
 
-          # add rollkit to the chain
-          ignite rollkit add
+          # add evolve to the chain
+          ignite evolve add
 
       - name: Start Local DA
         run: |
@@ -113,7 +113,7 @@ jobs:
           cd gm
 
           # replace the github.com/evstack/ev-node module with tagged version
-          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$ROLLKIT_VERSION
+          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
 
           # replace the github.com/evstack/ev-abci module with the local version
           go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
@@ -124,8 +124,8 @@ jobs:
           # build the chain
           ignite chain build --skip-proto
 
-          # initialize rollkit
-          ignite rollkit init
+          # initialize evolve
+          ignite evolve init
 
       - name: Create extra accounts
         id: save_mnemonic
@@ -266,9 +266,8 @@ jobs:
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
       CEL_VERSION: "v4.0.3-arabica"
-      ROLLKIT_VERSION: "v1.0.0-beta.2"
-      ROLLKIT_DA_VERSION: "v1.0.0-beta.1"
-
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
+      EVNODE_DA_VERSION: "v1.0.0-beta.1"
     steps:
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -276,7 +275,7 @@ jobs:
           go-version: stable
 
       - name: Download gm Binary and gmd Home Directory
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v4 # keep v4.
 
       - name: Download Celestia App Binary
         run: |
@@ -308,7 +307,7 @@ jobs:
 
       - name: Start Local DA
         run: |
-          go install github.com/evstack/ev-node/da/cmd/local-da@$ROLLKIT_DA_VERSION
+          go install github.com/rollkit/rollkit/da/cmd/local-da@$EVNODE_DA_VERSION # TODO rename after tag and replaces gone
           # start the local da in the background
           local-da &
           # capture the background process PID
@@ -316,7 +315,7 @@ jobs:
           # give it a moment to start
           sleep 3
 
-      - name: Start Rollkit Chain
+      - name: Start Evolve Chain
         run: |
           chmod +x ./gmd/go/bin/gmd # restoring permissions after download
           ./gmd/go/bin/gmd start --rollkit.node.aggregator --rpc.laddr tcp://0.0.0.0:26657 --grpc.address 0.0.0.0:9090 --log_format=json --home ./gmd/.gm > chain.log 2>&1 &
@@ -387,7 +386,7 @@ jobs:
         run: |
           hermes create channel --a-chain gm --a-port transfer --b-chain celestia-local --b-port transfer --order unordered --new-client-connection --yes
 
-      - name: ICS20 Transfer Rollkit -> Celestia
+      - name: ICS20 Transfer Evolve -> Celestia
         run: |
           ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
           CELESTIA_ADDR=$(celestia-appd keys show validator -a --keyring-backend test)
@@ -398,7 +397,7 @@ jobs:
           # TODO: check that the balance is correct
           # ref: https://github.com/evstack/ev-abci/pull/138#discussion_r2156332760
 
-      - name: ICS20 Transfer Celestia -> Rollkit
+      - name: ICS20 Transfer Celestia -> Evolve
         run: |
           ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
           CELESTIA_ADDR=$(celestia-appd keys show validator -a --keyring-backend test)

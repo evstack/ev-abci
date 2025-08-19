@@ -382,12 +382,12 @@ func createRollkitMigrationGenesis(rootDir string, cometBFTState state.State) er
 	// using cmtjson for marshalling to ensure compatibility with cometbft genesis format
 	genesisBytes, err := cmtjson.MarshalIndent(migrationGenesis, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal rollkit migration genesis: %w", err)
+		return fmt.Errorf("failed to marshal evolve migration genesis: %w", err)
 	}
 
 	genesisPath := filepath.Join(rootDir, evolveGenesisFilename)
 	if err := os.WriteFile(genesisPath, genesisBytes, 0o644); err != nil {
-		return fmt.Errorf("failed to write rollkit migration genesis to %s: %w", genesisPath, err)
+		return fmt.Errorf("failed to write evolve migration genesis to %s: %w", genesisPath, err)
 	}
 
 	return nil

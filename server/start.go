@@ -140,12 +140,12 @@ func startInProcess(svrCtx *server.Context, svrCfg serverconfig.Config, clientCt
 		defer cleanupFn()
 
 		g.Go(func() error {
-			svrCtx.Logger.Info("rollkit node run loop launched in background goroutine")
+			svrCtx.Logger.Info("evolve node run loop launched in background goroutine")
 			err := rollkitNode.Run(ctx)
 			if err == context.Canceled {
-				svrCtx.Logger.Info("rollkit node run loop cancelled by context")
+				svrCtx.Logger.Info("evolve node run loop cancelled by context")
 			} else if err != nil {
-				return fmt.Errorf("rollkit node run failed: %w", err)
+				return fmt.Errorf("evolve node run failed: %w", err)
 			}
 
 			// cancel context to stop all other processes
@@ -342,7 +342,7 @@ func setupNodeAndExecutor(
 		appGenesis     *genutiltypes.AppGenesis
 	)
 
-	// determine the genesis source: rollkit genesis or app genesis
+	// determine the genesis source: evolve genesis or app genesis
 	migrationGenesis, err := loadEvolveMigrationGenesis(cfg.RootDir)
 	if err != nil {
 		return nil, nil, cleanupFn, err
@@ -351,7 +351,7 @@ func setupNodeAndExecutor(
 	if migrationGenesis != nil {
 		rollkitGenesis = migrationGenesis.ToEVGenesis()
 
-		sdkLogger.Info("using rollkit migration genesis",
+		sdkLogger.Info("using evolve migration genesis",
 			"chain_id", migrationGenesis.ChainID,
 			"initial_height", migrationGenesis.InitialHeight)
 
@@ -371,7 +371,7 @@ func setupNodeAndExecutor(
 			},
 		}
 	} else {
-		// normal scenario: create rollkit genesis from full cometbft genesis
+		// normal scenario: create evolve genesis from full cometbft genesis
 		appGenesis, err = getAppGenesis(cfg)()
 		if err != nil {
 			return nil, nil, cleanupFn, err
@@ -382,8 +382,8 @@ func setupNodeAndExecutor(
 			return nil, nil, cleanupFn, err
 		}
 
-		rollkitGenesis = createRollkitGenesisFromCometBFT(cmtGenDoc)
-		sdkLogger.Info("created rollkit genesis from cometbft genesis",
+		rollkitGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc)
+		sdkLogger.Info("created evolve genesis from cometbft genesis",
 			"chain_id", cmtGenDoc.ChainID,
 			"initial_height", cmtGenDoc.InitialHeight)
 	}
@@ -702,10 +702,10 @@ func loadEvolveMigrationGenesis(rootDir string) (*evolveMigrationGenesis, error)
 	return &migrationGenesis, nil
 }
 
-// createRollkitGenesisFromCometBFT creates a rollkit genesis from cometbft genesis.
+// createEvolveGenesisFromCometBFT creates a evolve genesis from cometbft genesis.
 // This is used for normal startup scenarios where a full cometbft genesis document
 // is available and contains all the necessary information.
-func createRollkitGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Genesis {
+func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Genesis {
 	rollkitGenesis := genesis.NewGenesis(
 		cmtGenDoc.ChainID,
 		uint64(cmtGenDoc.InitialHeight),

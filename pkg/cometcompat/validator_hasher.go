@@ -14,7 +14,7 @@ import (
 )
 
 // ValidatorHasher returns a function that calculates the ValidatorHash
-// compatible with CometBFT. This function is intended to be injected into Rollkit's Manager.
+// compatible with CometBFT. This function is intended to be injected into ev-node's Manager.
 func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
 	return func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
 		var calculatedHash rollkittypes.Hash
