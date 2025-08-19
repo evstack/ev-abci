@@ -275,7 +275,7 @@ jobs:
           go-version: stable
 
       - name: Download gm Binary and gmd Home Directory
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v4 # keep v4.
 
       - name: Download Celestia App Binary
         run: |
@@ -317,13 +317,13 @@ jobs:
 
       - name: Start Evolve Chain
         run: |
-          chmod +x ./gmd/go/bin/gmd # restoring permissions after download
-          ./gmd/go/bin/gmd start --rollkit.node.aggregator --rpc.laddr tcp://0.0.0.0:26657 --grpc.address 0.0.0.0:9090 --log_format=json --home ./gmd/.gm > chain.log 2>&1 &
+          chmod +x ./go/bin/gmd # restoring permissions after download
+          ./go/bin/gmd start --rollkit.node.aggregator --rpc.laddr tcp://0.0.0.0:26657 --grpc.address 0.0.0.0:9090 --log_format=json > chain.log 2>&1 &
           echo "CHAIN_PID=$!" >> $GITHUB_ENV
           sleep 10
-          CAROL_ADDRESS=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
+          CAROL_ADDRESS=$(./go/bin/gmd keys show carol -a)
           echo "Fund Carol's account ($CAROL_ADDRESS)"
-          ./gmd/go/bin/gmd tx bank send bob $CAROL_ADDRESS 200000stake -y --output json --home ./gmd/.gm
+          ./go/bin/gmd tx bank send bob $CAROL_ADDRESS 200000stake -y --output json
           sleep 5
 
       - name: Configure & Start Hermes Relayer
@@ -388,9 +388,9 @@ jobs:
 
       - name: ICS20 Transfer Evolve -> Celestia
         run: |
-          ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
+          ROLLKIT_ADDR=$(./go/bin/gmd keys show carol -a)
           CELESTIA_ADDR=$(celestia-appd keys show validator -a --keyring-backend test)
-          ./gmd/go/bin/gmd tx ibc-transfer transfer transfer channel-0 $CELESTIA_ADDR 100stake --from carol -y --home ./gmd/.gm
+          ./go/bin/gmd tx ibc-transfer transfer transfer channel-0 $CELESTIA_ADDR 100stake --from carol -y
           sleep 15
           BALANCE=$(celestia-appd query bank balances $CELESTIA_ADDR --output json --node http://localhost:26654 | jq '.balances')
           echo "Celestia balance after IBC transfer: $BALANCE"
@@ -399,7 +399,7 @@ jobs:
 
       - name: ICS20 Transfer Celestia -> Evolve
         run: |
-          ROLLKIT_ADDR=$(./gmd/go/bin/gmd keys show carol -a --home ./gmd/.gm)
+          ROLLKIT_ADDR=$(./go/bin/gmd keys show carol -a)
           CELESTIA_ADDR=$(celestia-appd keys show validator -a --keyring-backend test)
           celestia-appd tx ibc-transfer transfer transfer channel-0 $ROLLKIT_ADDR 100utia --from validator --node http://localhost:26654 --fees 400utia --keyring-backend test -y
 
@@ -413,7 +413,7 @@ jobs:
             sleep 3
             ATTEMPT=$((ATTEMPT+1))
 
-            BALANCE=$(./gmd/go/bin/gmd query bank balances $ROLLKIT_ADDR --output json --home ./gmd/.gm | jq '.balances')
+            BALANCE=$(./go/bin/gmd query bank balances $ROLLKIT_ADDR --output json | jq '.balances')
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Gm balance: $BALANCE"
 
             # Check if any denom starts with ibc/
