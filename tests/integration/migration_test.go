@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"testing"
@@ -9,8 +10,10 @@ import (
 	"cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
+	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
+	cometcfg "github.com/cometbft/cometbft/config"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
@@ -37,6 +40,9 @@ func TestMigrationSuite(t *testing.T) {
 }
 
 func (s *MigrationTestSuite) SetupTest() {
+	// set global address prefix for gm chain
+	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
+
 	// only setup docker infrastructure, not the chains
 	s.dockerClient, s.networkID = docker.DockerSetup(s.T())
 
@@ -65,12 +71,11 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	// Phase 3: Stop chain preserving volumes
 	s.stopChainPreservingVolumes(ctx)
 
-	// Phase 4: Execute migration
+	// Phase 4: Execute migration (includes image update)
 	s.executeMigrationCommand(ctx)
 
-	// Phase 5: Setup DA network and swap to evolve image
+	// Phase 5: Setup DA network
 	s.setupDANetwork(ctx)
-	s.updateChainToEvolveImage(ctx)
 
 	// Phase 6: Start evolve chain
 	s.startEvolveChain(ctx)
@@ -113,7 +118,7 @@ func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *docker.C
 		WithNodes(
 			docker.NewChainNodeConfigBuilder().
 				WithAdditionalStartArgs().
-				WithPostInit(addSingleSequencer).
+				WithPostInit(addSingleSequencerWithTxIndex).
 				Build(),
 		).
 		Build(ctx)
@@ -209,8 +214,11 @@ func (s *MigrationTestSuite) stopChainPreservingVolumes(ctx context.Context) {
 func (s *MigrationTestSuite) executeMigrationCommand(ctx context.Context) {
 	s.T().Log("Executing migration command...")
 
-	// run migration on the stopped container
-	_, _, err := s.chain.GetNode().Exec(ctx, []string{"gmd", "evolve-migrate"}, nil)
+	// first update the chain to use evolve image which has the migration command
+	s.updateChainToEvolveImage(ctx)
+
+	// run migration on the container with evolve image, specifying the correct home directory
+	_, _, err := s.chain.GetNode().Exec(ctx, []string{"gmd", "evolve-migrate", "--home", "/var/cosmos-chain/evolve"}, nil)
 	s.Require().NoError(err)
 
 	s.T().Log("Migration command completed successfully")
@@ -226,6 +234,9 @@ func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
 
 	s.DockerIntegrationTestSuite.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
+	
+	// reset bech32 prefix back to gm after DA network setup
+	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 }
 
 // updateChainToEvolveImage swaps the chain to use evolve image
@@ -281,11 +292,19 @@ func (s *MigrationTestSuite) startEvolveChain(ctx context.Context) {
 		}
 	}
 
-	// start the chain with new configuration
-	err = s.chain.Start(ctx)
-	s.Require().NoError(err)
+	// start the existing containers with new configuration
+	for _, node := range s.chain.Nodes() {
+		err := node.StartContainer(ctx)
+		s.Require().NoError(err)
+		s.T().Logf("Started container for node: %s", node.Name())
+	}
 
 	s.T().Log("Evolve chain started successfully")
+
+	// wait for the chain to sync and produce a few blocks
+	err = wait.ForBlocks(ctx, 3, s.chain)
+	s.Require().NoError(err)
+	s.T().Log("Evolve chain synced and producing blocks")
 }
 
 // validateMigrationSuccess verifies that migration worked correctly
@@ -315,7 +334,13 @@ func (s *MigrationTestSuite) validateOldTransactions(ctx context.Context) {
 	s.Require().NoError(err)
 
 	for i, txHash := range s.preMigrationTxHashes {
-		tx, err := client.Tx(ctx, []byte(txHash), false)
+		s.T().Logf("Querying transaction %d with hash: %s", i, txHash)
+
+		// convert hex string to bytes
+		txHashBytes, err := hex.DecodeString(txHash)
+		s.Require().NoError(err, "Failed to decode tx hash %s", txHash)
+
+		tx, err := client.Tx(ctx, txHashBytes, false)
 		s.Require().NoError(err, "Failed to query transaction %d with hash %s", i, txHash)
 		s.Require().NotNil(tx)
 		s.T().Logf("✅ Old transaction %d (%s) successfully queried", i, txHash)
@@ -378,4 +403,19 @@ func (s *MigrationTestSuite) validateNewBlockProduction(ctx context.Context) {
 	s.Require().Greater(finalHeight, initialHeight)
 
 	s.T().Logf("✅ Chain producing new blocks: %d -> %d", initialHeight, finalHeight)
+}
+
+// addSingleSequencerWithTxIndex modifies the genesis file and enables tx indexing
+func addSingleSequencerWithTxIndex(ctx context.Context, node *docker.ChainNode) error {
+	// first call the existing addSingleSequencer function
+	err := addSingleSequencer(ctx, node)
+	if err != nil {
+		return err
+	}
+
+	// enable tx indexing using config.Modify
+	return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
+		// enable tx indexing
+		cfg.TxIndex.Indexer = "kv"
+	})
 }
