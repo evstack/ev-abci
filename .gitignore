@@ -2,3 +2,4 @@
 coverage.txt
 vendor
 .idea
+integration.test
