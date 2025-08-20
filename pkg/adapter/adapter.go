@@ -331,6 +331,11 @@ func (a *Adapter) ExecuteTxs(
 		return nil, 0, fmt.Errorf("compute header hash: %w", err)
 	}
 
+	abciBlock, currentBlockID, err := makeABCIBlock(ctx, blockHeight, txs, s, abciHeader, lastCommit)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	ppResp, err := a.App.ProcessProposal(&abci.RequestProcessProposal{
 		Hash:               abciHeader.Hash(),
 		Height:             int64(blockHeight),
@@ -448,24 +453,8 @@ func (a *Adapter) ExecuteTxs(
 	if err != nil {
 		return nil, 0, err
 	}
-	cmtTxs := make(cmttypes.Txs, len(txs))
-	for i := range txs {
-		cmtTxs[i] = txs[i]
-	}
 
-	abciBlock := s.MakeBlock(int64(blockHeight), cmtTxs, lastCommit, nil, s.Validators.Proposer.Address)
-
-	blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
-	if err != nil {
-		return nil, 0, fmt.Errorf("make part set: %w", err)
-	}
-
-	// use abci header hash to match the light client validation check
-	// where sh.Header.Hash() (comet header) must equal sh.Commit.BlockID.Hash
-	currentBlockID := cmttypes.BlockID{
-		Hash:          abciHeader.Hash(),
-		PartSetHeader: blockParts.Header(),
-	}
+	// saving data to ev-abci store
 
 	if err := a.Store.SaveBlockID(ctx, blockHeight, &currentBlockID); err != nil {
 		return nil, 0, fmt.Errorf("save block ID: %w", err)
@@ -553,6 +542,37 @@ func fireEvents(
 	}
 
 	return nil
+}
+
+// makeABCIBlock makes an ABCI block and its block ID
+func makeABCIBlock(
+	ctx context.Context,
+	blockHeight uint64,
+	txs [][]byte,
+	currentState *cmtstate.State,
+	abciHeader cmttypes.Header,
+	lastCommit *cmttypes.Commit,
+) (*cmttypes.Block, cmttypes.BlockID, error) {
+	cmtTxs := make(cmttypes.Txs, len(txs))
+	for i := range txs {
+		cmtTxs[i] = txs[i]
+	}
+
+	abciBlock := currentState.MakeBlock(int64(blockHeight), cmtTxs, lastCommit, nil, currentState.Validators.Proposer.Address)
+
+	blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+	if err != nil {
+		return nil, cmttypes.BlockID{}, fmt.Errorf("make part set: %w", err)
+	}
+
+	// use abci header hash to match the light client validation check
+	// where sh.Header.Hash() (comet header) must equal sh.Commit.BlockID.Hash
+	currentBlockID := cmttypes.BlockID{
+		Hash:          abciHeader.Hash(),
+		PartSetHeader: blockParts.Header(),
+	}
+
+	return abciBlock, currentBlockID, nil
 }
 
 // GetLastCommit retrieves the last commit for the given block height.
