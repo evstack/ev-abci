@@ -194,9 +194,9 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *doc
 	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
 
 	s.T().Logf("Adding first follower node...")
-	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight)
+	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
 	s.T().Logf("Adding second follower node...")
-	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight)
+	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
 
 	return evolveChain
 }
@@ -232,7 +232,7 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node 
 }
 
 // addFollowerNode adds a follower node to the evolve chain.
-func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *docker.Chain, daAddress, authToken, daStartHeight string) {
+func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *docker.Chain, daAddress, authToken, daStartHeight, aggregatorPeer string) {
 	err := evolveChain.AddNode(ctx, docker.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--evnode.da.address", daAddress,
