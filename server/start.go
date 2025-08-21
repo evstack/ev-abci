@@ -50,11 +50,9 @@ import (
 	"github.com/evstack/ev-node/sequencers/single"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
-	"github.com/evstack/ev-abci/pkg/cometcompat"
 	"github.com/evstack/ev-abci/pkg/rpc"
 	"github.com/evstack/ev-abci/pkg/rpc/core"
 	execsigner "github.com/evstack/ev-abci/pkg/signer"
-	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 const (
@@ -495,8 +493,9 @@ func setupNodeAndExecutor(
 		*evLogger,
 		node.NodeOptions{
 			ManagerOptions: rollkitblock.ManagerOptions{
-				SignaturePayloadProvider: cometcompat.SignaturePayloadProvider(execstore.NewExecABCIStore(database)),
-				ValidatorHasherProvider:  cometcompat.ValidatorHasherProvider(),
+				AggregatorNodeSignatureBytesProvider: adapter.AggregatorNodeSignatureBytesProvider(executor),
+				SyncNodeSignatureBytesProvider:       adapter.SyncNodeSignatureBytesProvider(executor),
+				ValidatorHasherProvider:              adapter.ValidatorHasherProvider(),
 			},
 		},
 	)

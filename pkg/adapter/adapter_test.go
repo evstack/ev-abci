@@ -24,7 +24,6 @@ import (
 
 	"github.com/evstack/ev-node/types"
 
-	"github.com/evstack/ev-abci/pkg/cometcompat"
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
@@ -104,7 +103,7 @@ func TestExecuteFiresEvents(t *testing.T) {
 				AppHash:         []byte("apphash1"),
 			}
 
-			headerBz, err := cometcompat.SignaturePayloadProvider(adapter.Store)(&header)
+			headerBz, err := AggregatorNodeSignatureBytesProvider(adapter)(&header)
 			require.NoError(t, err)
 
 			sig, err := privKey.Sign(headerBz)
