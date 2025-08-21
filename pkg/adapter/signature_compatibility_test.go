@@ -22,7 +22,7 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 
 	// Create a test store
 	dsStore := ds.NewMapDatastore()
-	storeOnlyAdapter := NewABCIExecutor(nil, dsStore, nil, nil, nil, nil, nil, nil)
+	storeOnlyAdapter := NewABCIExecutor(nil, dsStore, nil, nil, nil, nil, nil)
 
 	validatorAddress := make([]byte, 20)
 	chainID := "test-chain"

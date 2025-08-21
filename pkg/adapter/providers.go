@@ -8,14 +8,12 @@ import (
 	"fmt"
 
 	tmcryptoed25519 "github.com/cometbft/cometbft/crypto/ed25519"
-	tmtypes "github.com/cometbft/cometbft/types"
-	"github.com/libp2p/go-libp2p/core/crypto"
-
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
-	rollkittypes "github.com/evstack/ev-node/types"
+	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/evstack/ev-node/types"
+	rollkittypes "github.com/evstack/ev-node/types"
 )
 
 func AggregatorNodeSignatureBytesProvider(adapter *Adapter) types.AggregatorNodeSignatureBytesProvider {
@@ -109,7 +107,7 @@ func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey
 		}
 
 		votingPower := int64(1)
-		sequencerValidator := tmtypes.NewValidator(cometBftPubKey, votingPower)
+		sequencerValidator := cmttypes.NewValidator(cometBftPubKey, votingPower)
 
 		derivedAddress := sequencerValidator.Address.Bytes()
 		if !bytes.Equal(derivedAddress, proposerAddress) {
@@ -119,7 +117,7 @@ func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey
 				hex.EncodeToString(cometBftPubKey.Bytes()))
 		}
 
-		sequencerValidatorSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{sequencerValidator})
+		sequencerValidatorSet := cmttypes.NewValidatorSet([]*cmttypes.Validator{sequencerValidator})
 
 		hashSumBytes := sequencerValidatorSet.Hash()
 
