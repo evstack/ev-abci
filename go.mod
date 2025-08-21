@@ -2,6 +2,9 @@ module github.com/evstack/ev-abci
 
 go 1.24.1
 
+// https://github.com/evstack/ev-node/pull/2589
+replace github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.2.0.20250821181753-974aa15383de
+
 replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
 	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
@@ -25,7 +28,7 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/gogoproto v1.7.0
-	github.com/evstack/ev-node v1.0.0-beta.2.0.20250819153439-29b8ddf5a753
+	github.com/evstack/ev-node v1.0.0-beta.2.0.20250821181753-974aa15383de
 	github.com/evstack/ev-node/core v1.0.0-beta.1.0.20250818133040-d096a24e7052
 	github.com/evstack/ev-node/da v0.0.0-20250818133040-d096a24e7052
 	github.com/evstack/ev-node/sequencers/single v0.0.0-20250818133040-d096a24e7052

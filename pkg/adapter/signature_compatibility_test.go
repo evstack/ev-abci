@@ -1,4 +1,4 @@
-package cometcompat
+package adapter
 
 import (
 	"context"
@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/evstack/ev-node/types"
-
-	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
@@ -24,7 +22,7 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 
 	// Create a test store
 	dsStore := ds.NewMapDatastore()
-	store := execstore.NewExecABCIStore(dsStore)
+	storeOnlyAdapter := NewABCIExecutor(nil, dsStore, nil, nil, nil, nil, nil, nil)
 
 	validatorAddress := make([]byte, 20)
 	chainID := "test-chain"
@@ -39,8 +37,8 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 		ProposerAddress: validatorAddress,
 	}
 
-	// Test 1: SignaturePayloadProvider should work without BlockID in store
-	provider := SignaturePayloadProvider(store)
+	// Test 1: AggregatorNodeSignatureBytesProvider should work without BlockID in store
+	provider := AggregatorNodeSignatureBytesProvider(storeOnlyAdapter)
 	signBytes, err := provider(header)
 	require.NoError(t, err)
 	require.NotEmpty(t, signBytes)
@@ -55,7 +53,7 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 	blockID := &cmttypes.BlockID{
 		Hash: make([]byte, 32), // dummy hash for test
 	}
-	err = store.SaveBlockID(context.Background(), header.Height(), blockID)
+	err = storeOnlyAdapter.Store.SaveBlockID(context.Background(), header.Height(), blockID)
 	require.NoError(t, err)
 
 	signBytes2, err := provider(header)

@@ -1,4 +1,4 @@
-package cometcompat
+package adapter
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 
 	cmbytes "github.com/cometbft/cometbft/libs/bytes"
 	cmprotoversion "github.com/cometbft/cometbft/proto/tendermint/version"
+	cmtstate "github.com/cometbft/cometbft/state"
 	cmttypes "github.com/cometbft/cometbft/types"
 	cmtversion "github.com/cometbft/cometbft/version"
 
@@ -73,4 +74,35 @@ func ToABCIBlockMeta(abciBlock *cmttypes.Block) (*cmttypes.BlockMeta, error) {
 		Header:    abciBlock.Header,
 		NumTxs:    len(abciBlock.Txs),
 	}, nil
+}
+
+// MakeABCIBlock makes an ABCI block and its block ID.
+func MakeABCIBlock(
+	blockHeight uint64,
+	cmtTxs cmttypes.Txs,
+	currentState *cmtstate.State,
+	abciHeader cmttypes.Header,
+	lastCommit *cmttypes.Commit,
+) (*cmttypes.Block, cmttypes.BlockID, error) {
+	abciBlock := currentState.MakeBlock(
+		int64(blockHeight),
+		cmtTxs,
+		lastCommit,
+		nil,
+		currentState.Validators.Proposer.Address,
+	)
+
+	blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
+	if err != nil {
+		return nil, cmttypes.BlockID{}, fmt.Errorf("make part set: %w", err)
+	}
+
+	// use abci header hash to match the light client validation check
+	// where sh.Header.Hash() (comet header) must equal sh.Commit.BlockID.Hash
+	currentBlockID := cmttypes.BlockID{
+		Hash:          abciHeader.Hash(),
+		PartSetHeader: blockParts.Header(),
+	}
+
+	return abciBlock, currentBlockID, nil
 }

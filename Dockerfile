@@ -7,7 +7,7 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-beta.2.0.20250819153439-29b8ddf5a753
+ENV EVNODE_VERSION=v1.0.0-beta.2.0.20250821181753-974aa15383de
 ENV IGNITE_VERSION=v29.3.1
 ENV IGNITE_EVOLVE_APP_VERSION=main
 

@@ -31,7 +31,6 @@ import (
 	rstore "github.com/evstack/ev-node/pkg/store"
 	"github.com/evstack/ev-node/types"
 
-	"github.com/evstack/ev-abci/pkg/cometcompat"
 	"github.com/evstack/ev-abci/pkg/p2p"
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
@@ -326,12 +325,17 @@ func (a *Adapter) ExecuteTxs(
 		return nil, 0, fmt.Errorf("get last commit: %w", err)
 	}
 
-	abciHeader, err := cometcompat.ToABCIHeader(header, lastCommit)
+	abciHeader, err := ToABCIHeader(header, lastCommit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("compute header hash: %w", err)
 	}
 
-	abciBlock, currentBlockID, err := makeABCIBlock(ctx, blockHeight, txs, s, abciHeader, lastCommit)
+	cmtTxs := make(cmttypes.Txs, len(txs))
+	for i := range txs {
+		cmtTxs[i] = txs[i]
+	}
+
+	abciBlock, currentBlockID, err := MakeABCIBlock(blockHeight, cmtTxs, s, abciHeader, lastCommit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -542,37 +546,6 @@ func fireEvents(
 	}
 
 	return nil
-}
-
-// makeABCIBlock makes an ABCI block and its block ID
-func makeABCIBlock(
-	ctx context.Context,
-	blockHeight uint64,
-	txs [][]byte,
-	currentState *cmtstate.State,
-	abciHeader cmttypes.Header,
-	lastCommit *cmttypes.Commit,
-) (*cmttypes.Block, cmttypes.BlockID, error) {
-	cmtTxs := make(cmttypes.Txs, len(txs))
-	for i := range txs {
-		cmtTxs[i] = txs[i]
-	}
-
-	abciBlock := currentState.MakeBlock(int64(blockHeight), cmtTxs, lastCommit, nil, currentState.Validators.Proposer.Address)
-
-	blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
-	if err != nil {
-		return nil, cmttypes.BlockID{}, fmt.Errorf("make part set: %w", err)
-	}
-
-	// use abci header hash to match the light client validation check
-	// where sh.Header.Hash() (comet header) must equal sh.Commit.BlockID.Hash
-	currentBlockID := cmttypes.BlockID{
-		Hash:          abciHeader.Hash(),
-		PartSetHeader: blockParts.Header(),
-	}
-
-	return abciBlock, currentBlockID, nil
 }
 
 // GetLastCommit retrieves the last commit for the given block height.
