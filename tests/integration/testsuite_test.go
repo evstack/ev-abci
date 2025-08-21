@@ -244,7 +244,7 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
-			"--log_level", "*:info",
+			"--log_level", "*:debug",
 		).
 		Build())
 	s.Require().NoError(err)

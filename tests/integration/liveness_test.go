@@ -104,7 +104,7 @@ func getEvolveAppContainer() container.Image {
 	// get image repo and tag from environment variables
 	imageRepo := os.Getenv("EVOLVE_IMAGE_REPO")
 	if imageRepo == "" {
-		imageRepo = "evolve-gm" // fallback default
+		imageRepo = "ev-node" // fallback default
 	}
 
 	imageTag := os.Getenv("EVOLVE_IMAGE_TAG")
