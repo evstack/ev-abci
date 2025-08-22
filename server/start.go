@@ -519,7 +519,8 @@ func setupNodeAndExecutor(
 		TxIndexer:    txIndexer,
 		BlockIndexer: blockIndexer,
 		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
-		Config:       *cfg.RPC,
+		RPCConfig:    *cfg.RPC,
+		EVNodeConfig: rollkitcfg,
 	})
 
 	// Pass the created handler to the RPC server constructor
