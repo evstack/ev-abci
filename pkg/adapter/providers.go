@@ -43,30 +43,33 @@ func AggregatorNodeSignatureBytesProvider(adapter *Adapter) types.AggregatorNode
 func SyncNodeSignatureBytesProvider(adapter *Adapter) types.SyncNodeSignatureBytesProvider {
 	return func(ctx context.Context, header *types.Header, data *types.Data) ([]byte, error) {
 		blockHeight := header.Height()
+		blockID := cmttypes.BlockID{}
 
-		cmtTxs := make(cmttypes.Txs, len(data.Txs))
-		for i := range data.Txs {
-			cmtTxs[i] = cmttypes.Tx(data.Txs[i])
-		}
+		if header.Height() > 1 {
+			cmtTxs := make(cmttypes.Txs, len(data.Txs))
+			for i := range data.Txs {
+				cmtTxs[i] = cmttypes.Tx(data.Txs[i])
+			}
 
-		lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
-		if err != nil {
-			return nil, fmt.Errorf("get last commit: %w", err)
-		}
+			lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
+			if err != nil {
+				return nil, fmt.Errorf("get last commit: %w", err)
+			}
 
-		abciHeader, err := ToABCIHeader(*header, lastCommit)
-		if err != nil {
-			return nil, fmt.Errorf("compute header hash: %w", err)
-		}
+			abciHeader, err := ToABCIHeader(*header, lastCommit)
+			if err != nil {
+				return nil, fmt.Errorf("compute header hash: %w", err)
+			}
 
-		currentState, err := adapter.Store.LoadState(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load state: %w", err)
-		}
+			currentState, err := adapter.Store.LoadState(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("load state: %w", err)
+			}
 
-		_, blockID, err := MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
-		if err != nil {
-			return nil, fmt.Errorf("make ABCI block: %w", err)
+			_, blockID, err = MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
+			if err != nil {
+				return nil, fmt.Errorf("make ABCI block: %w", err)
+			}
 		}
 
 		vote := cmtproto.Vote{
