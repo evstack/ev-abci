@@ -8,6 +8,7 @@ import (
 	"github.com/cometbft/cometbft/state/indexer"
 	"github.com/cometbft/cometbft/state/txindex"
 
+	"github.com/evstack/ev-node/pkg/config"
 	"github.com/evstack/ev-node/pkg/signer"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
@@ -30,7 +31,8 @@ type Environment struct {
 	TxIndexer    txindex.TxIndexer
 	BlockIndexer indexer.BlockIndexer
 	Logger       cmtlog.Logger
-	Config       cmtcfg.RPCConfig
+	RPCConfig    cmtcfg.RPCConfig
+	EVNodeConfig config.Config
 }
 
 func validateSkipCount(page, perPage int) int {

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/evstack/ev-node/pkg/config"
 	rollkitmocks "github.com/evstack/ev-node/test/mocks"
 	rlktypes "github.com/evstack/ev-node/types"
 
@@ -64,9 +65,18 @@ func TestStatus(t *testing.T) {
 		},
 		P2PClient: mockP2P,
 	}
+
 	// Set the global env (required by Status function)
 	originalEnv := env
-	env = &Environment{Adapter: adapterInstance, Logger: cmtlog.NewNopLogger()}
+	// Create a mock config with the required structure
+	mockConfig := config.Config{}
+	mockConfig.Node.BlockTime.Duration = 10 * time.Second // Use 10 second block time for tests
+
+	env = &Environment{
+		Adapter:      adapterInstance,
+		Logger:       cmtlog.NewNopLogger(),
+		EVNodeConfig: mockConfig,
+	}
 	t.Cleanup(func() { env = originalEnv })
 
 	t.Run("Success", func(t *testing.T) {
@@ -89,6 +99,119 @@ func TestStatus(t *testing.T) {
 		assert.Equal(t, int64(1), result.ValidatorInfo.VotingPower)
 
 		// Assert expectations for this subtest
+		mockStore.AssertExpectations(t)
+		mockP2P.AssertExpectations(t)
+	})
+
+	t.Run("CatchingUp_RecentBlock", func(t *testing.T) {
+		// Create header with recent timestamp (within 2x config block time)
+		recentTime := time.Now()
+		recentHeader := &rlktypes.SignedHeader{
+			Header: rlktypes.Header{
+				BaseHeader: rlktypes.BaseHeader{
+					Height: latestHeight,
+					Time:   uint64(recentTime.UnixNano()),
+				},
+				ProposerAddress: genesisAddress,
+				AppHash:         appHash,
+				DataHash:        blockHash,
+			},
+		}
+
+		mockStore := new(rollkitmocks.MockStore)
+		mockP2P := new(MockP2PClient)
+
+		mockStore.On("Height", mock.Anything).Return(latestHeight, nil).Once()
+		mockStore.On("GetHeader", mock.Anything, latestHeight).Return(recentHeader, nil).Once()
+		mockStore.On("GetHeader", mock.Anything, uint64(initialHeight)).Return(sampleSignedHeader, nil).Once()
+		mockStore.On("GetState", mock.Anything).Return(rlktypes.State{Version: rlktypes.Version{Block: 1, App: 1}}, nil).Once()
+		mockP2P.On("Info").Return("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "addr", "network", nil).Once()
+
+		originalStore := adapterInstance.RollkitStore
+		originalP2P := adapterInstance.P2PClient
+		adapterInstance.RollkitStore = mockStore
+		adapterInstance.P2PClient = mockP2P
+		t.Cleanup(func() {
+			adapterInstance.RollkitStore = originalStore
+			adapterInstance.P2PClient = originalP2P
+		})
+
+		result, err := Status(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.SyncInfo.CatchingUp, "Node should not be catching up with recent block")
+
+		mockStore.AssertExpectations(t)
+		mockP2P.AssertExpectations(t)
+	})
+
+	t.Run("CatchingUp_OldBlock", func(t *testing.T) {
+		// Create header with old timestamp (more than 2x config block time)
+		// Assuming default config block time, use a very old timestamp
+		oldTime := time.Now().Add(-5 * time.Minute)
+		oldHeader := &rlktypes.SignedHeader{
+			Header: rlktypes.Header{
+				BaseHeader: rlktypes.BaseHeader{
+					Height: latestHeight,
+					Time:   uint64(oldTime.UnixNano()),
+				},
+				ProposerAddress: genesisAddress,
+				AppHash:         appHash,
+				DataHash:        blockHash,
+			},
+		}
+
+		mockStore := new(rollkitmocks.MockStore)
+		mockP2P := new(MockP2PClient)
+
+		mockStore.On("Height", mock.Anything).Return(latestHeight, nil).Once()
+		mockStore.On("GetHeader", mock.Anything, latestHeight).Return(oldHeader, nil).Once()
+		mockStore.On("GetHeader", mock.Anything, uint64(initialHeight)).Return(sampleSignedHeader, nil).Once()
+		mockStore.On("GetState", mock.Anything).Return(rlktypes.State{Version: rlktypes.Version{Block: 1, App: 1}}, nil).Once()
+		mockP2P.On("Info").Return("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "addr", "network", nil).Once()
+
+		originalStore := adapterInstance.RollkitStore
+		originalP2P := adapterInstance.P2PClient
+		adapterInstance.RollkitStore = mockStore
+		adapterInstance.P2PClient = mockP2P
+		t.Cleanup(func() {
+			adapterInstance.RollkitStore = originalStore
+			adapterInstance.P2PClient = originalP2P
+		})
+
+		result, err := Status(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, result.SyncInfo.CatchingUp, "Node should be catching up with old block")
+
+		mockStore.AssertExpectations(t)
+		mockP2P.AssertExpectations(t)
+	})
+
+	t.Run("CatchingUp_ZeroHeight", func(t *testing.T) {
+		// Test the case where height is 0 (no blocks yet)
+		mockStore := new(rollkitmocks.MockStore)
+		mockP2P := new(MockP2PClient)
+
+		mockStore.On("Height", mock.Anything).Return(uint64(0), nil).Once()
+		mockStore.On("GetHeader", mock.Anything, uint64(initialHeight)).Return(sampleSignedHeader, nil).Once()
+		mockStore.On("GetState", mock.Anything).Return(rlktypes.State{Version: rlktypes.Version{Block: 1, App: 1}}, nil).Once()
+		mockP2P.On("Info").Return("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "addr", "network", nil).Once()
+
+		originalStore := adapterInstance.RollkitStore
+		originalP2P := adapterInstance.P2PClient
+		adapterInstance.RollkitStore = mockStore
+		adapterInstance.P2PClient = mockP2P
+		t.Cleanup(func() {
+			adapterInstance.RollkitStore = originalStore
+			adapterInstance.P2PClient = originalP2P
+		})
+
+		result, err := Status(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.SyncInfo.CatchingUp, "Node should not be catching up when no blocks are available (defaults to false)")
+
 		mockStore.AssertExpectations(t)
 		mockP2P.AssertExpectations(t)
 	})
