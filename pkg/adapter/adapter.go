@@ -460,7 +460,7 @@ func (a *Adapter) ExecuteTxs(
 
 	// saving data to ev-abci store
 
-	if err := a.Store.SaveBlockID(ctx, blockHeight, &currentBlockID); err != nil {
+	if err := a.Store.SaveBlockID(ctx, blockHeight, currentBlockID); err != nil {
 		return nil, 0, fmt.Errorf("save block ID: %w", err)
 	}
 
@@ -490,13 +490,13 @@ func (a *Adapter) ExecuteTxs(
 func fireEvents(
 	eventBus cmttypes.BlockEventPublisher,
 	block *cmttypes.Block,
-	blockID cmttypes.BlockID,
+	blockID *cmttypes.BlockID,
 	abciResponse *abci.ResponseFinalizeBlock,
 	validatorUpdates []*cmttypes.Validator,
 ) error {
 	if err := eventBus.PublishEventNewBlock(cmttypes.EventDataNewBlock{
 		Block:               block,
-		BlockID:             blockID,
+		BlockID:             *blockID,
 		ResultFinalizeBlock: *abciResponse,
 	}); err != nil {
 		return fmt.Errorf("publish new block event: %w", err)
@@ -611,14 +611,14 @@ func cometCommitToABCICommitInfo(commit *cmttypes.Commit) abci.CommitInfo {
 }
 
 type StackedEvent struct {
-	blockID          cmttypes.BlockID
+	blockID          *cmttypes.BlockID
 	block            *cmttypes.Block
 	abciResponse     *abci.ResponseFinalizeBlock
 	validatorUpdates []*cmttypes.Validator
 }
 
 func (a *Adapter) stackBlockCommitEvents(
-	blockID cmttypes.BlockID,
+	blockID *cmttypes.BlockID,
 	block *cmttypes.Block,
 	abciResponse *abci.ResponseFinalizeBlock,
 	validatorUpdates []*cmttypes.Validator,

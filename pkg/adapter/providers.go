@@ -12,85 +12,79 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
-	"github.com/evstack/ev-node/types"
-	rollkittypes "github.com/evstack/ev-node/types"
+	evtypes "github.com/evstack/ev-node/types"
 )
 
-func AggregatorNodeSignatureBytesProvider(adapter *Adapter) types.AggregatorNodeSignatureBytesProvider {
-	return func(header *types.Header) ([]byte, error) {
+func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
+	return func(header *evtypes.Header) ([]byte, error) {
 		blockID, err := adapter.Store.GetBlockID(context.Background(), header.Height())
 		if err != nil && header.Height() > 1 {
 			return nil, err
 		}
 
-		vote := cmtproto.Vote{
-			Type:             cmtproto.PrecommitType,
-			Height:           int64(header.Height()), //nolint:gosec
-			BlockID:          blockID.ToProto(),
-			Round:            0,
-			Timestamp:        header.Time(),
-			ValidatorAddress: header.ProposerAddress,
-			ValidatorIndex:   0,
-		}
-
-		chainID := header.ChainID()
-		consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
-
-		return consensusVoteBytes, nil
+		return createVote(header, blockID), nil
 	}
 }
 
-func SyncNodeSignatureBytesProvider(adapter *Adapter) types.SyncNodeSignatureBytesProvider {
-	return func(ctx context.Context, header *types.Header, data *types.Data) ([]byte, error) {
+func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureBytesProvider {
+	return func(ctx context.Context, header *evtypes.Header, data *evtypes.Data) ([]byte, error) {
 		blockHeight := header.Height()
+		blockID := &cmttypes.BlockID{}
 
-		cmtTxs := make(cmttypes.Txs, len(data.Txs))
-		for i := range data.Txs {
-			cmtTxs[i] = cmttypes.Tx(data.Txs[i])
+		if header.Height() > 1 { // first block has an empty block ID
+			cmtTxs := make(cmttypes.Txs, len(data.Txs))
+			for i := range data.Txs {
+				cmtTxs[i] = cmttypes.Tx(data.Txs[i])
+			}
+
+			lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
+			if err != nil {
+				return nil, fmt.Errorf("get last commit: %w", err)
+			}
+
+			abciHeader, err := ToABCIHeader(*header, lastCommit)
+			if err != nil {
+				return nil, fmt.Errorf("compute header hash: %w", err)
+			}
+
+			currentState, err := adapter.Store.LoadState(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("load state: %w", err)
+			}
+
+			_, blockID, err = MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
+			if err != nil {
+				return nil, fmt.Errorf("make ABCI block: %w", err)
+			}
 		}
 
-		lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
-		if err != nil {
-			return nil, fmt.Errorf("get last commit: %w", err)
-		}
-
-		abciHeader, err := ToABCIHeader(*header, lastCommit)
-		if err != nil {
-			return nil, fmt.Errorf("compute header hash: %w", err)
-		}
-
-		currentState, err := adapter.Store.LoadState(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("load state: %w", err)
-		}
-
-		_, blockID, err := MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
-		if err != nil {
-			return nil, fmt.Errorf("make ABCI block: %w", err)
-		}
-
-		vote := cmtproto.Vote{
-			Type:             cmtproto.PrecommitType,
-			Height:           int64(header.Height()), //nolint:gosec
-			BlockID:          blockID.ToProto(),
-			Round:            0,
-			Timestamp:        header.Time(),
-			ValidatorAddress: header.ProposerAddress,
-			ValidatorIndex:   0,
-		}
-
-		chainID := header.ChainID()
-		consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
-
-		return consensusVoteBytes, nil
+		return createVote(header, blockID), nil
 	}
+}
+
+// createVote builds the vote for the given header and block ID to be signed.
+func createVote(header *evtypes.Header, blockID *cmttypes.BlockID) []byte {
+	vote := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           int64(header.Height()), //nolint:gosec
+		BlockID:          blockID.ToProto(),
+		Round:            0,
+		Timestamp:        header.Time(),
+		ValidatorAddress: header.ProposerAddress,
+		ValidatorIndex:   0,
+	}
+
+	chainID := header.ChainID()
+	consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
+
+	return consensusVoteBytes
 }
 
 // ValidatorHasher returns a function that calculates the ValidatorHash
 // compatible with CometBFT. This function is intended to be injected into ev-node's Manager.
-func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
-	return func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
-		var calculatedHash rollkittypes.Hash
+func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+	return func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+		var calculatedHash evtypes.Hash
 
 		var cometBftPubKey tmcryptoed25519.PubKey
 		if pubKey.Type() == crypto.Ed25519 {
@@ -121,7 +115,7 @@ func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey
 
 		hashSumBytes := sequencerValidatorSet.Hash()
 
-		calculatedHash = make(rollkittypes.Hash, stdsha256.Size)
+		calculatedHash = make(evtypes.Hash, stdsha256.Size)
 		copy(calculatedHash, hashSumBytes)
 
 		return calculatedHash, nil

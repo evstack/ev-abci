@@ -83,7 +83,7 @@ func MakeABCIBlock(
 	currentState *cmtstate.State,
 	abciHeader cmttypes.Header,
 	lastCommit *cmttypes.Commit,
-) (*cmttypes.Block, cmttypes.BlockID, error) {
+) (*cmttypes.Block, *cmttypes.BlockID, error) {
 	abciBlock := currentState.MakeBlock(
 		int64(blockHeight),
 		cmtTxs,
@@ -94,12 +94,12 @@ func MakeABCIBlock(
 
 	blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
 	if err != nil {
-		return nil, cmttypes.BlockID{}, fmt.Errorf("make part set: %w", err)
+		return nil, nil, fmt.Errorf("make part set: %w", err)
 	}
 
 	// use abci header hash to match the light client validation check
 	// where sh.Header.Hash() (comet header) must equal sh.Commit.BlockID.Hash
-	currentBlockID := cmttypes.BlockID{
+	currentBlockID := &cmttypes.BlockID{
 		Hash:          abciHeader.Hash(),
 		PartSetHeader: blockParts.Header(),
 	}
