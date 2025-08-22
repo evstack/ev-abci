@@ -26,7 +26,7 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
 
 
 RUN set -eux; \
-    go get github.com/evstack/ev-node@d8df97d26f01e9eeaafbcfc5a09996eb00514745; \
+    go get github.com/evstack/ev-node@05dddf855afda5b2aa2deee28e43a899f711c9e1; \
     go mod edit -replace=github.com/evstack/ev-abci=/workspace/ev-abci; \
     go mod tidy
 
