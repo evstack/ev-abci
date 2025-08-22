@@ -18,10 +18,10 @@ func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, er
 	{
 		addr := ctx.RemoteAddr()
 
-		if env.Adapter.EventBus.NumClients() >= env.Config.MaxSubscriptionClients {
-			return nil, fmt.Errorf("max_subscription_clients %d reached", env.Config.MaxSubscriptionClients)
-		} else if env.Adapter.EventBus.NumClientSubscriptions(addr) >= env.Config.MaxSubscriptionsPerClient {
-			return nil, fmt.Errorf("max_subscriptions_per_client %d reached", env.Config.MaxSubscriptionsPerClient)
+		if env.Adapter.EventBus.NumClients() >= env.RPCConfig.MaxSubscriptionClients {
+			return nil, fmt.Errorf("max_subscription_clients %d reached", env.RPCConfig.MaxSubscriptionClients)
+		} else if env.Adapter.EventBus.NumClientSubscriptions(addr) >= env.RPCConfig.MaxSubscriptionsPerClient {
+			return nil, fmt.Errorf("max_subscriptions_per_client %d reached", env.RPCConfig.MaxSubscriptionsPerClient)
 		} else if len(query) > maxQueryLength {
 			return nil, errors.New("maximum query length exceeded")
 		}
@@ -36,12 +36,12 @@ func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, er
 		subCtx, cancel := context.WithTimeout(ctx.Context(), SubscribeTimeout)
 		defer cancel()
 
-		sub, err := env.Adapter.EventBus.Subscribe(subCtx, addr, q, env.Config.SubscriptionBufferSize)
+		sub, err := env.Adapter.EventBus.Subscribe(subCtx, addr, q, env.RPCConfig.SubscriptionBufferSize)
 		if err != nil {
 			return nil, err
 		}
 
-		closeIfSlow := env.Config.CloseOnSlowClient
+		closeIfSlow := env.RPCConfig.CloseOnSlowClient
 
 		// Capture the current ID, since it can change in the future.
 		subscriptionID := ctx.JSONReq.ID
