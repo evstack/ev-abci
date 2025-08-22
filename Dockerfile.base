@@ -1,0 +1,29 @@
+FROM golang:1.24-alpine AS base-ignite-image
+
+# install dependencies needed for ignite and building
+RUN apk add --no-cache \
+    libc6-compat \
+    curl \
+    bash
+
+# set environment variables for ignite and evolve versions
+ARG IGNITE_VERSION=v29.3.1
+ARG IGNITE_EVOLVE_APP_VERSION=main
+ENV IGNITE_VERSION=${IGNITE_VERSION}
+ENV IGNITE_EVOLVE_APP_VERSION=${IGNITE_EVOLVE_APP_VERSION}
+
+# install ignite CLI
+RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
+
+WORKDIR /workspace
+
+# scaffold chain with evolve app
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+
+WORKDIR /workspace/gm
+
+# install evolve app and add to chain
+RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
+    ignite evolve add
+
+# this base image contains a pre-scaffolded chain with evolve

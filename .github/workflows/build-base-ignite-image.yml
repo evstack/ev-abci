@@ -1,0 +1,58 @@
+name: Build Base Ignite Image
+on:
+  workflow_dispatch:
+    inputs:
+      ignite_version:
+        description: "Ignite CLI version"
+        required: false
+        default: "v29.3.1"
+        type: string
+      ignite_evolve_app_version:
+        description: "Ignite Evolve app version/branch"
+        required: false
+        default: "main"
+        type: string
+  push:
+    paths:
+      - 'Dockerfile.base'
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-base-image:
+    name: Build and Push Base Ignite Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      IGNITE_VERSION: ${{ inputs.ignite_version }}
+      IGNITE_EVOLVE_APP_VERSION: ${{ inputs.ignite_evolve_app_version }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Base Image
+        run: |
+          docker build \
+            --build-arg IGNITE_VERSION=${{ env.IGNITE_VERSION }} \
+            --build-arg IGNITE_EVOLVE_APP_VERSION=${{ env.IGNITE_EVOLVE_APP_VERSION }} \
+            --label "ignite_version=${{ env.IGNITE_VERSION }}" \
+            --label "ignite_evolve_app_version=${{ env.IGNITE_EVOLVE_APP_VERSION }}" \
+            -t ghcr.io/evstack/base-ignite-image:latest \
+            -f Dockerfile.base \
+            --push .
