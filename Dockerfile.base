@@ -26,4 +26,7 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
     ignite evolve add
 
+# pre-download dependencies to warm the module cache
+RUN go mod download
+
 # this base image contains a pre-scaffolded chain with evolve
