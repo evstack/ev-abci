@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/stretchr/testify/require"
 
+	"github.com/evstack/ev-abci/pkg/store"
 	"github.com/evstack/ev-node/types"
 )
 
@@ -43,16 +44,40 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, signBytes)
 
+	syncProvider := SyncNodeSignatureBytesProvider(storeOnlyAdapter)
+	signBytesSync, err := syncProvider(context.Background(), header, &types.Data{})
+	require.NoError(t, err)
+	require.NotEmpty(t, signBytesSync)
+
+	require.Equal(t, signBytes, signBytesSync)
+
 	// Test 2: Should be able to sign the payload
 	signature, err := p2pPrivKey.Sign(signBytes)
 	require.NoError(t, err)
 	require.NotEmpty(t, signature)
 	require.Equal(t, 64, len(signature)) // Ed25519 signature length
 
-	// Test 3: After saving BlockID, should still work
-	blockID := &cmttypes.BlockID{
-		Hash: make([]byte, 32), // dummy hash for test
-	}
+	// Test 3: Set up proper state and create consistent BlockID for both providers (at height > 2)
+	state := store.TestingStateFixture()
+	state.LastBlockHeight = 2
+	err = storeOnlyAdapter.Store.SaveState(context.Background(), store.TestingStateFixture())
+	require.NoError(t, err)
+
+	// Create BlockID using the same method that SyncNodeSignatureBytesProvider uses
+	currentState, err := storeOnlyAdapter.Store.LoadState(context.Background())
+	require.NoError(t, err)
+
+	lastCommit, err := storeOnlyAdapter.GetLastCommit(context.Background(), header.Height())
+	require.NoError(t, err)
+
+	abciHeader, err := ToABCIHeader(*header, lastCommit)
+	require.NoError(t, err)
+
+	cmtTxs := make(cmttypes.Txs, 0)
+	_, blockID, err := MakeABCIBlock(header.Height(), cmtTxs, currentState, abciHeader, lastCommit)
+	require.NoError(t, err)
+
+	// Save the properly generated BlockID to the store
 	err = storeOnlyAdapter.Store.SaveBlockID(context.Background(), header.Height(), blockID)
 	require.NoError(t, err)
 

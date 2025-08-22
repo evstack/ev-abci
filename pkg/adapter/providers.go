@@ -23,29 +23,16 @@ func AggregatorNodeSignatureBytesProvider(adapter *Adapter) types.AggregatorNode
 			return nil, err
 		}
 
-		vote := cmtproto.Vote{
-			Type:             cmtproto.PrecommitType,
-			Height:           int64(header.Height()), //nolint:gosec
-			BlockID:          blockID.ToProto(),
-			Round:            0,
-			Timestamp:        header.Time(),
-			ValidatorAddress: header.ProposerAddress,
-			ValidatorIndex:   0,
-		}
-
-		chainID := header.ChainID()
-		consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
-
-		return consensusVoteBytes, nil
+		return createVote(header, blockID), nil
 	}
 }
 
 func SyncNodeSignatureBytesProvider(adapter *Adapter) types.SyncNodeSignatureBytesProvider {
 	return func(ctx context.Context, header *types.Header, data *types.Data) ([]byte, error) {
 		blockHeight := header.Height()
-		blockID := cmttypes.BlockID{}
+		blockID := &cmttypes.BlockID{}
 
-		if header.Height() > 1 {
+		if header.Height() > 1 { // first block has an empty block ID
 			cmtTxs := make(cmttypes.Txs, len(data.Txs))
 			for i := range data.Txs {
 				cmtTxs[i] = cmttypes.Tx(data.Txs[i])
@@ -72,21 +59,26 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) types.SyncNodeSignatureByt
 			}
 		}
 
-		vote := cmtproto.Vote{
-			Type:             cmtproto.PrecommitType,
-			Height:           int64(header.Height()), //nolint:gosec
-			BlockID:          blockID.ToProto(),
-			Round:            0,
-			Timestamp:        header.Time(),
-			ValidatorAddress: header.ProposerAddress,
-			ValidatorIndex:   0,
-		}
-
-		chainID := header.ChainID()
-		consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
-
-		return consensusVoteBytes, nil
+		return createVote(header, blockID), nil
 	}
+}
+
+// createVote builds the vote for the given header and block ID to be signed.
+func createVote(header *types.Header, blockID *cmttypes.BlockID) []byte {
+	vote := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           int64(header.Height()), //nolint:gosec
+		BlockID:          blockID.ToProto(),
+		Round:            0,
+		Timestamp:        header.Time(),
+		ValidatorAddress: header.ProposerAddress,
+		ValidatorIndex:   0,
+	}
+
+	chainID := header.ChainID()
+	consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
+
+	return consensusVoteBytes
 }
 
 // ValidatorHasher returns a function that calculates the ValidatorHash
