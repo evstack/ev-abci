@@ -17,6 +17,9 @@ on:
       - 'Dockerfile.base'
     branches:
       - main
+  pull_request:
+    paths:
+      - 'Dockerfile.base'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
