@@ -289,6 +289,8 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *docke
 	chainNode := chain.GetNodes()[nodeIdx]
 	broadcaster := docker.NewBroadcasterForNode(chain, chainNode.(*docker.ChainNode))
 
+	time.Sleep(15 * time.Second)
+
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
 	_, err = broadcaster.BroadcastMessages(ctx, fromWallet, msg)
 	if err != nil {
