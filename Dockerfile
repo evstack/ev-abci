@@ -7,7 +7,7 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-beta.2.0.20250818133040-d096a24e7052
+ENV EVNODE_VERSION=v1.0.0-beta.2.0.20250821181753-974aa15383de
 ENV IGNITE_VERSION=v29.3.1
 ENV IGNITE_EVOLVE_APP_VERSION=main
 
@@ -24,8 +24,10 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
     ignite evolve add
 
-RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
-    go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
+
+RUN set -eux; \
+    go get github.com/evstack/ev-node@05dddf855afda5b2aa2deee28e43a899f711c9e1; \
+    go mod edit -replace=github.com/evstack/ev-abci=/workspace/ev-abci; \
     go mod tidy
 
 RUN ignite chain build --skip-proto
