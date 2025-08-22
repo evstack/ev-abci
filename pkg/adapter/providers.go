@@ -12,12 +12,11 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
-	"github.com/evstack/ev-node/types"
-	rollkittypes "github.com/evstack/ev-node/types"
+	evtypes "github.com/evstack/ev-node/types"
 )
 
-func AggregatorNodeSignatureBytesProvider(adapter *Adapter) types.AggregatorNodeSignatureBytesProvider {
-	return func(header *types.Header) ([]byte, error) {
+func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
+	return func(header *evtypes.Header) ([]byte, error) {
 		blockID, err := adapter.Store.GetBlockID(context.Background(), header.Height())
 		if err != nil && header.Height() > 1 {
 			return nil, err
@@ -27,8 +26,8 @@ func AggregatorNodeSignatureBytesProvider(adapter *Adapter) types.AggregatorNode
 	}
 }
 
-func SyncNodeSignatureBytesProvider(adapter *Adapter) types.SyncNodeSignatureBytesProvider {
-	return func(ctx context.Context, header *types.Header, data *types.Data) ([]byte, error) {
+func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureBytesProvider {
+	return func(ctx context.Context, header *evtypes.Header, data *evtypes.Data) ([]byte, error) {
 		blockHeight := header.Height()
 		blockID := &cmttypes.BlockID{}
 
@@ -64,7 +63,7 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) types.SyncNodeSignatureByt
 }
 
 // createVote builds the vote for the given header and block ID to be signed.
-func createVote(header *types.Header, blockID *cmttypes.BlockID) []byte {
+func createVote(header *evtypes.Header, blockID *cmttypes.BlockID) []byte {
 	vote := cmtproto.Vote{
 		Type:             cmtproto.PrecommitType,
 		Height:           int64(header.Height()), //nolint:gosec
@@ -83,9 +82,9 @@ func createVote(header *types.Header, blockID *cmttypes.BlockID) []byte {
 
 // ValidatorHasher returns a function that calculates the ValidatorHash
 // compatible with CometBFT. This function is intended to be injected into ev-node's Manager.
-func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
-	return func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error) {
-		var calculatedHash rollkittypes.Hash
+func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+	return func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+		var calculatedHash evtypes.Hash
 
 		var cometBftPubKey tmcryptoed25519.PubKey
 		if pubKey.Type() == crypto.Ed25519 {
@@ -116,7 +115,7 @@ func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey
 
 		hashSumBytes := sequencerValidatorSet.Hash()
 
-		calculatedHash = make(rollkittypes.Hash, stdsha256.Size)
+		calculatedHash = make(evtypes.Hash, stdsha256.Size)
 		copy(calculatedHash, hashSumBytes)
 
 		return calculatedHash, nil
