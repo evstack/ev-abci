@@ -471,23 +471,24 @@ func (a *Adapter) ExecuteTxs(
 		return nil, 0, fmt.Errorf("save block ID: %w", err)
 	}
 
-	if a.blockFilter.IsPublishable(ctx, int64(header.Height())) {
-		// save response before the events are fired (current behaviour in CometBFT)
-		if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
-			return nil, 0, fmt.Errorf("save block response: %w", err)
-		}
-
-		if err := fireEvents(a.EventBus, abciBlock, currentBlockID, fbResp, validatorUpdates); err != nil {
-			return nil, 0, fmt.Errorf("fire events: %w", err)
-		}
-	} else {
-		a.stackBlockCommitEvents(currentBlockID, abciBlock, fbResp, validatorUpdates)
-		// clear events so that they are not stored with the block data at this stage.
-		fbResp.Events = nil
-		if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
-			return nil, 0, fmt.Errorf("save block response: %w", err)
-		}
+	// TODO: are we sure we can really get a soft confirmation here? Other attesters have not yet received the block
+	//if a.blockFilter.IsPublishable(ctx, int64(header.Height())) {
+	// save response before the events are fired (current behaviour in CometBFT)
+	if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
+		return nil, 0, fmt.Errorf("save block response: %w", err)
 	}
+
+	if err := fireEvents(a.EventBus, abciBlock, currentBlockID, fbResp, validatorUpdates); err != nil {
+		return nil, 0, fmt.Errorf("fire events: %w", err)
+	}
+	//} else {
+	//	a.stackBlockCommitEvents(currentBlockID, abciBlock, fbResp, validatorUpdates)
+	//	// clear events so that they are not stored with the block data at this stage.
+	//	fbResp.Events = nil
+	//	if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
+	//		return nil, 0, fmt.Errorf("save block response: %w", err)
+	//	}
+	//}
 
 	a.Logger.Info("block executed successfully", "height", blockHeight, "appHash", fmt.Sprintf("%X", fbResp.AppHash))
 
@@ -685,6 +686,7 @@ func (a *Adapter) GetTxs(ctx context.Context) ([][]byte, error) {
 }
 
 // SetFinal handles extra logic once the block has been finalized (posted to DA).
+
 // It publishes all queued events up to this height in the correct sequence, ensuring
 // that events are only emitted after consensus is achieved.
 func (a *Adapter) SetFinal(ctx context.Context, blockHeight uint64) error {
