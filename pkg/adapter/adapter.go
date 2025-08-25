@@ -99,7 +99,7 @@ func NewABCIExecutor(
 	p2pClient *rollkitp2p.Client,
 	p2pMetrics *rollkitp2p.Metrics,
 	logger log.Logger,
-	cfg *cmtcfg.Config,
+	_ *cmtcfg.Config,
 	appGenesis *genutiltypes.AppGenesis,
 	opts ...Option,
 ) *Adapter {
@@ -302,7 +302,7 @@ func (a *Adapter) ExecuteTxs(
 	txs [][]byte,
 	blockHeight uint64,
 	timestamp time.Time,
-	prevStateRoot []byte,
+	_ []byte,
 ) ([]byte, uint64, error) {
 	execStart := time.Now()
 	defer func() {
