@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/config"
 	cmbytes "github.com/cometbft/cometbft/libs/bytes"
 	corep2p "github.com/cometbft/cometbft/p2p"
@@ -11,6 +12,8 @@ import (
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cometbft/cometbft/version"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 
 // Status returns CometBFT status including node info, pubkey, latest block
@@ -25,9 +28,32 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 		latestBlockTime time.Time
 	)
 
-	latestHeight, err := env.Adapter.RollkitStore.Height(ctx.Context())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest height: %w", err)
+	// Determine latest height based on node mode
+	var latestHeight uint64
+	var err error
+
+	// Debug: Check attester node detection
+	isAttester := isAttesterNode(ctx)
+	env.Logger.Info("Status endpoint - node mode detection",
+		"isAttester", isAttester,
+		"NetworkSoftConfirmation", env.NetworkSoftConfirmation)
+
+	if isAttester {
+		// If attester node, get last attested height for this validator
+		latestHeight, err = getLastAttestedHeight(ctx)
+		if err != nil {
+			// Fallback to store height if attestation query fails
+			latestHeight, err = env.Adapter.RollkitStore.Height(ctx.Context())
+			if err != nil {
+				return nil, fmt.Errorf("failed to get latest height: %w", err)
+			}
+		}
+	} else {
+		// If sequencer node, use normal behavior
+		latestHeight, err = env.Adapter.RollkitStore.Height(ctx.Context())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get latest height: %w", err)
+		}
 	}
 
 	if latestHeight != 0 {
@@ -112,4 +138,82 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 	}
 
 	return result, nil
+}
+
+// isAttesterNode checks if this node is running in attester mode
+func isAttesterNode(ctx *rpctypes.Context) bool {
+	// Check if the NetworkSoftConfirmation flag is enabled (indicates attester mode)
+	if env.NetworkSoftConfirmation {
+		return true
+	}
+
+	// Additional check: query if this validator is in the attester set
+	valAddr, err := getValidatorAddress()
+	if err != nil {
+		return false
+	}
+
+	// Query network module to check if this validator is in attester set
+	path := "/rollkitsdk.network.v1.Query/Attesters"
+	data := []byte("{}")
+
+	res, err := env.Adapter.App.Query(ctx.Context(), &abci.RequestQuery{
+		Path: path,
+		Data: data,
+	})
+	if err != nil || res.Code != 0 {
+		return false
+	}
+
+	// Simple check if validator address is in the response
+	return len(res.Value) > 0 && len(valAddr) > 0
+}
+
+// getLastAttestedHeight returns the highest block height attested by this validator
+func getLastAttestedHeight(ctx *rpctypes.Context) (uint64, error) {
+	// Create protobuf request for LastAttestedHeight query (O(1) operation)
+	req := &networktypes.QueryLastAttestedHeightRequest{}
+
+	// Marshal the protobuf request
+	reqBytes, err := req.Marshal()
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Use ABCI Query with the new endpoint
+	res, err := env.Adapter.App.Query(ctx.Context(), &abci.RequestQuery{
+		Path: "/evabci.network.v1.Query/LastAttestedHeight",
+		Data: reqBytes,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to query last attested height: %w", err)
+	}
+	if res.Code != 0 {
+		return 0, fmt.Errorf("query failed with code %d: %s", res.Code, res.Log)
+	}
+
+	// Unmarshal the protobuf response
+	if len(res.Value) > 0 {
+		var response networktypes.QueryLastAttestedHeightResponse
+		if err := response.Unmarshal(res.Value); err != nil {
+			return 0, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+		return uint64(response.Height), nil
+	}
+
+	// If no response value, return 0
+	return 0, nil
+}
+
+// getValidatorAddress returns the validator address for this node
+func getValidatorAddress() (string, error) {
+	if len(env.Adapter.AppGenesis.Consensus.Validators) != 1 {
+		return "", fmt.Errorf("expected exactly one validator in genesis")
+	}
+
+	validator := env.Adapter.AppGenesis.Consensus.Validators[0]
+
+	// Convert to SDK validator address format
+	valAddr := sdk.ValAddress(validator.Address)
+	return valAddr.String(), nil
 }

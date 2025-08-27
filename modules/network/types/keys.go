@@ -30,6 +30,7 @@ var (
 	AttesterSetPrefix           = collections.NewPrefix("attester_set")
 	SignaturePrefix             = collections.NewPrefix("signature")
 	StoredAttestationInfoPrefix = collections.NewPrefix("stored_attestation_info")
+	LastAttestedHeightKey       = collections.NewPrefix("last_attested_height")
 	ParamsKey                   = collections.NewPrefix("params")
 )
 

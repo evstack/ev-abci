@@ -54,17 +54,12 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrap(err, "get attestation bitmap")
 	}
 	if bitmap == nil {
-		validators, err := k.stakingKeeper.GetLastValidators(ctx)
+		attesters, err := k.GetAllAttesters(ctx)
 		if err != nil {
 			return nil, err
 		}
-		numValidators := 0
-		for _, v := range validators {
-			if v.IsBonded() {
-				numValidators++
-			}
-		}
-		bitmap = k.bitmapHelper.NewBitmap(numValidators)
+		numAttesters := len(attesters)
+		bitmap = k.bitmapHelper.NewBitmap(numAttesters)
 	}
 
 	if k.bitmapHelper.IsSet(bitmap, int(index)) {
@@ -84,20 +79,43 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrap(err, "store signature")
 	}
 
+	// Check if quorum is reached after this attestation
+	votedPower, err := k.CalculateVotedPower(ctx, bitmap)
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "calculate voted power")
+	}
+
+	totalPower, err := k.GetTotalPower(ctx)
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "get total power")
+	}
+
+	quorumReached, err := k.CheckQuorum(ctx, votedPower, totalPower)
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "check quorum")
+	}
+
+	// If quorum is reached, update the last attested height
+	if quorumReached {
+		if err := k.UpdateLastAttestedHeight(ctx, msg.Height); err != nil {
+			return nil, sdkerr.Wrap(err, "update last attested height")
+		}
+
+		k.Logger(ctx).Info("block reached quorum and is now soft confirmed",
+			"height", msg.Height,
+			"voted_power", votedPower,
+			"total_power", totalPower)
+	}
+
 	epoch := k.GetCurrentEpoch(ctx)
 	epochBitmap := k.GetEpochBitmap(ctx, epoch)
 	if epochBitmap == nil {
-		validators, err := k.stakingKeeper.GetLastValidators(ctx)
+		attesters, err := k.GetAllAttesters(ctx)
 		if err != nil {
 			return nil, err
 		}
-		numValidators := 0
-		for _, v := range validators {
-			if v.IsBonded() {
-				numValidators++
-			}
-		}
-		epochBitmap = k.bitmapHelper.NewBitmap(numValidators)
+		numAttesters := len(attesters)
+		epochBitmap = k.bitmapHelper.NewBitmap(numAttesters)
 	}
 	k.bitmapHelper.SetBit(epochBitmap, int(index))
 	if err := k.SetEpochBitmap(ctx, epoch, epochBitmap); err != nil {
@@ -120,19 +138,16 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAttesterSet) (*types.MsgJoinAttesterSetResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	valAddr, err := sdk.ValAddressFromBech32(msg.Validator)
+	// Validate the address format
+	_, err := sdk.ValAddressFromBech32(msg.Validator)
 	if err != nil {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidAddress, "invalid validator address: %s", err)
 	}
 
-	validator, err := k.stakingKeeper.GetValidator(ctx, valAddr)
-	if err != nil {
-		return nil, err
-	}
+	// NOTE: Removed bonded validator requirement to allow any address to join attester set
+	// This allows external attesters that are not part of the validator set
 
-	if !validator.IsBonded() {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "validator must be bonded to join attester set")
-	}
+	// Check if already in attester set
 	has, err := k.IsInAttesterSet(ctx, msg.Validator)
 	if err != nil {
 		return nil, sdkerr.Wrapf(err, "in attester set")

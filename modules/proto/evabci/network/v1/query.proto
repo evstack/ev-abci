@@ -35,6 +35,16 @@ service Query {
   rpc SoftConfirmationStatus(QuerySoftConfirmationStatusRequest) returns (QuerySoftConfirmationStatusResponse) {
     option (google.api.http).get = "/evabci/network/v1/soft-confirmation/{height}";
   }
+
+  // AttesterSignatures queries all attester signatures for a specific height
+  rpc AttesterSignatures(QueryAttesterSignaturesRequest) returns (QueryAttesterSignaturesResponse) {
+    option (google.api.http).get = "/evabci/network/v1/signatures/{height}";
+  }
+
+  // LastAttestedHeight queries the last height that reached quorum
+  rpc LastAttestedHeight(QueryLastAttestedHeightRequest) returns (QueryLastAttestedHeightResponse) {
+    option (google.api.http).get = "/evabci/network/v1/last-attested-height";
+  }
 }
 
 // QueryParamsRequest is the request type for the Query/Params RPC method.
@@ -92,4 +102,28 @@ message QuerySoftConfirmationStatusResponse {
   uint64 voted_power = 2;
   uint64 total_power = 3;
   string quorum_fraction = 4;
+}
+
+// QueryAttesterSignaturesRequest is the request type for the Query/AttesterSignatures RPC method.
+message QueryAttesterSignaturesRequest {
+  int64 height = 1;
+}
+
+// AttesterSignature represents a single attester's signature for a block
+message AttesterSignature {
+  string validator_address = 1;
+  bytes signature = 2;
+}
+
+// QueryAttesterSignaturesResponse is the response type for the Query/AttesterSignatures RPC method.
+message QueryAttesterSignaturesResponse {
+  repeated AttesterSignature signatures = 1;
+}
+
+// QueryLastAttestedHeightRequest is the request type for the Query/LastAttestedHeight RPC method.
+message QueryLastAttestedHeightRequest {}
+
+// QueryLastAttestedHeightResponse is the response type for the Query/LastAttestedHeight RPC method.
+message QueryLastAttestedHeightResponse {
+  int64 height = 1;
 }

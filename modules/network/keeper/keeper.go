@@ -31,6 +31,7 @@ type Keeper struct {
 	AttesterSet           collections.KeySet[string]
 	Signatures            collections.Map[collections.Pair[int64, string], []byte]
 	StoredAttestationInfo collections.Map[int64, types.AttestationBitmap]
+	LastAttestedHeight    collections.Item[int64]
 	Params                collections.Item[types.Params]
 	Schema                collections.Schema
 }
@@ -61,6 +62,7 @@ func NewKeeper(
 		AttesterSet:           collections.NewKeySet(sb, types.AttesterSetPrefix, "attester_set", collections.StringKey),
 		Signatures:            collections.NewMap(sb, types.SignaturePrefix, "signatures", collections.PairKeyCodec(collections.Int64Key, collections.StringKey), collections.BytesValue),
 		StoredAttestationInfo: collections.NewMap(sb, types.StoredAttestationInfoPrefix, "stored_attestation_info", collections.Int64Key, codec.CollValue[types.AttestationBitmap](cdc)), // Initialize new collection
+		LastAttestedHeight:    collections.NewItem(sb, types.LastAttestedHeightKey, "last_attested_height", collections.Int64Value),
 		Params:                collections.NewItem(sb, types.ParamsKey, "params", codec.CollValue[types.Params](cdc)),
 	}
 
@@ -162,9 +164,29 @@ func (k Keeper) RemoveAttesterSetMember(ctx sdk.Context, addr string) error {
 	return k.AttesterSet.Remove(ctx, addr)
 }
 
+// GetAllAttesters returns all validators in the attester set
+func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
+	var attesters []string
+	iterator, err := k.AttesterSet.Iterate(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		addr, err := iterator.Key()
+		if err != nil {
+			return nil, err
+		}
+		attesters = append(attesters, addr)
+	}
+	return attesters, nil
+}
+
 // BuildValidatorIndexMap rebuilds the validator index mapping
 func (k Keeper) BuildValidatorIndexMap(ctx sdk.Context) error {
-	validators, err := k.stakingKeeper.GetAllValidators(ctx)
+	// Get all attesters instead of bonded validators
+	attesters, err := k.GetAllAttesters(ctx)
 	if err != nil {
 		return err
 	}
@@ -180,19 +202,19 @@ func (k Keeper) BuildValidatorIndexMap(ctx sdk.Context) error {
 		return err
 	}
 
-	// Build new indices for bonded validators
+	// Build new indices for all attesters with voting power of 1
 	index := uint16(0)
-	for _, val := range validators {
-		if val.IsBonded() {
-			power := uint64(val.GetConsensusPower(sdk.DefaultPowerReduction))
-			if err := k.SetValidatorIndex(ctx, val.OperatorAddress, index, power); err != nil {
-				// Consider how to handle partial failures; potentially log and continue or return error.
-				k.Logger(ctx).Error("failed to set validator index during build", "validator", val.OperatorAddress, "error", err)
-				return err
-			}
-			index++
+	for _, attesterAddr := range attesters {
+		power := uint64(1) // Assign voting power of 1 to all attesters
+		if err := k.SetValidatorIndex(ctx, attesterAddr, index, power); err != nil {
+			// Consider how to handle partial failures; potentially log and continue or return error.
+			k.Logger(ctx).Error("failed to set validator index during build", "attester", attesterAddr, "error", err)
+			return err
 		}
+		k.Logger(ctx).Debug("assigned index to attester", "attester", attesterAddr, "index", index, "power", power)
+		index++
 	}
+	k.Logger(ctx).Info("rebuilt validator index map for attesters", "count", len(attesters))
 	return nil
 }
 
@@ -229,13 +251,14 @@ func (k Keeper) CalculateVotedPower(ctx sdk.Context, bitmap []byte) (uint64, err
 	return votedPower, nil
 }
 
-// GetTotalPower returns the total staking power
+// GetTotalPower returns the total attester power (all attesters have power 1)
 func (k Keeper) GetTotalPower(ctx sdk.Context) (uint64, error) {
-	n, err := k.stakingKeeper.GetLastTotalPower(ctx)
+	attesters, err := k.GetAllAttesters(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return n.Uint64(), nil
+	// Each attester has power 1, so total power equals number of attesters
+	return uint64(len(attesters)), nil
 }
 
 // CheckQuorum checks if the voted power meets quorum
@@ -322,4 +345,74 @@ func (k Keeper) GetSignature(ctx sdk.Context, height int64, validatorAddr string
 // HasSignature checks if a signature exists for a given height and validator
 func (k Keeper) HasSignature(ctx sdk.Context, height int64, validatorAddr string) (bool, error) {
 	return k.Signatures.Has(ctx, collections.Join(height, validatorAddr))
+}
+
+// GetAllSignaturesForHeight returns all attester signatures for a specific height
+func (k Keeper) GetAllSignaturesForHeight(ctx sdk.Context, height int64) (map[string][]byte, error) {
+	signatures := make(map[string][]byte)
+
+	// Get the attestation bitmap to see which validators attested
+	bitmap, err := k.GetAttestationBitmap(ctx, height)
+	if err != nil && !errors.Is(err, collections.ErrNotFound) {
+		return nil, fmt.Errorf("get attestation bitmap: %w", err)
+	}
+	if bitmap == nil {
+		return signatures, nil // No attestations for this height
+	}
+
+	// Get all attesters to map indices to addresses
+	attesters, err := k.GetAllAttesters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get all attesters: %w", err)
+	}
+
+	// Check each attester to see if they signed
+	for i, attesterAddr := range attesters {
+		if i >= len(bitmap)*8 {
+			break // Don't go beyond bitmap size
+		}
+
+		// Check if this attester signed (bit is set in bitmap)
+		if k.bitmapHelper.IsSet(bitmap, i) {
+			signature, err := k.GetSignature(ctx, height, attesterAddr)
+			if err != nil && !errors.Is(err, collections.ErrNotFound) {
+				k.Logger(ctx).Error("failed to get signature for attester",
+					"height", height, "attester", attesterAddr, "error", err)
+				continue
+			}
+			if signature != nil {
+				signatures[attesterAddr] = signature
+			}
+		}
+	}
+
+	return signatures, nil
+}
+
+// GetLastAttestedHeight returns the last attested height
+func (k Keeper) GetLastAttestedHeight(ctx sdk.Context) (int64, error) {
+	height, err := k.LastAttestedHeight.Get(ctx)
+	if err != nil && errors.Is(err, collections.ErrNotFound) {
+		return 0, nil // Return 0 if not set yet
+	}
+	return height, err
+}
+
+// SetLastAttestedHeight sets the last attested height
+func (k Keeper) SetLastAttestedHeight(ctx sdk.Context, height int64) error {
+	return k.LastAttestedHeight.Set(ctx, height)
+}
+
+// UpdateLastAttestedHeight updates the last attested height if the new height is greater
+func (k Keeper) UpdateLastAttestedHeight(ctx sdk.Context, height int64) error {
+	currentHeight, err := k.GetLastAttestedHeight(ctx)
+	if err != nil {
+		return err
+	}
+
+	if height > currentHeight {
+		return k.SetLastAttestedHeight(ctx, height)
+	}
+
+	return nil
 }
