@@ -143,8 +143,27 @@ func Block(ctx *rpctypes.Context, heightPtr *int64) (*ctypes.ResultBlock, error)
 		}, nil
 	}
 
+	// Use the same BlockID that the sequencer uses from store
+	// The sequencer uses store.GetBlockID() which has the original PartSetHeader
+	storedBlockID, err := env.Adapter.Store.GetBlockID(ctx.Context(), heightValue)
+	var actualBlockID cmttypes.BlockID
+	if err != nil || heightValue <= 1 {
+		// For height <= 1 or errors, use empty BlockID like sequencer does
+		actualBlockID = cmttypes.BlockID{}
+	} else {
+		// Convert from proto to types like the sequencer does
+		protoBlockID := storedBlockID.ToProto()
+		actualBlockID = cmttypes.BlockID{
+			Hash: protoBlockID.Hash,
+			PartSetHeader: cmttypes.PartSetHeader{
+				Total: protoBlockID.PartSetHeader.Total,
+				Hash:  protoBlockID.PartSetHeader.Hash,
+			},
+		}
+	}
+
 	return &ctypes.ResultBlock{
-		BlockID: blockMeta.BlockID,
+		BlockID: actualBlockID,
 		Block:   block,
 	}, nil
 }
