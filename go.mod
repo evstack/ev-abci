@@ -3,7 +3,7 @@ module github.com/evstack/ev-abci
 go 1.24.1
 
 // https://github.com/evstack/ev-node/pull/2589
-replace github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.2.0.20250827202222-69410c0be91b
+replace github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.2.0.20250827204336-466544daec69
 
 replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
