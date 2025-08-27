@@ -3,7 +3,7 @@ module github.com/evstack/ev-abci
 go 1.24.1
 
 // https://github.com/evstack/ev-node/pull/2589
-replace github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.2.0.20250821212538-d8df97d26f01
+replace github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.2.0.20250827202222-69410c0be91b
 
 replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
@@ -137,7 +137,7 @@ require (
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gofrs/flock v0.12.1 // indirect
