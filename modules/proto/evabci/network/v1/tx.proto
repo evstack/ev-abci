@@ -7,6 +7,7 @@ option go_package = "github.com/evstack/ev-abci/modules/network/types";
 import "cosmos/msg/v1/msg.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
 import "evabci/network/v1/types.proto";
 
 // Msg defines the network module's gRPC message service.
@@ -53,6 +54,9 @@ message MsgJoinAttesterSet {
 
   // validator is the address of the validator joining
   string validator = 1 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+  
+  // pubkey is the consensus public key of the validator
+  google.protobuf.Any pubkey = 2 [(cosmos_proto.accepts_interface) = "cosmos.crypto.PubKey"];
 }
 
 // MsgJoinAttesterSetResponse is the response type for the JoinAttesterSet RPC

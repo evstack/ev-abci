@@ -2,6 +2,8 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 )
 
 const TypeMsgAttest = "attest"
@@ -24,10 +26,16 @@ func NewMsgAttest(validator string, height int64, vote []byte) *MsgAttest {
 }
 
 // NewMsgJoinAttesterSet creates a new MsgJoinAttesterSet instance
-func NewMsgJoinAttesterSet(validator string) *MsgJoinAttesterSet {
+func NewMsgJoinAttesterSet(validator string, pubkey cryptotypes.PubKey) (*MsgJoinAttesterSet, error) {
+	pubkeyAny, err := codectypes.NewAnyWithValue(pubkey)
+	if err != nil {
+		return nil, err
+	}
+	
 	return &MsgJoinAttesterSet{
 		Validator: validator,
-	}
+		Pubkey:    pubkeyAny,
+	}, nil
 }
 
 // NewMsgLeaveAttesterSet creates a new MsgLeaveAttesterSet instance

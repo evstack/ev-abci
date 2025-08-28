@@ -236,3 +236,24 @@ func (q *queryServer) LastAttestedHeight(c context.Context, req *types.QueryLast
 		Height: height,
 	}, nil
 }
+
+// AttesterInfo queries the attester information including public key
+func (q *queryServer) AttesterInfo(c context.Context, req *types.QueryAttesterInfoRequest) (*types.QueryAttesterInfoResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
+	ctx := sdk.UnwrapSDKContext(c)
+
+	attesterInfo, err := q.keeper.GetAttesterInfo(ctx, req.ValidatorAddress)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return nil, status.Error(codes.NotFound, "attester info not found")
+		}
+		return nil, fmt.Errorf("get attester info: %w", err)
+	}
+
+	return &types.QueryAttesterInfoResponse{
+		AttesterInfo: attesterInfo,
+	}, nil
+}

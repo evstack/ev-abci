@@ -8,6 +8,7 @@ import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "evabci/network/v1/types.proto";
+import "evabci/network/v1/attester.proto";
 
 // Query defines the gRPC querier service for the network module.
 service Query {
@@ -44,6 +45,11 @@ service Query {
   // LastAttestedHeight queries the last height that reached quorum
   rpc LastAttestedHeight(QueryLastAttestedHeightRequest) returns (QueryLastAttestedHeightResponse) {
     option (google.api.http).get = "/evabci/network/v1/last-attested-height";
+  }
+
+  // AttesterInfo queries the attester information including public key
+  rpc AttesterInfo(QueryAttesterInfoRequest) returns (QueryAttesterInfoResponse) {
+    option (google.api.http).get = "/evabci/network/v1/attester/{validator_address}";
   }
 }
 
@@ -126,4 +132,14 @@ message QueryLastAttestedHeightRequest {}
 // QueryLastAttestedHeightResponse is the response type for the Query/LastAttestedHeight RPC method.
 message QueryLastAttestedHeightResponse {
   int64 height = 1;
+}
+
+// QueryAttesterInfoRequest is the request type for the Query/AttesterInfo RPC method.
+message QueryAttesterInfoRequest {
+  string validator_address = 1;
+}
+
+// QueryAttesterInfoResponse is the response type for the Query/AttesterInfo RPC method.
+message QueryAttesterInfoResponse {
+  AttesterInfo attester_info = 1;
 }

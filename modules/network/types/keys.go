@@ -28,6 +28,7 @@ var (
 	AttestationBitmapPrefix     = collections.NewPrefix("attestation_bitmap")
 	EpochBitmapPrefix           = collections.NewPrefix("epoch_bitmap")
 	AttesterSetPrefix           = collections.NewPrefix("attester_set")
+	AttesterInfoPrefix          = collections.NewPrefix("attester_info")
 	SignaturePrefix             = collections.NewPrefix("signature")
 	StoredAttestationInfoPrefix = collections.NewPrefix("stored_attestation_info")
 	LastAttestedHeightKey       = collections.NewPrefix("last_attested_height")
@@ -70,4 +71,9 @@ func GetEpochBitmapKey(epoch uint64) []byte {
 // GetAttesterSetKey returns the key for attester set membership
 func GetAttesterSetKey(addr string) []byte {
 	return append(AttesterSetPrefix, []byte(addr)...)
+}
+
+// GetAttesterInfoKey returns the key for attester information (including pubkey)
+func GetAttesterInfoKey(addr string) []byte {
+	return append(AttesterInfoPrefix, []byte(addr)...)
 }

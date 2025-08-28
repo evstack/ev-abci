@@ -14,6 +14,7 @@ import (
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
 
 	storepkg "github.com/evstack/ev-node/pkg/store"
@@ -374,14 +375,17 @@ func getCommitForHeight(ctx context.Context, height uint64) (*cmttypes.Commit, e
 			continue
 		}
 
-		// Convert validator address from string to bytes
-		// For now, just use the validator address directly as bytes
-		// TODO: Properly decode bech32 address using SDK utils
-		valAddr := []byte(validatorAddr)
+		// Decode bech32 validator address to get 20-byte address
+		valAddrBytes, err := sdk.ValAddressFromBech32(validatorAddr)
+		if err != nil {
+			env.Logger.Error("failed to decode validator address",
+				"validator", validatorAddr, "error", err)
+			continue
+		}
 
 		commitSigs = append(commitSigs, cmttypes.CommitSig{
 			BlockIDFlag:      cmttypes.BlockIDFlagCommit,
-			ValidatorAddress: cmttypes.Address(valAddr),
+			ValidatorAddress: cmttypes.Address(valAddrBytes),
 			Timestamp:        vote.Timestamp,
 			Signature:        vote.Signature,
 		})

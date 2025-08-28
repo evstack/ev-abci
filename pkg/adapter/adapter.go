@@ -569,6 +569,17 @@ func (a *Adapter) GetLastCommit(ctx context.Context, blockHeight uint64) (*cmtty
 			return nil, fmt.Errorf("get previous block ID: %w", err)
 		}
 
+		// Use the node's consensus validator address from AppGenesis instead of header.ProposerAddress
+		// header.ProposerAddress comes from Rollkit and may not match the CometBFT validator set
+		var validatorAddress cmttypes.Address
+		if len(a.AppGenesis.Consensus.Validators) > 0 {
+			// Use the first validator's address (should be the node's consensus key)
+			validatorAddress = cmttypes.Address(a.AppGenesis.Consensus.Validators[0].Address)
+		} else {
+			// Fallback to header.ProposerAddress if no validators in genesis
+			validatorAddress = cmttypes.Address(header.ProposerAddress)
+		}
+
 		commitForPrevBlock := &cmttypes.Commit{
 			Height:  int64(header.Height()),
 			Round:   0,
@@ -576,7 +587,7 @@ func (a *Adapter) GetLastCommit(ctx context.Context, blockHeight uint64) (*cmtty
 			Signatures: []cmttypes.CommitSig{
 				{
 					BlockIDFlag:      cmttypes.BlockIDFlagCommit,
-					ValidatorAddress: cmttypes.Address(header.ProposerAddress),
+					ValidatorAddress: validatorAddress,
 					Timestamp:        header.Time(),
 					Signature:        header.Signature,
 				},

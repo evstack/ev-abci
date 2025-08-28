@@ -29,6 +29,7 @@ type Keeper struct {
 	AttestationBitmap     collections.Map[int64, []byte]
 	EpochBitmap           collections.Map[uint64, []byte]
 	AttesterSet           collections.KeySet[string]
+	AttesterInfo          collections.Map[string, types.AttesterInfo]
 	Signatures            collections.Map[collections.Pair[int64, string], []byte]
 	StoredAttestationInfo collections.Map[int64, types.AttestationBitmap]
 	LastAttestedHeight    collections.Item[int64]
@@ -60,6 +61,7 @@ func NewKeeper(
 		AttestationBitmap:     collections.NewMap(sb, types.AttestationBitmapPrefix, "attestation_bitmap", collections.Int64Key, collections.BytesValue),
 		EpochBitmap:           collections.NewMap(sb, types.EpochBitmapPrefix, "epoch_bitmap", collections.Uint64Key, collections.BytesValue),
 		AttesterSet:           collections.NewKeySet(sb, types.AttesterSetPrefix, "attester_set", collections.StringKey),
+		AttesterInfo:          collections.NewMap(sb, types.AttesterInfoPrefix, "attester_info", collections.StringKey, codec.CollValue[types.AttesterInfo](cdc)),
 		Signatures:            collections.NewMap(sb, types.SignaturePrefix, "signatures", collections.PairKeyCodec(collections.Int64Key, collections.StringKey), collections.BytesValue),
 		StoredAttestationInfo: collections.NewMap(sb, types.StoredAttestationInfoPrefix, "stored_attestation_info", collections.Int64Key, codec.CollValue[types.AttestationBitmap](cdc)), // Initialize new collection
 		LastAttestedHeight:    collections.NewItem(sb, types.LastAttestedHeightKey, "last_attested_height", collections.Int64Value),
@@ -415,4 +417,18 @@ func (k Keeper) UpdateLastAttestedHeight(ctx sdk.Context, height int64) error {
 	}
 
 	return nil
+}
+
+// SetAttesterInfo stores the attester information including pubkey
+func (k Keeper) SetAttesterInfo(ctx sdk.Context, addr string, info *types.AttesterInfo) error {
+	return k.AttesterInfo.Set(ctx, addr, *info)
+}
+
+// GetAttesterInfo retrieves the attester information including pubkey
+func (k Keeper) GetAttesterInfo(ctx sdk.Context, addr string) (*types.AttesterInfo, error) {
+	info, err := k.AttesterInfo.Get(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
 }

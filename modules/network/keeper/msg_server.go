@@ -156,6 +156,17 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "validator already in attester set")
 	}
 
+	// Store the attester information including pubkey
+	attesterInfo := &types.AttesterInfo{
+		Validator:     msg.Validator,
+		Pubkey:        msg.Pubkey,
+		JoinedHeight:  ctx.BlockHeight(),
+	}
+	
+	if err := k.SetAttesterInfo(ctx, msg.Validator, attesterInfo); err != nil {
+		return nil, sdkerr.Wrap(err, "set attester info")
+	}
+
 	// TODO (Alex): the valset should be updated at the end of an epoch only
 	if err := k.SetAttesterSetMember(ctx, msg.Validator); err != nil {
 		return nil, sdkerr.Wrap(err, "set attester set member")
