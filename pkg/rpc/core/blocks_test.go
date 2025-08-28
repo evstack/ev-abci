@@ -21,7 +21,6 @@ import (
 	"github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
-	"github.com/evstack/ev-abci/pkg/cometcompat"
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
@@ -201,8 +200,8 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 	chainID := "test-chain"
 	now := time.Now()
 
-	// use the validator hasher helper from cometcompat
-	validatorHash, err := cometcompat.ValidatorHasherProvider()(validatorAddress, aggregatorPubKey)
+	// use the validator hasher helpers
+	validatorHash, err := adapter.ValidatorHasherProvider()(validatorAddress, aggregatorPubKey)
 	require.NoError(err)
 
 	fixedValSet := &cmttypes.ValidatorSet{
@@ -222,10 +221,10 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 		lastCommit, err := env.Adapter.GetLastCommit(context.Background(), blockHeight)
 		require.NoError(err, "Failed to get last commit for height %d", blockHeight)
 
-		abciHeader, err := cometcompat.ToABCIHeader(rollkitHeader, lastCommit)
+		abciHeader, err := adapter.ToABCIHeader(rollkitHeader, lastCommit)
 		require.NoError(err, "Failed to create ABCI header")
 
-		abciBlock, err := cometcompat.ToABCIBlock(abciHeader, lastCommit, blockData)
+		abciBlock, err := adapter.ToABCIBlock(abciHeader, lastCommit, blockData)
 		require.NoError(err, "Failed to create ABCI block")
 
 		blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
@@ -241,7 +240,7 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 		require.NoError(err, "Failed to save BlockID for height %d", blockHeight)
 
 		// create the signature for the rollkit block
-		realSignature := signBlock(t, env.Adapter.Store, rollkitHeader, aggregatorPrivKey)
+		realSignature := signBlock(t, env.Adapter, rollkitHeader, aggregatorPrivKey)
 
 		// mock the store to return our signed block
 		mockBlock(blockHeight, rollkitHeader, blockData, realSignature, aggregatorPubKey, validatorAddress)
@@ -288,8 +287,8 @@ func createTestBlock(height uint64, chainID string, baseTime time.Time, validato
 	return blockData, rollkitHeader
 }
 
-func signBlock(t *testing.T, abciExecStore *execstore.Store, header types.Header, privKey crypto.PrivKey) []byte {
-	signBytes, err := cometcompat.SignaturePayloadProvider(abciExecStore)(&header)
+func signBlock(t *testing.T, executor *adapter.Adapter, header types.Header, privKey crypto.PrivKey) []byte {
+	signBytes, err := adapter.AggregatorNodeSignatureBytesProvider(executor)(&header)
 	require.NoError(t, err)
 
 	signature, err := privKey.Sign(signBytes)

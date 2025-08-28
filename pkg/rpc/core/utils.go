@@ -8,7 +8,7 @@ import (
 
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	"github.com/evstack/ev-abci/pkg/cometcompat"
+	"github.com/evstack/ev-abci/pkg/adapter"
 )
 
 const NodeIDByteLength = 20
@@ -51,19 +51,19 @@ func getBlockMeta(ctx context.Context, n uint64) (*cmttypes.BlockMeta, *cmttypes
 		return nil, nil
 	}
 
-	abciHeader, err := cometcompat.ToABCIHeader(header.Header, lastCommit)
+	abciHeader, err := adapter.ToABCIHeader(header.Header, lastCommit)
 	if err != nil {
 		env.Logger.Error("Failed to convert header to ABCI format", "height", n, "err", err)
 		return nil, nil
 	}
 
-	abciBlock, err := cometcompat.ToABCIBlock(abciHeader, lastCommit, data)
+	abciBlock, err := adapter.ToABCIBlock(abciHeader, lastCommit, data)
 	if err != nil {
 		env.Logger.Error("Failed to convert block to ABCI format", "height", n, "err", err)
 		return nil, nil
 	}
 
-	abciBlockMeta, err := cometcompat.ToABCIBlockMeta(abciBlock)
+	abciBlockMeta, err := adapter.ToABCIBlockMeta(abciBlock)
 	if err != nil {
 		env.Logger.Error("Failed to convert block to ABCI block meta", "height", n, "err", err)
 		return nil, nil
