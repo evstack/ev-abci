@@ -357,7 +357,7 @@ func setupNodeAndExecutor(
 		appGenesis = &genutiltypes.AppGenesis{
 			ChainID:       migrationGenesis.ChainID,
 			InitialHeight: int64(migrationGenesis.InitialHeight),
-			GenesisTime:   rollkitGenesis.GenesisDAStartTime,
+			GenesisTime:   rollkitGenesis.StartTime,
 			Consensus: &genutiltypes.ConsensusGenesis{ // used in rpc/status.go
 				Validators: []cmttypes.GenesisValidator{
 					{
@@ -518,7 +518,8 @@ func setupNodeAndExecutor(
 		TxIndexer:    txIndexer,
 		BlockIndexer: blockIndexer,
 		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
-		Config:       *cfg.RPC,
+		RPCConfig:    *cfg.RPC,
+		EVNodeConfig: rollkitcfg,
 	})
 
 	// Pass the created handler to the RPC server constructor
