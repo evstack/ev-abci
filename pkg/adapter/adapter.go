@@ -31,7 +31,6 @@ import (
 	rstore "github.com/evstack/ev-node/pkg/store"
 	"github.com/evstack/ev-node/types"
 
-	"github.com/evstack/ev-abci/pkg/cometcompat"
 	"github.com/evstack/ev-abci/pkg/p2p"
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
@@ -326,9 +325,19 @@ func (a *Adapter) ExecuteTxs(
 		return nil, 0, fmt.Errorf("get last commit: %w", err)
 	}
 
-	abciHeader, err := cometcompat.ToABCIHeader(header, lastCommit)
+	abciHeader, err := ToABCIHeader(header, lastCommit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("compute header hash: %w", err)
+	}
+
+	cmtTxs := make(cmttypes.Txs, len(txs))
+	for i := range txs {
+		cmtTxs[i] = txs[i]
+	}
+
+	abciBlock, currentBlockID, err := MakeABCIBlock(blockHeight, cmtTxs, s, abciHeader, lastCommit)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	ppResp, err := a.App.ProcessProposal(&abci.RequestProcessProposal{
@@ -448,26 +457,10 @@ func (a *Adapter) ExecuteTxs(
 	if err != nil {
 		return nil, 0, err
 	}
-	cmtTxs := make(cmttypes.Txs, len(txs))
-	for i := range txs {
-		cmtTxs[i] = txs[i]
-	}
 
-	abciBlock := s.MakeBlock(int64(blockHeight), cmtTxs, lastCommit, nil, s.Validators.Proposer.Address)
+	// saving data to ev-abci store
 
-	blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
-	if err != nil {
-		return nil, 0, fmt.Errorf("make part set: %w", err)
-	}
-
-	// use abci header hash to match the light client validation check
-	// where sh.Header.Hash() (comet header) must equal sh.Commit.BlockID.Hash
-	currentBlockID := cmttypes.BlockID{
-		Hash:          abciHeader.Hash(),
-		PartSetHeader: blockParts.Header(),
-	}
-
-	if err := a.Store.SaveBlockID(ctx, blockHeight, &currentBlockID); err != nil {
+	if err := a.Store.SaveBlockID(ctx, blockHeight, currentBlockID); err != nil {
 		return nil, 0, fmt.Errorf("save block ID: %w", err)
 	}
 
@@ -497,13 +490,13 @@ func (a *Adapter) ExecuteTxs(
 func fireEvents(
 	eventBus cmttypes.BlockEventPublisher,
 	block *cmttypes.Block,
-	blockID cmttypes.BlockID,
+	blockID *cmttypes.BlockID,
 	abciResponse *abci.ResponseFinalizeBlock,
 	validatorUpdates []*cmttypes.Validator,
 ) error {
 	if err := eventBus.PublishEventNewBlock(cmttypes.EventDataNewBlock{
 		Block:               block,
-		BlockID:             blockID,
+		BlockID:             *blockID,
 		ResultFinalizeBlock: *abciResponse,
 	}); err != nil {
 		return fmt.Errorf("publish new block event: %w", err)
@@ -618,14 +611,14 @@ func cometCommitToABCICommitInfo(commit *cmttypes.Commit) abci.CommitInfo {
 }
 
 type StackedEvent struct {
-	blockID          cmttypes.BlockID
+	blockID          *cmttypes.BlockID
 	block            *cmttypes.Block
 	abciResponse     *abci.ResponseFinalizeBlock
 	validatorUpdates []*cmttypes.Validator
 }
 
 func (a *Adapter) stackBlockCommitEvents(
-	blockID cmttypes.BlockID,
+	blockID *cmttypes.BlockID,
 	block *cmttypes.Block,
 	abciResponse *abci.ResponseFinalizeBlock,
 	validatorUpdates []*cmttypes.Validator,

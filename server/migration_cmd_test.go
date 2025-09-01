@@ -242,7 +242,7 @@ func TestRollkitMigrationGenesis(t *testing.T) {
 	require.NotNil(t, rollkitGenesis)
 	require.Equal(t, chainID, rollkitGenesis.ChainID)
 	require.Equal(t, uint64(initialHeight), rollkitGenesis.InitialHeight)
-	require.Equal(t, time.Unix(0, blockTime.UnixNano()), rollkitGenesis.GenesisDAStartTime)
+	require.Equal(t, time.Unix(0, blockTime.UnixNano()), rollkitGenesis.StartTime)
 	require.Equal(t, address.Bytes(), rollkitGenesis.ProposerAddress)
 
 	// verify validator set contains the expected validator
