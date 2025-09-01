@@ -25,10 +25,10 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/gogoproto v1.7.0
-	github.com/evstack/ev-node v1.0.0-beta.2.0.20250818133040-d096a24e7052
-	github.com/evstack/ev-node/core v1.0.0-beta.1.0.20250818133040-d096a24e7052
-	github.com/evstack/ev-node/da v0.0.0-20250818133040-d096a24e7052
-	github.com/evstack/ev-node/sequencers/single v0.0.0-20250818133040-d096a24e7052
+	github.com/evstack/ev-node v1.0.0-beta.2.0.20250901092248-017d6d45a621
+	github.com/evstack/ev-node/core v1.0.0-beta.1.0.20250901092248-017d6d45a621
+	github.com/evstack/ev-node/da v0.0.0-20250901092248-017d6d45a621
+	github.com/evstack/ev-node/sequencers/single v0.0.0-20250901092248-017d6d45a621
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
