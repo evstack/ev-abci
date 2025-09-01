@@ -357,7 +357,7 @@ func setupNodeAndExecutor(
 		appGenesis = &genutiltypes.AppGenesis{
 			ChainID:       migrationGenesis.ChainID,
 			InitialHeight: int64(migrationGenesis.InitialHeight),
-			GenesisTime:   rollkitGenesis.GenesisDAStartTime,
+			GenesisTime:   rollkitGenesis.StartTime,
 			Consensus: &genutiltypes.ConsensusGenesis{ // used in rpc/status.go
 				Validators: []cmttypes.GenesisValidator{
 					{
