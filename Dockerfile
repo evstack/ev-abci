@@ -24,10 +24,8 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
     ignite evolve add
 
-
-RUN set -eux; \
-    go get github.com/evstack/ev-node@05dddf855afda5b2aa2deee28e43a899f711c9e1; \
-    go mod edit -replace=github.com/evstack/ev-abci=/workspace/ev-abci; \
+RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
+    go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy
 
 RUN ignite chain build --skip-proto
