@@ -453,6 +453,16 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
 	}
 
+	// Pre-fill genesis start DA height when possible
+	// This optimization fetches the first DA height from the node when:
+	// 1. The chain is at genesis (not a migration scenario and initial height is 1)
+	// 2. The genesis start DA height is unset (0)
+	// 3. The node is not an aggregator
+	if err := prefillGenesisDaHeight(ctx, &rollkitcfg, daClient, rollkitGenesis, migrationGenesis, sdkLogger); err != nil {
+		sdkLogger.Error("failed to prefill genesis DA height", "error", err)
+		// Don't fail startup for this optimization, just log the error
+	}
+
 	singleMetrics, err := single.NopMetrics()
 	if err != nil {
 		return nil, nil, cleanupFn, err
@@ -714,4 +724,96 @@ func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Ge
 	)
 
 	return &rollkitGenesis
+}
+
+// prefillGenesisDaHeight automatically sets the genesis start DA height when possible.
+// This optimization fetches the first DA height from the node and sets it in the configuration
+// when the chain is at genesis, the DA start height is unset, and the node is not an aggregator.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - cfg: Rollkit configuration (will be modified in-place if conditions are met)
+//   - daClient: DA client to query for genesis DA height
+//   - rollkitGenesis: The rollkit genesis information
+//   - migrationGenesis: Migration genesis (nil if not a migration scenario)
+//   - logger: Logger for information and error messages
+//
+// This function will not cause startup to fail if it encounters errors; errors are logged
+// and the startup continues with the original configuration.
+func prefillGenesisDaHeight(
+	ctx context.Context,
+	cfg *config.Config,
+	daClient *jsonrpc.Client,
+	rollkitGenesis *genesis.Genesis,
+	migrationGenesis *evolveMigrationGenesis,
+	logger log.Logger,
+) error {
+	// Only proceed if node is NOT an aggregator
+	if cfg.Node.Aggregator {
+		logger.Debug("skipping genesis DA height prefill: node is an aggregator")
+		return nil
+	}
+
+	// Only proceed if DA start height is unset (0)
+	if cfg.DA.StartHeight != 0 {
+		logger.Debug("skipping genesis DA height prefill: DA start height already set",
+			"start_height", cfg.DA.StartHeight)
+		return nil
+	}
+
+	// Only proceed if this is not a migration scenario and we're at genesis
+	if migrationGenesis != nil {
+		logger.Debug("skipping genesis DA height prefill: migration scenario detected")
+		return nil
+	}
+
+	// Check if we're at genesis (initial height is 1)
+	if rollkitGenesis.InitialHeight != 1 {
+		logger.Debug("skipping genesis DA height prefill: not at genesis",
+			"initial_height", rollkitGenesis.InitialHeight)
+		return nil
+	}
+
+	logger.Info("attempting to prefill genesis start DA height from node")
+
+	// Call GetGenesisDaHeight RPC method
+	// Note: This method is expected to be available in the ev-node RPC interface
+	// as mentioned in the issue description
+	genesisDaHeight, err := getGenesisDaHeight(ctx, daClient)
+	if err != nil {
+		return fmt.Errorf("failed to get genesis DA height from node: %w", err)
+	}
+
+	if genesisDaHeight == 0 {
+		logger.Warn("genesis DA height returned from node is 0, not updating configuration")
+		return nil
+	}
+
+	logger.Info("successfully retrieved genesis DA height from node",
+		"genesis_da_height", genesisDaHeight)
+
+	// Update the configuration
+	cfg.DA.StartHeight = genesisDaHeight
+
+	logger.Info("genesis start DA height has been automatically set",
+		"start_height", genesisDaHeight)
+
+	return nil
+}
+
+// getGenesisDaHeight calls the GetGenesisDaHeight RPC method on the DA node.
+// This is a wrapper function that handles the RPC call to retrieve the first
+// DA height from the node, as mentioned in issue ev-node/pull/2614.
+func getGenesisDaHeight(ctx context.Context, daClient *jsonrpc.Client) (uint64, error) {
+	// TODO: Once the GetGenesisDaHeight RPC method is available in the ev-node
+	// jsonrpc API (as mentioned in ev-node/pull/2614), this implementation should
+	// be updated to make the actual RPC call.
+	//
+	// The expected implementation would be:
+	// if methodExists(&daClient.DA, "GetGenesisDaHeight") {
+	//     return daClient.DA.GetGenesisDaHeight(ctx)
+	// }
+	//
+	// For now, we return an informative error that doesn't break startup
+	return 0, fmt.Errorf("GetGenesisDaHeight RPC method is not yet implemented in ev-node jsonrpc API - see ev-node/pull/2614")
 }

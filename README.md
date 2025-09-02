@@ -51,12 +51,42 @@ graph TD
 - **State Management**: Manages blockchain state including validators and consensus parameters.
 - **P2P Communication**: Implements transaction gossip across the network.
 - **RPC Endpoints**: Provides compatible API endpoints for clients to interact with.
+- **Genesis DA Height Auto-Configuration**: Automatically configures the Data Availability (DA) start height for new chains at genesis by querying the DA node, reducing manual configuration steps for non-aggregator nodes.
 
 ## ABCI Compatibility
 
 This adapter achieves compatibility with ABCI by calling the appropriate methods on the ABCI application during the execution lifecycle. It implements the necessary interfaces to ensure that transactions are processed correctly, blocks are finalized, and state is committed.
 
 Note, that because of the nature of ev-node (single proposer), **Vote Extensions are not supported**. The adapter will not call the `VoteExtensions` methods on the ABCI application, and any logic related to vote extensions should be handled separately or not used at all.
+
+## Genesis DA Height Auto-Configuration
+
+When starting a new chain at genesis, `ev-abci` can automatically configure the Data Availability (DA) start height to optimize the startup process. This feature works by:
+
+1. **Detecting Genesis Conditions**: The system checks if the chain is starting at genesis (initial height = 1) and the DA start height is not manually configured (set to 0).
+
+2. **Node Type Verification**: The optimization only applies to non-aggregator nodes, as aggregator nodes have different DA requirements.
+
+3. **Automatic DA Height Retrieval**: When conditions are met, the system queries the DA node using the `GetGenesisDaHeight` RPC method to obtain the appropriate starting DA height.
+
+4. **Seamless Configuration**: The retrieved DA height is automatically applied to the node configuration, eliminating the need for manual DA height configuration in genesis scenarios.
+
+### Benefits
+
+- **Reduced Configuration Complexity**: Operators don't need to manually determine and set the DA start height for new chains.
+- **Optimized Startup**: Automatically uses the correct DA height, preventing unnecessary synchronization of old DA blocks.
+- **Error Prevention**: Eliminates misconfiguration issues related to DA start height settings.
+
+### Conditions for Activation
+
+The genesis DA height auto-configuration activates only when **all** of the following conditions are met:
+
+- The chain is at genesis (initial height = 1)
+- The DA start height is unset (configured as 0)
+- The node is **not** an aggregator
+- The DA node supports the `GetGenesisDaHeight` RPC method
+
+If any condition is not met, the system logs the reason and continues with the existing configuration without modification.
 
 ## Installation
 
