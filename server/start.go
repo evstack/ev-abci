@@ -48,6 +48,7 @@ import (
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
 	"github.com/evstack/ev-node/sequencers/single"
+	ds "github.com/ipfs/go-datastore"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
 	"github.com/evstack/ev-abci/pkg/rpc"
@@ -386,7 +387,7 @@ func setupNodeAndExecutor(
 			"initial_height", cmtGenDoc.InitialHeight)
 	}
 
-	database, err := store.NewDefaultKVStore(cfg.RootDir, "data", "evolve")
+	database, err := openEvolveDB(cfg.RootDir)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -714,4 +715,13 @@ func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Ge
 	)
 
 	return &rollkitGenesis
+}
+
+func openEvolveDB(rootDir string) (ds.Batching, error) {
+	database, err := store.NewDefaultKVStore(rootDir, "data", "evolve")
+	if err != nil {
+		return nil, err
+	}
+
+	return database, nil
 }
