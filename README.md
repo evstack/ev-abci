@@ -88,6 +88,32 @@ The genesis DA height auto-configuration activates only when **all** of the foll
 
 If any condition is not met, the system logs the reason and continues with the existing configuration without modification.
 
+### Example Usage
+
+When starting a new chain with `ev-abci`, the system will automatically attempt to optimize the DA configuration:
+
+```bash
+# Starting a new chain at genesis (no manual DA configuration needed)
+./app start --rollkit.node.aggregator=false
+
+# System logs will show:
+# INFO attempting to prefill genesis start DA height from node
+# INFO successfully retrieved genesis DA height from node genesis_da_height=12345
+# INFO genesis start DA height has been automatically set start_height=12345
+```
+
+For cases where auto-configuration is skipped:
+
+```bash
+# Aggregator nodes skip the optimization
+./app start --rollkit.node.aggregator=true
+# LOG: skipping genesis DA height prefill: node is an aggregator
+
+# Chains with pre-configured DA height skip the optimization
+./app start --rollkit.da.start_height=100
+# LOG: skipping genesis DA height prefill: DA start height already set start_height=100
+```
+
 ## Installation
 
 ```bash
