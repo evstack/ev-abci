@@ -387,7 +387,7 @@ func setupNodeAndExecutor(
 			"initial_height", cmtGenDoc.InitialHeight)
 	}
 
-	database, err := openEvolveDB(cfg.RootDir)
+	database, err := openRawEvolveDB(cfg.RootDir)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -717,7 +717,7 @@ func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Ge
 	return &rollkitGenesis
 }
 
-func openEvolveDB(rootDir string) (ds.Batching, error) {
+func openRawEvolveDB(rootDir string) (ds.Batching, error) {
 	database, err := store.NewDefaultKVStore(rootDir, "data", "evolve")
 	if err != nil {
 		return nil, err

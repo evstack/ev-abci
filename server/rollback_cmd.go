@@ -57,19 +57,22 @@ The application also rolls back to height n - 1. If a --height flag is specified
 			}
 
 			// evolve db
-			evolveDB, err := openEvolveDB(home)
+			rawEvolveDB, err := openRawEvolveDB(home)
 			if err != nil {
 				return err
 			}
 			defer func() {
-				if closeErr := evolveDB.Close(); closeErr != nil {
+				if closeErr := rawEvolveDB.Close(); closeErr != nil {
 					fmt.Printf("Warning: failed to close evolve database: %v\n", closeErr)
 				}
 			}()
 
-			evolveStore := store.New(kt.Wrap(evolveDB, &kt.PrefixTransform{
+			// prefixed evolve db
+			evolveDB := kt.Wrap(rawEvolveDB, &kt.PrefixTransform{
 				Prefix: ds.NewKey(node.EvPrefix),
-			}))
+			})
+
+			evolveStore := store.New(evolveDB)
 			if height == 0 {
 				currentHeight, err := evolveStore.Height(goCtx)
 				if err != nil {
