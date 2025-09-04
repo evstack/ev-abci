@@ -52,11 +52,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
-	"github.com/evstack/ev-abci/pkg/cometcompat"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 	"github.com/evstack/ev-abci/pkg/rpc"
 	"github.com/evstack/ev-abci/pkg/rpc/core"
 	execsigner "github.com/evstack/ev-abci/pkg/signer"
-	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 const (
@@ -361,7 +360,7 @@ func setupNodeAndExecutor(
 		appGenesis = &genutiltypes.AppGenesis{
 			ChainID:       migrationGenesis.ChainID,
 			InitialHeight: int64(migrationGenesis.InitialHeight),
-			GenesisTime:   rollkitGenesis.GenesisDAStartTime,
+			GenesisTime:   rollkitGenesis.StartTime,
 			Consensus: &genutiltypes.ConsensusGenesis{ // used in rpc/status.go
 				Validators: []cmttypes.GenesisValidator{
 					{
@@ -489,11 +488,11 @@ func setupNodeAndExecutor(
 	if srvCtx.Viper.GetBool(FlagNetworkSoftConfirmation) {
 		// Attester mode: use validators from ABCI store
 		abciStore := execstore.NewExecABCIStore(database)
-		validatorHasherProvider = cometcompat.ValidatorHasherFromStoreProvider(abciStore)
+		validatorHasherProvider = adapter.ValidatorHasherFromStoreProvider(abciStore)
 		sdkLogger.Info("using attester mode: validators will be read from ABCI store")
 	} else {
 		// Sequencer mode: single validator
-		validatorHasherProvider = cometcompat.ValidatorHasherProvider()
+		validatorHasherProvider = adapter.ValidatorHasherProvider()
 		sdkLogger.Info("using sequencer mode: single validator")
 	}
 
@@ -511,8 +510,9 @@ func setupNodeAndExecutor(
 		*evLogger,
 		node.NodeOptions{
 			ManagerOptions: rollkitblock.ManagerOptions{
-				SignaturePayloadProvider: cometcompat.SignaturePayloadProvider(execstore.NewExecABCIStore(database)),
-				ValidatorHasherProvider:  validatorHasherProvider,
+				AggregatorNodeSignatureBytesProvider: adapter.AggregatorNodeSignatureBytesProvider(executor),
+				SyncNodeSignatureBytesProvider:       adapter.SyncNodeSignatureBytesProvider(executor),
+				ValidatorHasherProvider:              validatorHasherProvider,
 			},
 		},
 	)
@@ -535,7 +535,8 @@ func setupNodeAndExecutor(
 		TxIndexer:               txIndexer,
 		BlockIndexer:            blockIndexer,
 		Logger:                  servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
-		Config:                  *cfg.RPC,
+		RPCConfig:               *cfg.RPC,
+		EVNodeConfig:            rollkitcfg,
 		NetworkSoftConfirmation: srvCtx.Viper.GetBool(FlagNetworkSoftConfirmation),
 	})
 

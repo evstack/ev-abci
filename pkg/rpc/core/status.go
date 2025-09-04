@@ -26,6 +26,7 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 		latestBlockHash cmbytes.HexBytes
 		latestAppHash   cmbytes.HexBytes
 		latestBlockTime time.Time
+		catchingUp      = false // default to not catching up
 	)
 
 	// Determine latest height based on node mode
@@ -64,6 +65,12 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 		latestBlockHash = cmbytes.HexBytes(header.DataHash)
 		latestAppHash = cmbytes.HexBytes(header.AppHash)
 		latestBlockTime = header.Time()
+
+		// Consider node to be catching up if latest block is more than twice the block time old
+		blockTime := env.EVNodeConfig.Node.BlockTime.Duration
+		catchingUpThreshold := 2 * blockTime
+		timeSinceLatestBlock := time.Since(latestBlockTime)
+		catchingUp = timeSinceLatestBlock > catchingUpThreshold
 	}
 
 	initialHeader, err := env.Adapter.RollkitStore.GetHeader(unwrappedCtx, uint64(env.Adapter.AppGenesis.InitialHeight))
@@ -116,7 +123,7 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 			Moniker:         config.DefaultBaseConfig().Moniker,
 			Other: corep2p.DefaultNodeInfoOther{
 				TxIndex:    txIndexerStatus,
-				RPCAddress: env.Config.ListenAddress,
+				RPCAddress: env.RPCConfig.ListenAddress,
 			},
 		},
 		SyncInfo: ctypes.SyncInfo{
@@ -128,7 +135,7 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 			EarliestAppHash:     cmbytes.HexBytes(initialHeader.AppHash),
 			EarliestBlockHeight: int64(initialHeader.Height()),
 			EarliestBlockTime:   initialHeader.Time(),
-			CatchingUp:          false, // hard-code this to "false" to pass Go IBC relayer's legacy encoding check
+			CatchingUp:          catchingUp,
 		},
 		ValidatorInfo: ctypes.ValidatorInfo{
 			Address:     validator.Address,

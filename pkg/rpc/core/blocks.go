@@ -21,7 +21,7 @@ import (
 	rlktypes "github.com/evstack/ev-node/types"
 
 	networktypes "github.com/evstack/ev-abci/modules/network/types"
-	"github.com/evstack/ev-abci/pkg/cometcompat"
+	"github.com/evstack/ev-abci/pkg/adapter"
 )
 
 // BlockSearch searches for a paginated set of blocks matching BeginBlock and
@@ -83,12 +83,12 @@ func BlockSearch(
 			return nil, fmt.Errorf("failed to get last commit for block %d: %w", results[i], err)
 		}
 
-		abciHeader, err := cometcompat.ToABCIHeader(header.Header, lastCommit)
+		abciHeader, err := adapter.ToABCIHeader(header.Header, lastCommit)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert header to ABCI format: %w", err)
 		}
 
-		abciBlock, err := cometcompat.ToABCIBlock(abciHeader, lastCommit, data)
+		abciBlock, err := adapter.ToABCIBlock(abciHeader, lastCommit, data)
 		if err != nil {
 			return nil, err
 		}
@@ -187,12 +187,12 @@ func BlockByHash(ctx *rpctypes.Context, hash []byte) (*ctypes.ResultBlock, error
 		return nil, fmt.Errorf("failed to get last commit for block %d: %w", header.Height(), err)
 	}
 
-	abciHeader, err := cometcompat.ToABCIHeader(header.Header, lastCommit)
+	abciHeader, err := adapter.ToABCIHeader(header.Header, lastCommit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert header to ABCI format: %w", err)
 	}
 
-	abciBlock, err := cometcompat.ToABCIBlock(abciHeader, lastCommit, data)
+	abciBlock, err := adapter.ToABCIBlock(abciHeader, lastCommit, data)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func HeaderByHash(ctx *rpctypes.Context, hash cmbytes.HexBytes) (*ctypes.ResultH
 		return nil, fmt.Errorf("failed to get last commit for block %d: %w", header.Height(), err)
 	}
 
-	abciHeader, err := cometcompat.ToABCIHeader(header.Header, lastCommit)
+	abciHeader, err := adapter.ToABCIHeader(header.Header, lastCommit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert header to ABCI format: %w", err)
 	}
