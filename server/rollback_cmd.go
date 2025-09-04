@@ -85,7 +85,6 @@ The application also rolls back to height n - 1. If a --height flag is specified
 			}
 
 			// rollback ev-node goheader state
-			// rollback ev-node goheader state
 			headerStore, err := goheaderstore.NewStore[*evtypes.SignedHeader](
 				evolveDB,
 				goheaderstore.WithStorePrefix("headerSync"),
@@ -103,6 +102,16 @@ The application also rolls back to height n - 1. If a --height flag is specified
 			if err != nil {
 				return err
 			}
+
+			if err := headerStore.Start(goCtx); err != nil {
+				return err
+			}
+			defer headerStore.Stop(goCtx)
+
+			if err := dataStore.Start(goCtx); err != nil {
+				return err
+			}
+			defer dataStore.Stop(goCtx)
 
 			if err := headerStore.DeleteTo(goCtx, height); err != nil {
 				return fmt.Errorf("failed to rollback header sync service state: %w", err)
