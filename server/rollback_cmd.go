@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 
+	goheaderstore "github.com/celestiaorg/go-header/store"
 	ds "github.com/ipfs/go-datastore"
 	kt "github.com/ipfs/go-datastore/keytransform"
-	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
 	dbm "github.com/cosmos/cosmos-db"
@@ -15,11 +15,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/evstack/ev-node/node"
-	"github.com/evstack/ev-node/pkg/config"
-	"github.com/evstack/ev-node/pkg/genesis"
-	"github.com/evstack/ev-node/pkg/p2p"
 	"github.com/evstack/ev-node/pkg/store"
-	"github.com/evstack/ev-node/pkg/sync"
+	evtypes "github.com/evstack/ev-node/types"
 )
 
 // NewRollbackCmd creates a command to rollback CometBFT and multistore state by one height.
@@ -88,24 +85,32 @@ The application also rolls back to height n - 1. If a --height flag is specified
 			}
 
 			// rollback ev-node goheader state
-			headerSyncService, err := sync.NewHeaderSyncService(evolveDB, config.Config{}, genesis.Genesis{}, &p2p.Client{}, zerolog.Nop())
+			// rollback ev-node goheader state
+			headerStore, err := goheaderstore.NewStore[*evtypes.SignedHeader](
+				evolveDB,
+				goheaderstore.WithStorePrefix("headerSync"),
+				goheaderstore.WithMetrics(),
+			)
 			if err != nil {
 				return err
 			}
 
-			dataSyncService, err := sync.NewDataSyncService(evolveDB, config.Config{}, genesis.Genesis{}, &p2p.Client{}, zerolog.Nop())
+			dataStore, err := goheaderstore.NewStore[*evtypes.Data](
+				evolveDB,
+				goheaderstore.WithStorePrefix("dataSync"),
+				goheaderstore.WithMetrics(),
+			)
 			if err != nil {
 				return err
 			}
 
-			if err := headerSyncService.Store().DeleteTo(goCtx, height); err != nil {
+			if err := headerStore.DeleteTo(goCtx, height); err != nil {
 				return fmt.Errorf("failed to rollback header sync service state: %w", err)
 			}
 
-			if err := dataSyncService.Store().DeleteTo(goCtx, height); err != nil {
+			if err := dataStore.DeleteTo(goCtx, height); err != nil {
 				return fmt.Errorf("failed to rollback data sync service state: %w", err)
 			}
-
 			// rollback the multistore
 			app := appCreator(ctx.Logger, db, nil, ctx.Viper)
 			if err := app.CommitMultiStore().RollbackToVersion(int64(height)); err != nil {
