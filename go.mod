@@ -5,6 +5,7 @@ go 1.24.1
 replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
 	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
+	github.com/ipfs/go-datastore => github.com/celestiaorg/go-datastore v0.0.0-20250801131506-48a63ae531e4
 )
 
 exclude github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2
@@ -18,17 +19,17 @@ require (
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/math v1.5.3
 	cosmossdk.io/store v1.1.2
-	github.com/celestiaorg/go-header v0.6.6
+	github.com/celestiaorg/go-header v0.7.1
 	github.com/cometbft/cometbft v0.38.17
 	github.com/cometbft/cometbft-db v0.14.1
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/gogoproto v1.7.0
-	github.com/evstack/ev-node v1.0.0-beta.2.0.20250901092248-017d6d45a621
-	github.com/evstack/ev-node/core v1.0.0-beta.1.0.20250901092248-017d6d45a621
-	github.com/evstack/ev-node/da v0.0.0-20250901092248-017d6d45a621
-	github.com/evstack/ev-node/sequencers/single v0.0.0-20250901092248-017d6d45a621
+	github.com/evstack/ev-node v1.0.0-beta.2.0.20250905131737-cacd3c987245
+	github.com/evstack/ev-node/core v1.0.0-beta.1.0.20250905094535-f79548be1384
+	github.com/evstack/ev-node/da v0.0.0-20250905094535-f79548be1384
+	github.com/evstack/ev-node/sequencers/single v0.0.0-20250905094535-f79548be1384
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
