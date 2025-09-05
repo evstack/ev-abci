@@ -18,7 +18,7 @@ jobs:
     env:
       EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
       IGNITE_VERSION: "v29.3.1"
-      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "0f9a286e616364f7795f97981b76c79c5512b759" # use tagged when apps has tagged (blocked on things)
       EVOLVE_IMAGE_REPO: "evolve-gm"
       EVOLVE_IMAGE_TAG: "latest"
 
@@ -61,7 +61,7 @@ jobs:
       DO_NOT_TRACK: true
       EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
       IGNITE_VERSION: "v29.3.1"
-      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "0f9a286e616364f7795f97981b76c79c5512b759" # use tagged when apps has tagged (blocked on things)
     outputs:
       carol_mnemonic: ${{ steps.save_mnemonic.outputs.carol_mnemonic }}
       gmd_home: ${{ steps.paths.outputs.GMD_HOME }}
