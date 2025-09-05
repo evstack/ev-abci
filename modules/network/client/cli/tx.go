@@ -7,6 +7,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/spf13/cobra"
 
@@ -78,13 +79,34 @@ func CmdJoinAttesterSet() *cobra.Command {
 				return err
 			}
 
+			// Get the public key from the flag (same pattern as staking module)
+			pubkeyStr, err := cmd.Flags().GetString("pubkey")
+			if err != nil {
+				return err
+			}
+			
+			if pubkeyStr == "" {
+				return fmt.Errorf("must specify the validator's public key using --pubkey flag")
+			}
+
+			// Parse the JSON-encoded public key (same as staking module)
+			var pubkey cryptotypes.PubKey
+			if err := clientCtx.Codec.UnmarshalInterfaceJSON([]byte(pubkeyStr), &pubkey); err != nil {
+				return fmt.Errorf("failed to parse public key: %w", err)
+			}
+
 			valAddress := sdk.ValAddress(clientCtx.GetFromAddress()).String()
-			msg := types.NewMsgJoinAttesterSet(valAddress)
+			msg, err := types.NewMsgJoinAttesterSet(valAddress, pubkey)
+			if err != nil {
+				return fmt.Errorf("failed to create MsgJoinAttesterSet: %w", err)
+			}
 
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
 
+	cmd.Flags().String("pubkey", "", "The validator's Protobuf JSON encoded public key")
+	cmd.MarkFlagRequired("pubkey")
 	flags.AddTxFlagsToCmd(cmd)
 
 	return cmd
