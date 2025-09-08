@@ -163,11 +163,19 @@ After migration, start the node normally - it will automatically detect and use 
 
 				// set last data in sync stores
 				if initSyncStores {
-					if err = rollkitStores.headerSyncStore.Init(ctx, header); err != nil {
+					if err := rollkitStores.headerSyncStore.Start(ctx); err != nil {
+						return fmt.Errorf("failed to start header sync store: %w", err)
+					}
+
+					if err = rollkitStores.headerSyncStore.Append(ctx, header); err != nil {
 						return fmt.Errorf("failed to initialize header sync store: %w", err)
 					}
 
-					if err = rollkitStores.dataSyncStore.Init(ctx, data); err != nil {
+					if err := rollkitStores.dataSyncStore.Start(ctx); err != nil {
+						return fmt.Errorf("failed to start data sync store: %w", err)
+					}
+
+					if err = rollkitStores.dataSyncStore.Append(ctx, data); err != nil {
 						return fmt.Errorf("failed to initialize data sync store: %w", err)
 					}
 
