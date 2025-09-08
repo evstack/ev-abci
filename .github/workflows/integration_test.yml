@@ -16,9 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250901092248-017d6d45a621"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
       IGNITE_VERSION: "v29.3.1"
-      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "0f9a286e616364f7795f97981b76c79c5512b759" # use tagged when apps has tagged (blocked on things)
       EVOLVE_IMAGE_REPO: "evolve-gm"
       EVOLVE_IMAGE_TAG: "latest"
 
@@ -59,9 +59,9 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250901092248-017d6d45a621"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
       IGNITE_VERSION: "v29.3.1"
-      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "0f9a286e616364f7795f97981b76c79c5512b759" # use tagged when apps has tagged (blocked on things)
     outputs:
       carol_mnemonic: ${{ steps.save_mnemonic.outputs.carol_mnemonic }}
       gmd_home: ${{ steps.paths.outputs.GMD_HOME }}
@@ -266,7 +266,7 @@ jobs:
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
       GAIA_VERSION: "v25.1.0"
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250901092248-017d6d45a621"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
       EVNODE_DA_VERSION: "v1.0.0-beta.1"
     steps:
       - name: Set up Go
