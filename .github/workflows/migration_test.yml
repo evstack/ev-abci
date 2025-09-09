@@ -15,7 +15,7 @@ jobs:
       DO_NOT_TRACK: true
       EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
       IGNITE_VERSION: "v29.3.1"
-      IGNITE_EVOLVE_APP_VERSION: "0f9a286e616364f7795f97981b76c79c5512b759" # use tagged when apps has tagged (blocked on things)
+      v1.0.0-beta.2.0.20250908090838-0584153217ed: "main" # use tagged when apps has tagged (blocked on things)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -173,7 +173,7 @@ jobs:
           GO_EXECUTION_ABCI_DIR=$CURRENT_DIR
 
           # install evolve app
-          ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
+          ignite app install github.com/ignite/apps/evolve@$v1.0.0-beta.2.0.20250908090838-0584153217ed
 
           # add evolve to the chain + wire optional modules
           ignite evolve add --migrate
