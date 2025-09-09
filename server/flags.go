@@ -6,7 +6,7 @@ import (
 	"github.com/evstack/ev-node/pkg/config"
 )
 
-const FlagNetworkSoftConfirmation = config.FlagPrefixEvnode + "network.soft-confirmation"
+const FlagAttesterMode = config.FlagPrefixEvnode + "attester-mode"
 
 // AddFlags adds Evolve specific configuration options to cobra Command.
 func AddFlags(cmd *cobra.Command) {
@@ -14,5 +14,5 @@ func AddFlags(cmd *cobra.Command) {
 	config.AddFlags(cmd)
 
 	// Add network flags
-	cmd.Flags().Bool(FlagNetworkSoftConfirmation, false, "enable soft confirmation by the validator network")
+	cmd.Flags().Bool(FlagAttesterMode, false, "enable attester mode (soft confirmation by the validator network)")
 }

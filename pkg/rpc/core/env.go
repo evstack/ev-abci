@@ -26,14 +26,14 @@ func SetEnvironment(e *Environment) {
 // Environment contains objects and interfaces used by the RPC. It is expected
 // to be setup once during startup.
 type Environment struct {
-	Adapter                 *adapter.Adapter
-	Signer                  signer.Signer
-	TxIndexer               txindex.TxIndexer
-	BlockIndexer            indexer.BlockIndexer
-	Logger                  cmtlog.Logger
-	RPCConfig               cmtcfg.RPCConfig
-	EVNodeConfig            config.Config
-	NetworkSoftConfirmation bool
+	Adapter      *adapter.Adapter
+	Signer       signer.Signer
+	TxIndexer    txindex.TxIndexer
+	BlockIndexer indexer.BlockIndexer
+	Logger       cmtlog.Logger
+	RPCConfig    cmtcfg.RPCConfig
+	EVNodeConfig config.Config
+	AttesterMode bool
 }
 
 func validateSkipCount(page, perPage int) int {

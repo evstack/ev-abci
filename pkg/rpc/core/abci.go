@@ -39,7 +39,7 @@ func ABCIInfo(ctx *rpctypes.Context) (*ctypes.ResultABCIInfo, error) {
 	}
 
 	// In attester mode, override last_block_height with last attested height
-	if env.NetworkSoftConfirmation {
+	if env.AttesterMode {
 		lastAttestedHeight, err := getLastAttestedHeight(ctx)
 		if err != nil {
 			// Log warning but don't fail the request - fall back to original height
@@ -48,7 +48,7 @@ func ABCIInfo(ctx *rpctypes.Context) (*ctypes.ResultABCIInfo, error) {
 			// Override the last block height with the last attested height
 			originalHeight := info.LastBlockHeight
 			info.LastBlockHeight = int64(lastAttestedHeight)
-			env.Logger.Debug("ABCIInfo using last attested height", 
+			env.Logger.Debug("ABCIInfo using last attested height",
 				"lastAttestedHeight", lastAttestedHeight,
 				"originalHeight", originalHeight)
 		}

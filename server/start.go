@@ -52,10 +52,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
-	execstore "github.com/evstack/ev-abci/pkg/store"
 	"github.com/evstack/ev-abci/pkg/rpc"
 	"github.com/evstack/ev-abci/pkg/rpc/core"
 	execsigner "github.com/evstack/ev-abci/pkg/signer"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 const (
@@ -413,7 +413,7 @@ func setupNodeAndExecutor(
 		opts = append(opts, adapter.WithMetrics(m))
 	}
 
-	if srvCtx.Viper.GetBool(FlagNetworkSoftConfirmation) {
+	if srvCtx.Viper.GetBool(FlagAttesterMode) {
 		// TODO enable soft confirmation block filter when clarified
 		// opts = append(opts, adapter.WithNetworkSoftConfirmationBlockFilter())
 	}
@@ -485,7 +485,7 @@ func setupNodeAndExecutor(
 
 	// Choose ValidatorHasherProvider based on attester mode (network soft confirmation)
 	var validatorHasherProvider func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error)
-	if srvCtx.Viper.GetBool(FlagNetworkSoftConfirmation) {
+	if srvCtx.Viper.GetBool(FlagAttesterMode) {
 		// Attester mode: use validators from ABCI store
 		abciStore := execstore.NewExecABCIStore(database)
 		validatorHasherProvider = adapter.ValidatorHasherFromStoreProvider(abciStore)
@@ -530,14 +530,14 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, fmt.Errorf("start indexer service: %w", err)
 	}
 	core.SetEnvironment(&core.Environment{
-		Signer:                  signer,
-		Adapter:                 executor,
-		TxIndexer:               txIndexer,
-		BlockIndexer:            blockIndexer,
-		Logger:                  servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
-		RPCConfig:               *cfg.RPC,
-		EVNodeConfig:            rollkitcfg,
-		NetworkSoftConfirmation: srvCtx.Viper.GetBool(FlagNetworkSoftConfirmation),
+		Signer:       signer,
+		Adapter:      executor,
+		TxIndexer:    txIndexer,
+		BlockIndexer: blockIndexer,
+		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
+		RPCConfig:    *cfg.RPC,
+		EVNodeConfig: rollkitcfg,
+		AttesterMode: srvCtx.Viper.GetBool(FlagAttesterMode),
 	})
 
 	// Pass the created handler to the RPC server constructor

@@ -341,10 +341,10 @@ func getCommitForHeight(ctx context.Context, height uint64) (*cmttypes.Commit, e
 	// Debug: Log attester mode status
 	env.Logger.Info("getCommitForHeight called",
 		"height", height,
-		"NetworkSoftConfirmation", env.NetworkSoftConfirmation)
+		"AttesterMode", env.AttesterMode)
 
 	// If not in attester mode, use the original sequencer-based commit
-	if !env.NetworkSoftConfirmation {
+	if !env.AttesterMode {
 		env.Logger.Info("Using sequencer mode - returning sequencer signatures")
 		return env.Adapter.GetLastCommit(ctx, height+1)
 	}

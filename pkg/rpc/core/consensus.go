@@ -12,9 +12,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/gogoproto/proto"
-	
+
 	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 
@@ -25,16 +24,16 @@ import (
 // for the validators in the set as used in computing their Merkle root.
 //
 // More: https://docs.cometbft.com/v0.37/rpc/#/Info/validators
-func Validators(ctx *rpctypes.Context, heightPtr *int64, pagePtr, perPagePtr *int) (*coretypes.ResultValidators, error) {
+func Validators(ctx *rpctypes.Context, heightPtr *int64, _, _ *int) (*coretypes.ResultValidators, error) {
 	height, err := normalizeHeight(ctx.Context(), heightPtr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to normalize height: %w", err)
 	}
 
 	// In attester mode, return active attesters instead of genesis validator
-	if env.NetworkSoftConfirmation {
+	if env.AttesterMode {
 		env.Logger.Info("Validators endpoint in attester mode - returning active attesters", "height", height)
-		
+
 		// Get attester signatures for this height to determine active attesters
 		signatures, err := getAttesterSignatures(ctx.Context(), int64(height))
 		if err != nil {
@@ -99,7 +98,7 @@ func getGenesisValidatorSet(height uint64) (*coretypes.ResultValidators, error) 
 // DumpConsensusState dumps consensus state.
 // UNSTABLE
 // More: https://docs.cometbft.com/v0.37/rpc/#/Info/dump_consensus_state
-func DumpConsensusState(ctx *rpctypes.Context) (*coretypes.ResultDumpConsensusState, error) {
+func DumpConsensusState(_ *rpctypes.Context) (*coretypes.ResultDumpConsensusState, error) {
 	// Evolve doesn't have CometBFT consensus state.
 	return nil, ErrConsensusStateNotAvailable
 }
@@ -107,7 +106,7 @@ func DumpConsensusState(ctx *rpctypes.Context) (*coretypes.ResultDumpConsensusSt
 // ConsensusState returns a concise summary of the consensus state.
 // UNSTABLE
 // More: https://docs.cometbft.com/v0.37/rpc/#/Info/consensus_state
-func ConsensusState(ctx *rpctypes.Context) (*coretypes.ResultConsensusState, error) {
+func ConsensusState(_ *rpctypes.Context) (*coretypes.ResultConsensusState, error) {
 	// Evolve doesn't have CometBFT consensus state.
 	return nil, ErrConsensusStateNotAvailable
 }
@@ -202,7 +201,7 @@ func buildValidatorSetFromAttesters(signatures map[string][]byte, height uint64)
 			continue
 		}
 
-		env.Logger.Info("creating validator entry for attester", 
+		env.Logger.Info("creating validator entry for attester",
 			"validator", validatorAddr, "address", consensusAddr.String())
 
 		validators = append(validators, &cmttypes.Validator{
@@ -217,42 +216,10 @@ func buildValidatorSetFromAttesters(signatures map[string][]byte, height uint64)
 		return nil, fmt.Errorf("no valid attester validators found")
 	}
 
-	env.Logger.Info("Built validator set from attesters", 
+	env.Logger.Info("Built validator set from attesters",
 		"count", len(validators), "height", height)
 
 	return validators, nil
-}
-
-// getValidatorByOperatorAddress queries the staking module for validator info
-func getValidatorByOperatorAddress(ctx context.Context, valAddr sdk.ValAddress) (stakingtypes.Validator, error) {
-	// Query the staking module via ABCI
-	queryReq := &stakingtypes.QueryValidatorRequest{
-		ValidatorAddr: valAddr.String(),
-	}
-
-	queryReqBytes, err := proto.Marshal(queryReq)
-	if err != nil {
-		return stakingtypes.Validator{}, fmt.Errorf("marshal validator query request: %w", err)
-	}
-
-	result, err := env.Adapter.App.Query(ctx, &abci.RequestQuery{
-		Path: "/cosmos.staking.v1beta1.Query/Validator",
-		Data: queryReqBytes,
-	})
-	if err != nil {
-		return stakingtypes.Validator{}, fmt.Errorf("query validator: %w", err)
-	}
-
-	if result.Code != 0 {
-		return stakingtypes.Validator{}, fmt.Errorf("validator not found: code %d, log: %s", result.Code, result.Log)
-	}
-
-	var queryResp stakingtypes.QueryValidatorResponse
-	if err := proto.Unmarshal(result.Value, &queryResp); err != nil {
-		return stakingtypes.Validator{}, fmt.Errorf("unmarshal validator response: %w", err)
-	}
-
-	return queryResp.Validator, nil
 }
 
 // getAttesterInfoByAddress queries the network module for attester information via ABCI
@@ -261,12 +228,12 @@ func getAttesterInfoByAddress(ctx context.Context, validatorAddr string) (*netwo
 	queryReq := &networktypes.QueryAttesterInfoRequest{
 		ValidatorAddress: validatorAddr,
 	}
-	
+
 	queryReqBytes, err := proto.Marshal(queryReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal query request: %w", err)
 	}
-	
+
 	result, err := env.Adapter.App.Query(ctx, &abci.RequestQuery{
 		Path: "/evabci.network.v1.Query/AttesterInfo",
 		Data: queryReqBytes, // Properly marshaled protobuf request
@@ -286,4 +253,3 @@ func getAttesterInfoByAddress(ctx context.Context, validatorAddr string) (*netwo
 
 	return queryResp.AttesterInfo, nil
 }
-

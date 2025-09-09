@@ -12,7 +12,6 @@ import (
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cometbft/cometbft/version"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 
@@ -33,11 +32,11 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 	var latestHeight uint64
 	var err error
 
-	// Debug: Check attester node detection
-	isAttester := isAttesterNode(ctx)
+	// Debug: Log attester mode status
+	isAttester := isAttesterNode()
 	env.Logger.Info("Status endpoint - node mode detection",
 		"isAttester", isAttester,
-		"NetworkSoftConfirmation", env.NetworkSoftConfirmation)
+		"AttesterMode", env.AttesterMode)
 
 	if isAttester {
 		// If attester node, get last attested height for this validator
@@ -71,6 +70,14 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 		catchingUpThreshold := 2 * blockTime
 		timeSinceLatestBlock := time.Since(latestBlockTime)
 		catchingUp = timeSinceLatestBlock > catchingUpThreshold
+	}
+
+	// TODO: For attester mode, we temporarily report CatchingUp=false
+	// to unblock relayer clients while we refine the semantics for
+	// "catching up" based on attestation lag vs. block production.
+	// Revisit to implement a more accurate condition for attester nodes.
+	if env.AttesterMode {
+		catchingUp = false
 	}
 
 	initialHeader, err := env.Adapter.RollkitStore.GetHeader(unwrappedCtx, uint64(env.Adapter.AppGenesis.InitialHeight))
@@ -148,32 +155,8 @@ func Status(ctx *rpctypes.Context) (*ctypes.ResultStatus, error) {
 }
 
 // isAttesterNode checks if this node is running in attester mode
-func isAttesterNode(ctx *rpctypes.Context) bool {
-	// Check if the NetworkSoftConfirmation flag is enabled (indicates attester mode)
-	if env.NetworkSoftConfirmation {
-		return true
-	}
-
-	// Additional check: query if this validator is in the attester set
-	valAddr, err := getValidatorAddress()
-	if err != nil {
-		return false
-	}
-
-	// Query network module to check if this validator is in attester set
-	path := "/rollkitsdk.network.v1.Query/Attesters"
-	data := []byte("{}")
-
-	res, err := env.Adapter.App.Query(ctx.Context(), &abci.RequestQuery{
-		Path: path,
-		Data: data,
-	})
-	if err != nil || res.Code != 0 {
-		return false
-	}
-
-	// Simple check if validator address is in the response
-	return len(res.Value) > 0 && len(valAddr) > 0
+func isAttesterNode() bool {
+	return env.AttesterMode
 }
 
 // getLastAttestedHeight returns the highest block height attested by this validator
@@ -210,17 +193,4 @@ func getLastAttestedHeight(ctx *rpctypes.Context) (uint64, error) {
 
 	// If no response value, return 0
 	return 0, nil
-}
-
-// getValidatorAddress returns the validator address for this node
-func getValidatorAddress() (string, error) {
-	if len(env.Adapter.AppGenesis.Consensus.Validators) != 1 {
-		return "", fmt.Errorf("expected exactly one validator in genesis")
-	}
-
-	validator := env.Adapter.AppGenesis.Consensus.Validators[0]
-
-	// Convert to SDK validator address format
-	valAddr := sdk.ValAddress(validator.Address)
-	return valAddr.String(), nil
 }
