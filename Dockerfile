@@ -7,9 +7,9 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-beta.2.0.20250905131737-cacd3c987245
+ENV EVNODE_VERSION=v1.0.0-beta.2.0.20250908090838-0584153217ed
 ENV IGNITE_VERSION=v29.3.1
-ENV v1.0.0-beta.2.0.20250908090838-0584153217ed=main
+ENV IGNITE_EVOLVE_APP_VERSION=main
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
@@ -21,7 +21,7 @@ RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 
 WORKDIR /workspace/gm
 
-RUN ignite app install github.com/ignite/apps/evolve@${v1.0.0-beta.2.0.20250908090838-0584153217ed} && \
+RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
     ignite evolve add
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \

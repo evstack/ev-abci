@@ -16,9 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250908090838-0584153217ed"
       IGNITE_VERSION: "v29.3.1"
-      v1.0.0-beta.2.0.20250908090838-0584153217ed: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
       EVOLVE_IMAGE_REPO: "evolve-gm"
       EVOLVE_IMAGE_TAG: "latest"
 
@@ -41,7 +41,7 @@ jobs:
           docker build \
             --build-arg EVNODE_VERSION=${{ env.EVNODE_VERSION }} \
             --build-arg IGNITE_VERSION=${{ env.IGNITE_VERSION }} \
-            --build-arg v1.0.0-beta.2.0.20250908090838-0584153217ed=${{ env.v1.0.0-beta.2.0.20250908090838-0584153217ed }} \
+            --build-arg IGNITE_EVOLVE_APP_VERSION=${{ env.IGNITE_EVOLVE_APP_VERSION }} \
             -t ${{ env.EVOLVE_IMAGE_REPO }}:${{ env.EVOLVE_IMAGE_TAG }} \
             .
 
@@ -59,9 +59,9 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250908090838-0584153217ed"
       IGNITE_VERSION: "v29.3.1"
-      v1.0.0-beta.2.0.20250908090838-0584153217ed: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
     outputs:
       carol_mnemonic: ${{ steps.save_mnemonic.outputs.carol_mnemonic }}
       gmd_home: ${{ steps.paths.outputs.GMD_HOME }}
@@ -88,7 +88,7 @@ jobs:
           cd gm
 
           # install evolve app
-          ignite app install github.com/ignite/apps/evolve@$v1.0.0-beta.2.0.20250908090838-0584153217ed
+          ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
 
           # add evolve to the chain
           ignite evolve add
@@ -266,7 +266,7 @@ jobs:
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
       GAIA_VERSION: "v25.1.0"
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250905131737-cacd3c987245"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250908090838-0584153217ed"
       EVNODE_DA_VERSION: "v1.0.0-beta.1"
     steps:
       - name: Set up Go
