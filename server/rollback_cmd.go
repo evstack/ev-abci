@@ -121,11 +121,11 @@ The application also rolls back to height n - 1. If a --height flag is specified
 				}
 			}()
 
-			if err := headerStore.DeleteTo(goCtx, height); err != nil {
+			if err := headerStore.DeleteFromHead(goCtx, height); err != nil {
 				return fmt.Errorf("failed to rollback header sync service state: %w", err)
 			}
 
-			if err := dataStore.DeleteTo(goCtx, height); err != nil {
+			if err := dataStore.DeleteFromHead(goCtx, height); err != nil {
 				return fmt.Errorf("failed to rollback data sync service state: %w", err)
 			}
 			// rollback the multistore
