@@ -33,6 +33,9 @@ jobs:
           go-version: stable
           cache: true
 
+      - name: Export GOPATH_BIN
+        run: echo "GOPATH_BIN=$(go env GOPATH)/bin" >> $GITHUB_ENV
+
       - name: Cache Ignite CLI
         id: cache-ignite
         uses: actions/cache@v4
@@ -53,7 +56,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ runner.home }}/go/bin/gmd
+            ${{ env.GOPATH_BIN }}/gmd
           key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('**/*.go') }}
 
       - name: Build Gmd Chain binary with Ignite
@@ -79,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .github/integration-tests/bin
-          cp "$(which gmd)" .github/integration-tests/bin/gmd
+          BIN_PATH="${GOPATH_BIN}/gmd"; if [ ! -x "$BIN_PATH" ]; then BIN_PATH="$(command -v gmd)"; fi; cp "$BIN_PATH" .github/integration-tests/bin/gmd
           chmod +x .github/integration-tests/bin/gmd
 
       - name: Build Docker images (compose)
