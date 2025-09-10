@@ -9,6 +9,20 @@ services:
     networks:
       - ibc-test
 
+  # Local Data Availability (DA) service
+  local-da:
+    build:
+      context: ../../..
+      dockerfile: .github/compose/docker/Dockerfile.local-da
+      args:
+        EV_NODE_REF: ${EV_NODE_REF:-main}
+    container_name: rollkit-local-da
+    command: ["local-da", "-listen-all"]
+    ports:
+      - "7980:7980"
+    networks:
+      - ibc-test
+
 networks:
   ibc-test:
     driver: bridge
