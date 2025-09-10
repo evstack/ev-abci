@@ -1,0 +1,78 @@
+name: integration
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Setup Evolve Chain (scaffold & build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DO_NOT_TRACK: true
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250901092248-017d6d45a621"
+      IGNITE_VERSION: "v29.3.1"
+      IGNITE_EVOLVE_APP_VERSION: "main"
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Install Ignite CLI
+        run: |
+          echo "Installing Ignite CLI ${IGNITE_VERSION}"
+          curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
+
+      - name: Scaffold Evolve Chain
+        run: |
+          echo "Scaffolding chain gm and adding evolve app (${IGNITE_EVOLVE_APP_VERSION})"
+          ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+          cd gm
+          ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
+          ignite evolve add
+
+      - name: Start Local DA
+        run: |
+          echo "Starting local DA in background"
+          cd gm
+          go tool github.com/evstack/ev-node/da/cmd/local-da &
+          echo "DA_PID=$!" >> $GITHUB_ENV
+          sleep 3
+
+      - name: Replace Modules and Prepare Chain
+        run: |
+          echo "Replacing modules (ev-node @ ${EVNODE_VERSION}, ev-abci -> local)"
+          CURRENT_DIR=$(pwd)
+          GO_EXECUTION_ABCI_DIR=$CURRENT_DIR
+          cd gm
+          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
+          go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
+          echo "Running go mod tidy"
+          go mod tidy
+          echo "Building chain with Ignite (skip proto)"
+          ignite chain build --skip-proto
+          echo "Initializing evolve"
+          ignite evolve init
+
+      - name: Cleanup DA
+        if: always()
+        run: |
+          if [[ -n "${DA_PID}" ]]; then
+            echo "Stopping local DA (PID ${DA_PID})"
+            kill -9 $DA_PID || true
+          fi
+
