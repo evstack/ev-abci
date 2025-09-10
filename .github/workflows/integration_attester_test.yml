@@ -1,4 +1,4 @@
-name: integration
+name: integration_attester_test
 
 on:
   push:
@@ -75,4 +75,3 @@ jobs:
             echo "Stopping local DA (PID ${DA_PID})"
             kill -9 $DA_PID || true
           fi
-
