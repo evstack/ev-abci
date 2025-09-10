@@ -1,6 +1,7 @@
 name: integration_attester_prep
 
 on:
+  push:
   workflow_dispatch:
 
 concurrency:
