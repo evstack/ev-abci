@@ -26,6 +26,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Cache Ignite CLI
+        id: cache-ignite
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/bin/ignite
+            ~/.ignite
+          key: ignite-${{ runner.os }}-${{ runner.arch }}-${{ env.IGNITE_VERSION }}
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -33,9 +42,13 @@ jobs:
           cache: true
 
       - name: Install Ignite CLI
+        if: steps.cache-ignite.outputs.cache-hit != 'true'
         run: |
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
           curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
+
+      - name: Verify Ignite version
+        run: ignite version
 
       - name: Scaffold Evolve Chain
         run: |
