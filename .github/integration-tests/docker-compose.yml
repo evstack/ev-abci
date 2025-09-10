@@ -3,7 +3,7 @@ services:
   binaries:
     build:
       context: ../..
-      dockerfile: gm/integration-tests/docker/Dockerfile.binaries
+      dockerfile: .github/integration-tests/docker/Dockerfile.binaries
     image: integration-tests-binaries
     container_name: integration-test-binaries
     command: ["true"]  # Does nothing, just builds the image
@@ -13,7 +13,7 @@ services:
   local-da:
     build:
       context: ../..
-      dockerfile: gm/integration-tests/docker/Dockerfile.local-da
+      dockerfile: .github/integration-tests/docker/Dockerfile.local-da
     container_name: rollkit-local-da
     command: ["local-da", "-listen-all"]
     ports:
@@ -57,7 +57,7 @@ services:
   gm-chain:
     build:
       context: ../..
-      dockerfile: gm/integration-tests/docker/Dockerfile.gm
+      dockerfile: .github/integration-tests/docker/Dockerfile.gm
     container_name: gm-chain
     ports:
       - "26757:26757"  # RPC
@@ -66,6 +66,8 @@ services:
       - "1417:1417"    # API
     volumes:
       - ../integration-tests/scripts:/home/gm/scripts:ro
+      - ./bin/gmd:/usr/local/bin/gmd:ro
+      - ../../gm:/home/gm/gm:ro
       - gm-data:/shared:Z
     environment:
       - CHAIN_ID=gm
@@ -88,7 +90,7 @@ services:
   attester:
     build:
       context: ../..
-      dockerfile: gm/integration-tests/docker/Dockerfile.attester
+      dockerfile: .github/integration-tests/docker/Dockerfile.attester
     container_name: gm-attester
     volumes:
       - ../integration-tests/scripts:/home/attester/scripts:ro

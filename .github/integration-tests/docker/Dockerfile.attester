@@ -6,12 +6,8 @@ RUN apk add --no-cache git make gcc musl-dev
 # Set working directory
 WORKDIR /workspace
 
-# Copy dependencies first
-COPY ev-abci /workspace/ev-abci
-COPY ev-node /workspace/ev-node  
-COPY tastora /workspace/tastora
-
-# Copy GM chain source code
+# Copy ev-abci (repo root) and the scaffolded gm chain
+COPY . /workspace/ev-abci
 COPY gm /workspace/gm
 WORKDIR /workspace/gm
 
@@ -32,11 +28,11 @@ RUN adduser -D -s /bin/bash attester
 COPY --from=builder /workspace/attester /usr/local/bin/attester
 
 # Copy attester script
-COPY --chown=attester:attester gm/integration-tests/scripts/run-attester.sh /home/attester/run-attester.sh
+COPY --chown=attester:attester .github/integration-tests/scripts/run-attester.sh /home/attester/run-attester.sh
 RUN chmod +x /home/attester/run-attester.sh
 
 # Copy wait helpers
-COPY --chown=attester:attester gm/integration-tests/scripts/wait-for-chain.sh /home/attester/wait-for-chain.sh
+COPY --chown=attester:attester .github/integration-tests/scripts/wait-for-chain.sh /home/attester/wait-for-chain.sh
 RUN chmod +x /home/attester/wait-for-chain.sh
 
 # Switch to attester user

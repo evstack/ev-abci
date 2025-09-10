@@ -75,32 +75,16 @@ jobs:
           echo "Building chain with Ignite (skip proto)"
           ignite chain build --skip-proto
 
-      - name: Get gm binary and gmd home paths
-        id: paths
+      # Using docker-compose based tests; no need to export gmd paths here
+
+      # No external dependency checkouts needed for integration-tests Dockerfiles
+
+      - name: Package gmd for compose
         run: |
           set -euo pipefail
-          GM_BINARY_PATH=$(which gmd)
-          echo "GM_BINARY_PATH=$GM_BINARY_PATH"
-          echo "GM_BINARY_PATH=$GM_BINARY_PATH" >> $GITHUB_ENV
-          GMD_HOME=$(gmd config home)
-          echo "GMD_HOME=$GMD_HOME"
-          echo "GMD_HOME=$GMD_HOME" >> $GITHUB_ENV
-
-      - name: Checkout ev-node (for Docker builds)
-        uses: actions/checkout@v5
-        with:
-          repository: evstack/ev-node
-          ref: ${{ env.EVNODE_VERSION }}
-          path: ev-node
-          fetch-depth: 1
-
-      - name: Checkout tastora (for Docker builds)
-        uses: actions/checkout@v5
-        with:
-          repository: celestiaorg/tastora
-          ref: ${{ env.TASTORA_REF }}
-          path: tastora
-          fetch-depth: 1
+          mkdir -p .github/integration-tests/bin
+          cp "$(which gmd)" .github/integration-tests/bin/gmd
+          chmod +x .github/integration-tests/bin/gmd
 
       - name: Build Docker images (compose)
         run: |

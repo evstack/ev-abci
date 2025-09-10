@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INTEGRATION_DIR="$SCRIPT_DIR/integration-tests"
+INTEGRATION_DIR="$SCRIPT_DIR"
 COMPOSE_FILE="$INTEGRATION_DIR/docker-compose.yml"
 LOG_DIR="$INTEGRATION_DIR/logs"
 

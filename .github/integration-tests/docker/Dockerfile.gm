@@ -1,31 +1,10 @@
 # Build and runtime stage - compile gmd inside container
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24-alpine AS ignite-builder
 
-# Install build dependencies and ignite
-RUN apk add --no-cache gcc musl-dev git curl bash
-RUN curl https://get.ignite.com/cli! | bash
-
-# Install evolve plugin in builder stage where Go is available
-RUN ignite app install -g github.com/ignite/apps/evolve@main
-
-# Set working directory
-WORKDIR /app
-
-# Copy dependencies first
-COPY ev-abci ./deps/ev-abci
-COPY ev-node ./deps/ev-node
-COPY tastora ./deps/tastora
-
-# Copy GM source code
-COPY gm .
-
-# Create a temporary go.mod for building that uses the copied dependencies
-RUN sed -i 's|github.com/celestiaorg/tastora => ../tastora|github.com/celestiaorg/tastora => ./deps/tastora|g' go.mod && \
-    sed -i 's|github.com/evstack/ev-abci => ../ev-abci|github.com/evstack/ev-abci => ./deps/ev-abci|g' go.mod && \
-    sed -i 's|github.com/evstack/ev-node => ../ev-node|github.com/evstack/ev-node => ./deps/ev-node|g' go.mod
-
-# Build gmd binary
-RUN go build -o gmd ./cmd/gmd
+# Install ignite CLI and evolve plugin (requires Go toolchain)
+RUN apk add --no-cache git curl bash ca-certificates \
+    && curl https://get.ignite.com/cli! | bash \
+    && ignite app install -g github.com/ignite/apps/evolve@main
 
 # Runtime stage
 FROM alpine:3.18
@@ -34,8 +13,8 @@ FROM alpine:3.18
 RUN apk add --no-cache ca-certificates curl jq bash sudo netcat-openbsd
 
 # Copy ignite binary with evolve plugin from builder stage
-COPY --from=builder /usr/local/bin/ignite /usr/local/bin/ignite
-COPY --from=builder /root/.ignite /root/.ignite
+COPY --from=ignite-builder /usr/local/bin/ignite /usr/local/bin/ignite
+COPY --from=ignite-builder /root/.ignite /root/.ignite
 RUN chmod +x /usr/local/bin/ignite
 
 # Create gm user
@@ -44,22 +23,15 @@ RUN adduser -D -s /bin/bash gm
 RUN echo "gm ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Copy ignite configuration to gm user
-COPY --from=builder /root/.ignite /home/gm/.ignite
+COPY --from=ignite-builder /root/.ignite /home/gm/.ignite
 RUN chown -R gm:gm /home/gm/.ignite
 
-# Copy compiled binary from builder stage
-COPY --from=builder /app/gmd /usr/local/bin/gmd
-RUN chmod +x /usr/local/bin/gmd
-
-# Copy the gm project directory for ignite evolve init
-COPY --chown=gm:gm gm /home/gm/gm
-
 # Copy initialization script
-COPY --chown=gm:gm gm/integration-tests/scripts/init-gm.sh /home/gm/init-gm.sh
+COPY --chown=gm:gm .github/integration-tests/scripts/init-gm.sh /home/gm/init-gm.sh
 RUN chmod +x /home/gm/init-gm.sh
 
 # Copy wait helper
-COPY --chown=gm:gm gm/integration-tests/scripts/wait-for-da.sh /home/gm/wait-for-da.sh
+COPY --chown=gm:gm .github/integration-tests/scripts/wait-for-da.sh /home/gm/wait-for-da.sh
 RUN chmod +x /home/gm/wait-for-da.sh
 
 # Switch to gm user
