@@ -1,0 +1,64 @@
+name: integration_attester_prep
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prep:
+    name: Preparation (tools, Docker, Ignite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DO_NOT_TRACK: true
+      IGNITE_VERSION: "v29.3.1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify Docker and Compose
+        run: |
+          set -euo pipefail
+          echo "Checking Docker availability..."
+          docker --version
+          echo "Checking Docker Compose (v2) availability..."
+          docker compose version
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Verify Go
+        run: |
+          go version
+
+      - name: Install Ignite CLI
+        run: |
+          echo "Installing Ignite CLI ${IGNITE_VERSION}"
+          curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
+
+      - name: Verify Ignite
+        run: |
+          set -euo pipefail
+          if ! ignite version >/dev/null 2>&1; then
+            echo "Ignite not found after install" >&2
+            exit 1
+          fi
+          echo "Ignite version:" $(ignite version || ignite --version)
+
+      - name: Verify auxiliary tools
+        run: |
+          set -euo pipefail
+          echo "curl:" $(curl --version | head -n1)
+          echo "jq:"   $(jq --version)
+
