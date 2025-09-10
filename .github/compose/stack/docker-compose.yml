@@ -1,9 +1,7 @@
-version: "3.8"
-
 services:
   binaries:
     build:
-      context: ../..
+      context: ../../..
       dockerfile: .github/compose/docker/Dockerfile.binaries
     image: integration-tests-binaries:latest
     container_name: integration-test-binaries
@@ -14,4 +12,3 @@ services:
 networks:
   ibc-test:
     driver: bridge
-
