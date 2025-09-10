@@ -75,10 +75,6 @@ jobs:
           echo "Building chain with Ignite (skip proto)"
           ignite chain build --skip-proto
 
-      # Using docker-compose based tests; no need to export gmd paths here
-
-      # No external dependency checkouts needed for integration-tests Dockerfiles
-
       - name: Package gmd for compose
         run: |
           set -euo pipefail
