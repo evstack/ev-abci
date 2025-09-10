@@ -57,7 +57,7 @@ jobs:
         with:
           path: |
             ${{ env.GOPATH_BIN }}/gmd
-          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('**/*.go') }}
+          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('go.mod', 'go.sum', '**/*.go') }}
 
       - name: Build Gmd Chain binary with Ignite
         if: steps.cache-gmd.outputs.cache-hit != 'true'

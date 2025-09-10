@@ -1,16 +1,22 @@
 # Build and runtime stage - compile gmd inside container
-FROM golang:1.24-alpine AS ignite-builder
+FROM golang:1.24-bullseye AS ignite-builder
 
-# Install ignite CLI and evolve plugin (requires Go toolchain)
-RUN apk add --no-cache git curl bash ca-certificates \
-    && curl https://get.ignite.com/cli! | bash \
-    && /usr/local/bin/ignite app install -g github.com/ignite/apps/evolve@main
+# Install ignite CLI and evolve plugin (requires Go toolchain, glibc-based)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl bash ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl -sSL https://get.ignite.com/cli! | bash && \
+    /usr/local/bin/ignite app install -g github.com/ignite/apps/evolve@main
 
 # Runtime stage
-FROM alpine:3.18
+FROM debian:bullseye-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates curl jq bash sudo netcat-openbsd
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl jq bash sudo netcat-openbsd && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy ignite binary with evolve plugin from builder stage
 COPY --from=ignite-builder /usr/local/bin/ignite /usr/local/bin/ignite
@@ -18,7 +24,7 @@ COPY --from=ignite-builder /root/.ignite /root/.ignite
 RUN chmod +x /usr/local/bin/ignite
 
 # Create gm user
-RUN adduser -D -s /bin/bash gm
+RUN useradd -m -s /bin/bash gm
 # Allow gm user to use sudo without password
 RUN echo "gm ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
