@@ -28,7 +28,7 @@ func InitCmd() *cobra.Command {
 func InitRunE(cmd *cobra.Command, args []string) error {
 	aggregator, err := cmd.Flags().GetBool(rollconf.FlagAggregator)
 	if err != nil {
-		return fmt.Errorf("error reading aggregator flag: %w", err)
+		return fmt.Errorf("error reading aggregator flag (sequencer configuration): %w", err)
 	}
 
 	// ignore error, as we are creating a new config
