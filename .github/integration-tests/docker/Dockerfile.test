@@ -1,18 +1,23 @@
-# Use shared binaries base image
-FROM integration-tests-binaries:latest as binaries
+FROM debian:bullseye-slim
 
-# Create test user (Debian-based image)
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl jq bash coreutils netcat-openbsd openssl wget git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create test user
 RUN useradd -m -s /bin/bash tester
 
 # Copy test scripts
-COPY --chown=tester:tester integration-tests/scripts/run-integration-test.sh /home/tester/run-integration-test.sh
-COPY --chown=tester:tester integration-tests/scripts/setup-ibc.sh /home/tester/setup-ibc.sh
-COPY --chown=tester:tester integration-tests/scripts/test-transfers.sh /home/tester/test-transfers.sh
-COPY --chown=tester:tester integration-tests/scripts/wait-for-chain.sh /home/tester/wait-for-chain.sh
-COPY --chown=tester:tester integration-tests/scripts/wait-for-attester.sh /home/tester/wait-for-attester.sh
+COPY --chown=tester:tester .github/integration-tests/scripts/run-integration-test.sh /home/tester/run-integration-test.sh
+COPY --chown=tester:tester .github/integration-tests/scripts/setup-ibc.sh /home/tester/setup-ibc.sh
+COPY --chown=tester:tester .github/integration-tests/scripts/test-transfers.sh /home/tester/test-transfers.sh
+COPY --chown=tester:tester .github/integration-tests/scripts/wait-for-chain.sh /home/tester/wait-for-chain.sh
+COPY --chown=tester:tester .github/integration-tests/scripts/wait-for-attester.sh /home/tester/wait-for-attester.sh
 
 # Copy hermes config template
-COPY --chown=tester:tester integration-tests/config/hermes.toml /home/tester/hermes.toml
+COPY --chown=tester:tester .github/integration-tests/config/hermes.toml /home/tester/hermes.toml
 
 # Make scripts executable
 RUN chmod +x /home/tester/*.sh

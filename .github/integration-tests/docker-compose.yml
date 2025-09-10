@@ -1,15 +1,4 @@
 services:
-  # Shared binaries image - built once, used by multiple services
-  binaries:
-    build:
-      context: ../..
-      dockerfile: .github/integration-tests/docker/Dockerfile.binaries
-    image: integration-tests-binaries
-    container_name: integration-test-binaries
-    command: ["true"]  # Does nothing, just builds the image
-    networks:
-      - ibc-test
-
   local-da:
     build:
       context: ../..
@@ -31,7 +20,7 @@ services:
   gaia-chain:
     build:
       context: ..
-      dockerfile: integration-tests/docker/Dockerfile.gaia
+      dockerfile: .github/integration-tests/docker/Dockerfile.gaia
     container_name: gaia-chain
     ports:
       - "26657:26657"  # RPC
@@ -184,7 +173,7 @@ services:
   test-runner:
     build:
       context: ..
-      dockerfile: integration-tests/docker/Dockerfile.test
+      dockerfile: .github/integration-tests/docker/Dockerfile.test
     container_name: ibc-test-runner
     volumes:
       - ../integration-tests/scripts:/home/tester/scripts:ro
@@ -199,9 +188,6 @@ services:
       - GAIA_API=http://gaia-chain:1317
       - HERMES_HOME=/home/tester/.hermes
       - MAX_WAIT_TIME=300
-    depends_on:
-      binaries:
-        condition: service_completed_successfully
     command: >
       bash -c "
         echo '🧪 Starting integration tests...' &&
