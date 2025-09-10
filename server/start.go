@@ -327,9 +327,9 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, err
 	}
 
-	// only load signer if rollkit.node.aggregator == true
+	// only load signer if rollkit.node.aggregator == true (the node acts as a sequencer)
 	var signer signer.Signer
-	if rollkitcfg.Node.Aggregator {
+	if rollkitcfg.Node.Aggregator { // node is configured as sequencer
 		signer, err = execsigner.NewSignerWrapper(pval.Key.PrivKey)
 		if err != nil {
 			return nil, nil, cleanupFn, err

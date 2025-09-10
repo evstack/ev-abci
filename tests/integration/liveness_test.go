@@ -171,7 +171,7 @@ func CreateEvolveChain(ctx context.Context, t *testing.T, dockerClient *client.C
 		// explicitly set 0 gas so that we can make exact assertions when sending balances.
 		WithGasPrices(fmt.Sprintf("0.00%s", denom)).
 		WithNode(docker.NewChainNodeConfigBuilder().
-			// Create aggregator node with evolve-specific start arguments
+			// Create sequencer node with evolve-specific start arguments
 			WithAdditionalStartArgs(
 				"--rollkit.node.aggregator",
 				"--rollkit.signer.passphrase", "12345678",

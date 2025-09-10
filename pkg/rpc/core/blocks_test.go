@@ -181,18 +181,18 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 	// Create validator and signer
 	cmtPrivKey := ed25519.GenPrivKey()
 	cmtPubKey := cmtPrivKey.PubKey()
-	aggregatorPrivKey, err := crypto.UnmarshalEd25519PrivateKey(cmtPrivKey.Bytes())
+	sequencerPrivKey, err := crypto.UnmarshalEd25519PrivateKey(cmtPrivKey.Bytes())
 	require.NoError(err)
-	aggregatorPubKey := aggregatorPrivKey.GetPublic()
+	sequencerPubKey := sequencerPrivKey.GetPublic()
 	validatorAddress := cmtPubKey.Address().Bytes()[:20]
 
 	// Create a mock signer that uses the same private key
 	mockSigner := &MockSigner{}
 	mockSigner.On("Sign", mock.Anything).Return(func(message []byte) []byte {
-		sig, _ := aggregatorPrivKey.Sign(message)
+		sig, _ := sequencerPrivKey.Sign(message)
 		return sig
 	}, nil)
-	mockSigner.On("GetPublic").Return(aggregatorPubKey, nil)
+	mockSigner.On("GetPublic").Return(sequencerPubKey, nil)
 	mockSigner.On("GetAddress").Return(validatorAddress, nil)
 
 	env = setupTestEnvironment(mockSigner)
@@ -201,7 +201,7 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 	now := time.Now()
 
 	// use the validator hasher helpers
-	validatorHash, err := adapter.ValidatorHasherProvider()(validatorAddress, aggregatorPubKey)
+	validatorHash, err := adapter.ValidatorHasherProvider()(validatorAddress, sequencerPubKey)
 	require.NoError(err)
 
 	fixedValSet := &cmttypes.ValidatorSet{
@@ -240,10 +240,10 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 		require.NoError(err, "Failed to save BlockID for height %d", blockHeight)
 
 		// create the signature for the rollkit block
-		realSignature := signBlock(t, env.Adapter, rollkitHeader, aggregatorPrivKey)
+		realSignature := signBlock(t, env.Adapter, rollkitHeader, sequencerPrivKey)
 
 		// mock the store to return our signed block
-		mockBlock(blockHeight, rollkitHeader, blockData, realSignature, aggregatorPubKey, validatorAddress)
+		mockBlock(blockHeight, rollkitHeader, blockData, realSignature, sequencerPubKey, validatorAddress)
 
 		// call Commit RPC
 		commitResult := callCommitRPC(t, blockHeight)
