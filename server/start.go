@@ -33,6 +33,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/version"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/hashicorp/go-metrics"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -389,7 +390,7 @@ func setupNodeAndExecutor(
 			"initial_height", cmtGenDoc.InitialHeight)
 	}
 
-	database, err := store.NewDefaultKVStore(cfg.RootDir, "data", "evolve")
+	database, err := openRawEvolveDB(cfg.RootDir)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -732,4 +733,13 @@ func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Ge
 	)
 
 	return &rollkitGenesis
+}
+
+func openRawEvolveDB(rootDir string) (ds.Batching, error) {
+	database, err := store.NewDefaultKVStore(rootDir, "data", "evolve")
+	if err != nil {
+		return nil, err
+	}
+
+	return database, nil
 }
