@@ -33,10 +33,9 @@ RUN adduser --disabled-password --gecos "" gm && \
 
 # Copy scripts; the gm source itself will be mounted as a volume at runtime
 WORKDIR /home/gm
-COPY --chown=gm:gm gm/integration-tests/scripts/init-gm.sh /home/gm/init-gm.sh
-COPY --chown=gm:gm gm/integration-tests/scripts/wait-for-da.sh /home/gm/wait-for-da.sh
+COPY --chown=gm:gm .github/compose/scripts/wait-for-da.sh /home/gm/wait-for-da.sh
 COPY --chown=gm:gm .github/compose/scripts/run-gm.sh /home/gm/run-gm.sh
-RUN chmod +x /home/gm/init-gm.sh /home/gm/wait-for-da.sh /home/gm/run-gm.sh
+RUN chmod +x /home/gm/wait-for-da.sh /home/gm/run-gm.sh
 
 # Switch to gm user
 USER gm

@@ -1,0 +1,57 @@
+# Shared binaries image - compiles all chain binaries once
+# This image is used as base for other containers to avoid recompilation
+
+# (Hermes build removed) — ibc-setup and relayer use official Hermes image
+
+# GM chain builder (Debian-based to match runtime libc)
+FROM golang:1.24-bullseye AS gm-builder
+RUN apt-get update && apt-get install -y \
+    git curl bash build-essential \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl https://get.ignite.com/cli! | bash
+RUN ignite app install -g github.com/ignite/apps/evolve@main
+WORKDIR /app
+COPY ev-abci ./deps/ev-abci
+COPY ev-node ./deps/ev-node  
+COPY tastora ./deps/tastora
+COPY gm .
+RUN sed -i 's|github.com/celestiaorg/tastora => ../tastora|github.com/celestiaorg/tastora => ./deps/tastora|g' go.mod && \
+    sed -i 's|github.com/evstack/ev-abci => ../ev-abci|github.com/evstack/ev-abci => ./deps/ev-abci|g' go.mod && \
+    sed -i 's|github.com/evstack/ev-node => ../ev-node|github.com/evstack/ev-node => ./deps/ev-node|g' go.mod
+RUN go build -o gmd ./cmd/gmd
+
+# Gaia chain builder
+FROM golang:1.22-bullseye as gaia-builder
+RUN apt-get update && apt-get install -y \
+    git make gcc build-essential \
+    linux-libc-dev \
+    pkg-config \
+    libusb-1.0-0-dev \
+    libudev-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+ARG GAIA_VERSION=v18.1.0
+RUN git clone --depth 1 --branch ${GAIA_VERSION} https://github.com/cosmos/gaia.git
+WORKDIR /workspace/gaia
+ENV CGO_ENABLED=1
+RUN make build BUILD_TAGS="netgo"
+
+# Final binaries image with all chain binaries
+FROM debian:bullseye-slim as binaries
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates curl jq bash coreutils netcat-openbsd openssl wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# Download libwasmvm for Gaia runtime
+RUN wget https://github.com/CosmWasm/wasmvm/releases/download/v1.5.0/libwasmvm.aarch64.so -O /usr/lib/libwasmvm.aarch64.so || true
+
+# Copy all binaries from builders
+COPY --from=gm-builder /app/gmd /usr/local/bin/gmd
+COPY --from=gaia-builder /workspace/gaia/build/gaiad /usr/local/bin/gaiad
+
+# Make binaries executable
+RUN chmod +x /usr/local/bin/gmd /usr/local/bin/gaiad
+
+# This image can now be used as base for other containers

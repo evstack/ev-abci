@@ -20,6 +20,7 @@ jobs:
       IGNITE_VERSION: "v29.3.1"
       IGNITE_EVOLVE_APP_VERSION: "main"
       GAIAD_VERSION: "v24.0.0"
+      TASTORA_REF: "main"
 
     steps:
       - uses: actions/checkout@v5
@@ -85,14 +86,30 @@ jobs:
           echo "GMD_HOME=$GMD_HOME"
           echo "GMD_HOME=$GMD_HOME" >> $GITHUB_ENV
 
+      - name: Checkout ev-node (for Docker builds)
+        uses: actions/checkout@v5
+        with:
+          repository: evstack/ev-node
+          ref: ${{ env.EVNODE_VERSION }}
+          path: ev-node
+          fetch-depth: 1
+
+      - name: Checkout tastora (for Docker builds)
+        uses: actions/checkout@v5
+        with:
+          repository: celestiaorg/tastora
+          ref: ${{ env.TASTORA_REF }}
+          path: tastora
+          fetch-depth: 1
+
       - name: Build Docker images (compose)
         run: |
           set -euo pipefail
           echo "Building images"
-          docker compose -f .github/compose/stack/docker-compose.yml build --pull
+          docker compose -f .github/integration-tests/docker-compose.yml build --pull
           docker images | awk 'NR==1 || /integration-tests-binaries/ {print}' || true
 
-      - name: Start Local DA, Gaia and GM (docker compose)
+      - name: Run integration tests (compose orchestrator)
         run: |
-          docker compose -f .github/compose/stack/docker-compose.yml up -d local-da gaia-chain gm-chain
-          docker compose -f .github/compose/stack/docker-compose.yml ps
+          set -euo pipefail
+          bash .github/integration-tests/run-integration-tests.sh --timeout 900

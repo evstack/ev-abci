@@ -1,0 +1,61 @@
+FROM golang:1.22-bullseye as builder
+
+# Install dependencies including Linux headers for HID support
+RUN apt-get update && apt-get install -y \
+    git make gcc build-essential \
+    linux-libc-dev \
+    pkg-config \
+    libusb-1.0-0-dev \
+    libudev-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /workspace
+
+# Clone and build Gaia with proper CGO flags
+ARG GAIA_VERSION=v18.1.0
+RUN git clone --depth 1 --branch ${GAIA_VERSION} https://github.com/cosmos/gaia.git
+WORKDIR /workspace/gaia
+
+# Build with CGO enabled but without ledger support to avoid HID issues
+ENV CGO_ENABLED=1
+RUN make build BUILD_TAGS="netgo"
+
+# Runtime stage
+FROM alpine:3.18
+
+# Install runtime dependencies including glibc for Go binaries
+RUN apk add --no-cache ca-certificates curl jq bash gcompat libgcc libstdc++
+
+# Download and install libwasmvm.so for aarch64 runtime
+RUN wget https://github.com/CosmWasm/wasmvm/releases/download/v1.5.0/libwasmvm.aarch64.so -O /usr/lib/libwasmvm.aarch64.so
+
+# Copy gaiad binary
+COPY --from=builder /workspace/gaia/build/gaiad /usr/local/bin/gaiad
+
+# Create gaia user
+RUN adduser -D -s /bin/bash gaia
+
+# Switch to gaia user
+USER gaia
+WORKDIR /home/gaia
+
+# Set up environment
+ENV GAIA_HOME=/home/gaia/.gaia_local
+ENV CHAIN_ID=gaia-local
+ENV MONIKER=gaia-local
+
+# Copy initialization script
+COPY --chown=gaia:gaia integration-tests/scripts/init-gaia.sh /home/gaia/init-gaia.sh
+RUN chmod +x /home/gaia/init-gaia.sh
+
+# Expose ports
+# RPC: 26657, P2P: 26656, gRPC: 9090, API: 1317
+EXPOSE 26657 26656 9090 1317
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:26657/status || exit 1
+
+# Initialize and start
+CMD ["./init-gaia.sh"]
