@@ -4,7 +4,7 @@ FROM golang:1.24-alpine AS ignite-builder
 # Install ignite CLI and evolve plugin (requires Go toolchain)
 RUN apk add --no-cache git curl bash ca-certificates \
     && curl https://get.ignite.com/cli! | bash \
-    && ignite app install -g github.com/ignite/apps/evolve@main
+    && /usr/local/bin/ignite app install -g github.com/ignite/apps/evolve@main
 
 # Runtime stage
 FROM alpine:3.18
