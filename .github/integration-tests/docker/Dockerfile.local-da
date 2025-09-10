@@ -7,11 +7,10 @@ RUN apk add --no-cache gcc musl-dev git
 # Set working directory
 WORKDIR /workspace
 
-# Copy ev-node source
-COPY ev-node .
-
-# Build local-da binary from the correct path
-RUN cd da/cmd/local-da && go build -o /workspace/local-da .
+# Clone ev-node at desired ref and build local-da
+ARG EV_NODE_REF=main
+RUN git clone --depth 1 --branch ${EV_NODE_REF} https://github.com/evstack/ev-node ev-node
+RUN cd ev-node/da/cmd/local-da && go build -o /workspace/local-da .
 
 # Runtime stage
 FROM alpine:3.18
