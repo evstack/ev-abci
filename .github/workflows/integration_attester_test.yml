@@ -52,15 +52,13 @@ jobs:
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
           curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
 
-      - name: Cache Gmd binary
+      - name: Restore Gmd binary cache
         id: cache-gmd
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             ${{ env.GOPATH_BIN }}/gmd
           key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('go.mod', 'go.sum', '**/*.go') }}
-          # TODO(jgimeno): remove save-always once CI cache stabilizes
-          save-always: true
 
       - name: Build Gmd Chain binary with Ignite
         if: steps.cache-gmd.outputs.cache-hit != 'true'
@@ -87,6 +85,14 @@ jobs:
           mkdir -p .github/integration-tests/bin
           BIN_PATH="${GOPATH_BIN}/gmd"; if [ ! -x "$BIN_PATH" ]; then BIN_PATH="$(command -v gmd)"; fi; cp "$BIN_PATH" .github/integration-tests/bin/gmd
           chmod +x .github/integration-tests/bin/gmd
+
+      - name: Save Gmd binary cache
+        if: steps.cache-gmd.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.GOPATH_BIN }}/gmd
+          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('go.mod', 'go.sum', '**/*.go') }}
 
       - name: Build Docker images (compose)
         run: |
