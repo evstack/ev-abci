@@ -47,9 +47,6 @@ jobs:
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
           curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
 
-      - name: Verify Ignite version
-        run: ignite version
-
       - name: Scaffold Evolve Chain
         run: |
           echo "Scaffolding chain gm and adding evolve app (${IGNITE_EVOLVE_APP_VERSION})"
