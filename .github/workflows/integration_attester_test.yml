@@ -1,0 +1,141 @@
+name: integration_attester_test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Setup Evolve Chain (scaffold & build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DO_NOT_TRACK: true
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250908090838-0584153217ed"
+      IGNITE_VERSION: "v29.3.1"
+      IGNITE_EVOLVE_APP_VERSION: "main"
+      GAIAD_VERSION: "v24.0.0"
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Cleanup Docker Compose (best-effort)
+        run: |
+          set -euo pipefail
+          echo "Bringing down any existing Docker Compose stacks (if any)"
+          for f in \
+            docker-compose.yml \
+            docker-compose.yaml \
+            compose.yml \
+            compose.yaml \
+            .github/compose/stack/docker-compose.yml \
+            gm/integration-tests/docker-compose.yml; do
+            if [ -f "$f" ]; then
+              echo "Found compose file: $f -> running docker compose down"
+              docker compose -f "$f" down -v || true
+            fi
+          done
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Install Ignite CLI
+        run: |
+          echo "Installing Ignite CLI ${IGNITE_VERSION}"
+          curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
+
+      - name: Scaffold Evolve Chain
+        run: |
+          echo "Scaffolding chain gm and adding evolve app (${IGNITE_EVOLVE_APP_VERSION})"
+          ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+          cd gm
+          ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
+          ignite evolve add
+
+      - name: Build Docker images (compose)
+        run: |
+          set -euo pipefail
+          echo "Building images"
+          docker compose -f .github/compose/stack/docker-compose.yml build --pull
+          docker images | awk 'NR==1 || /integration-tests-binaries/ {print}' || true
+
+      - name: Start Local DA
+        run: |
+          echo "Starting local DA in background"
+          cd gm
+          go tool github.com/evstack/ev-node/da/cmd/local-da &
+          echo "DA_PID=$!" >> $GITHUB_ENV
+          sleep 3
+
+      - name: Download Gaia Binary
+        run: |
+          echo "Downloading gaiad ${GAIAD_VERSION} for Linux amd64"
+          wget -q https://github.com/cosmos/gaia/releases/download/${GAIAD_VERSION}/gaiad-${GAIAD_VERSION}-linux-amd64 -O gaiad
+          chmod +x gaiad
+          sudo mv gaiad /usr/local/bin/gaiad
+
+      - name: Init and Start Gaia
+        env:
+          GAIA_CHAIN_ID: localnet-1
+        run: |
+          echo "Initializing Gaia (${GAIA_CHAIN_ID}) and starting in background"
+          gaiad init gaia-local --chain-id ${GAIA_CHAIN_ID}
+          # Use a deterministic validator mnemonic as in parent repo
+          MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+          echo "$MNEMONIC" | gaiad keys add validator --keyring-backend test --recover > /dev/null 2>&1
+          gaiad genesis add-genesis-account validator 10000000000000000stake --keyring-backend test
+          gaiad genesis gentx validator 1000000000stake --chain-id ${GAIA_CHAIN_ID} --keyring-backend test
+          gaiad genesis collect-gentxs
+          # Configure app (API + gas) and consensus for quicker blocks
+          sed -i 's/^minimum-gas-prices = ".*"/minimum-gas-prices = "0stake"/' ~/.gaia/config/app.toml || true
+          # Enable API server and bind to 0.0.0.0:1317
+          sed -i 's/^enable = false/enable = true/' ~/.gaia/config/app.toml || true
+          sed -i 's#^address = "tcp://localhost:1317"#address = "tcp://0.0.0.0:1317"#' ~/.gaia/config/app.toml || true
+          sed -i 's/^timeout_commit = ".*"/timeout_commit = "1s"/' ~/.gaia/config/config.toml || true
+          sed -i 's/^timeout_propose = ".*"/timeout_propose = "1s"/' ~/.gaia/config/config.toml || true
+          # Start Gaia using standard ports (like gm/integration-tests)
+          gaiad start \
+            --p2p.laddr tcp://0.0.0.0:26656 \
+            --rpc.laddr tcp://0.0.0.0:26657 \
+            --grpc.address 0.0.0.0:9090 \
+            --log_format=json > gaia.log 2>&1 &
+          echo "GAIA_PID=$!" >> $GITHUB_ENV
+          echo "Waiting a few seconds for Gaia to come up"
+          sleep 5
+
+      - name: Replace Modules and Prepare Chain
+        run: |
+          echo "Replacing modules (ev-node @ ${EVNODE_VERSION}, ev-abci -> local)"
+          CURRENT_DIR=$(pwd)
+          GO_EXECUTION_ABCI_DIR=$CURRENT_DIR
+          cd gm
+          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
+          go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
+          echo "Running go mod tidy"
+          go mod tidy
+          echo "Building chain with Ignite (skip proto)"
+          ignite chain build --skip-proto
+          echo "Initializing evolve"
+          ignite evolve init
+
+      - name: Cleanup DA
+        if: always()
+        run: |
+          if [[ -n "${DA_PID}" ]]; then
+            echo "Stopping local DA (PID ${DA_PID})"
+            kill -9 $DA_PID || true
+          fi
+          if [[ -n "${GAIA_PID}" ]]; then
+            echo "Stopping Gaia (PID ${GAIA_PID})"
+            kill -9 $GAIA_PID || true
+          fi
