@@ -26,6 +26,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Cleanup Docker Compose (best-effort)
+        run: |
+          set -euo pipefail
+          echo "Bringing down any existing Docker Compose stacks (if any)"
+          for f in \
+            docker-compose.yml \
+            docker-compose.yaml \
+            compose.yml \
+            compose.yaml \
+            .github/compose/stack/docker-compose.yml \
+            gm/integration-tests/docker-compose.yml; do
+            if [ -f "$f" ]; then
+              echo "Found compose file: $f -> running docker compose down"
+              docker compose -f "$f" down -v || true
+            fi
+          done
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:

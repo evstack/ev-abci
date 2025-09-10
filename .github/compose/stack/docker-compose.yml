@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  binaries:
+    build:
+      context: ../..
+      dockerfile: .github/compose/docker/Dockerfile.binaries
+    image: integration-tests-binaries:latest
+    container_name: integration-test-binaries
+    command: ["true"]
+    networks:
+      - ibc-test
+
+networks:
+  ibc-test:
+    driver: bridge
+
