@@ -1,0 +1,25 @@
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache git
+
+ARG EV_NODE_REF=main
+
+WORKDIR /workspace
+
+# Clone ev-node at desired ref and build local-da
+RUN git clone --depth 1 --branch ${EV_NODE_REF} https://github.com/evstack/ev-node ev-node
+RUN cd ev-node/da/cmd/local-da && go build -o /workspace/local-da .
+
+FROM alpine:3.18
+
+RUN apk add --no-cache ca-certificates netcat-openbsd
+
+COPY --from=builder /workspace/local-da /usr/local/bin/local-da
+
+EXPOSE 7980
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=10s \
+  CMD nc -z localhost 7980 || exit 1
+
+CMD ["local-da", "-listen-all"]
+
