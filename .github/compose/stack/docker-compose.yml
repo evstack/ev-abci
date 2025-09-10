@@ -32,7 +32,6 @@ services:
       - MONIKER=cosmos-local
       - KEYRING_BACKEND=test
       - GAIAD_HOME=/root/.gaia_local
-      # default testing mnemonic; override with env GAIA_MNEMONIC if needed
       - GAIA_MNEMONIC=${GAIA_MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about}
     ports:
       - "26657:26657"  # RPC
@@ -43,23 +42,23 @@ services:
     command: |
       '
       set -euo pipefail
-      export CHAIN_ID=${CHAIN_ID}
-      export MONIKER=${MONIKER}
-      export KEYRING_BACKEND=${KEYRING_BACKEND}
-      export GAIAD_HOME=${GAIAD_HOME}
+      export CHAIN_ID=$CHAIN_ID
+      export MONIKER=$MONIKER
+      export KEYRING_BACKEND=$KEYRING_BACKEND
+      export GAIAD_HOME=$GAIAD_HOME
       
-      echo "Initializing Gaia ${CHAIN_ID} at ${GAIAD_HOME}"
-      gaiad init ${MONIKER} --chain-id ${CHAIN_ID}
+      echo "Initializing Gaia $CHAIN_ID at $GAIAD_HOME"
+      gaiad init $MONIKER --chain-id $CHAIN_ID
       
       echo "Recovering validator key"
-      echo "${GAIA_MNEMONIC}" | gaiad keys add validator \
-        --keyring-backend ${KEYRING_BACKEND} \
+      echo "$GAIA_MNEMONIC" | gaiad keys add validator \
+        --keyring-backend $KEYRING_BACKEND \
         --recover >/dev/null 2>&1
-      VAL_ADDR=$(gaiad keys show validator -a --keyring-backend ${KEYRING_BACKEND})
+      VAL_ADDR=$(gaiad keys show validator -a --keyring-backend $KEYRING_BACKEND)
       
       echo "Adding genesis account and gentx"
-      gaiad genesis add-genesis-account ${VAL_ADDR} 1000000000stake
-      gaiad genesis gentx validator 100000000stake --fees 1stake --chain-id ${CHAIN_ID} --keyring-backend ${KEYRING_BACKEND}
+      gaiad genesis add-genesis-account $VAL_ADDR 1000000000stake
+      gaiad genesis gentx validator 100000000stake --fees 1stake --chain-id $CHAIN_ID --keyring-backend $KEYRING_BACKEND
       gaiad genesis collect-gentxs
       
       echo "Setting app config"
@@ -100,7 +99,7 @@ services:
     volumes:
       # Mount host gmd binary (read-only) and GM home prepared by workflow
       - ${GM_BINARY_PATH}:/usr/local/bin/gmd:ro
-      - ${GMD_HOME}:${GM_HOME_IN_CONTAINER}
+      - ${GMD_HOME}:/home/gm/.gm
       # Mount gm source (read-only) for ignite evolve init inside container
       - ../../gm:/home/gm/gm:ro
     ports:

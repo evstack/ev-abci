@@ -47,7 +47,7 @@ jobs:
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
           curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
 
-      - name: Cache gmd binary
+      - name: Cache Gmd binary
         id: cache-gmd
         uses: actions/cache@v4
         with:
@@ -55,7 +55,7 @@ jobs:
             ${{ runner.home }}/go/bin/gmd
           key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('**/*.go') }}
 
-      - name: Build gmd if cache miss
+      - name: Build Gmd Chain binary with Ignite
         if: steps.cache-gmd.outputs.cache-hit != 'true'
         run: |
           echo "No cached gmd found. Scaffolding and building..."
