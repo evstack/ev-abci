@@ -26,15 +26,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Cache Ignite CLI
-        id: cache-ignite
-        uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/bin/ignite
-            ~/.ignite
-          key: ignite-${{ runner.os }}-${{ runner.arch }}-${{ env.IGNITE_VERSION }}
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -47,20 +38,35 @@ jobs:
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
           curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
 
-      - name: Scaffold Evolve Chain
+      - name: Cache Ignite CLI
+        id: cache-ignite
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/bin/ignite
+            ~/.ignite
+          key: ignite-${{ runner.os }}-${{ runner.arch }}-${{ env.IGNITE_VERSION }}
+
+      - name: Cache gmd binary
+        id: cache-gmd
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.home }}/go/bin/gmd
+          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('**/*.go') }}
+
+      - name: Build gmd if cache miss
+        if: steps.cache-gmd.outputs.cache-hit != 'true'
         run: |
+          echo "No cached gmd found. Scaffolding and building..."
           echo "Scaffolding chain gm and adding evolve app (${IGNITE_EVOLVE_APP_VERSION})"
           ignite scaffold chain gm --no-module --skip-git --address-prefix gm
           cd gm
           ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
           ignite evolve add
-
-      - name: Replace Modules and Build Gmd binary
-        run: |
           echo "Replacing modules (ev-node @ ${EVNODE_VERSION}, ev-abci -> local)"
           CURRENT_DIR=$(pwd)
-          GO_EXECUTION_ABCI_DIR=$CURRENT_DIR
-          cd gm
+          GO_EXECUTION_ABCI_DIR=$(dirname "$CURRENT_DIR")
           go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
           go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
           echo "Running go mod tidy"
