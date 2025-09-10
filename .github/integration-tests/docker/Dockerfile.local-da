@@ -7,9 +7,9 @@ RUN apk add --no-cache gcc musl-dev git
 # Set working directory
 WORKDIR /workspace
 
-# Build local-da from ev-node module at the requested version (tag/branch/pseudo-version)
-ARG EV_NODE_REF=main
-RUN GOBIN=/workspace go install github.com/evstack/ev-node/da/cmd/local-da@${EV_NODE_REF}
+# Build local-da from rollkit module at the requested version (tag/branch/pseudo-version)
+ARG EV_DA_REF=main
+RUN GOBIN=/workspace go install github.com/rollkit/rollkit/da/cmd/local-da@${EV_DA_REF}
 
 # Runtime stage
 FROM alpine:3.18

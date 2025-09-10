@@ -4,7 +4,7 @@ services:
       context: ../..
       dockerfile: .github/integration-tests/docker/Dockerfile.local-da
       args:
-        EV_NODE_REF: ${EVNODE_VERSION:-main}
+        EV_DA_REF: ${EVNODE_DA_VERSION:-v1.0.0-beta.1}
     container_name: rollkit-local-da
     command: ["local-da", "-listen-all"]
     ports:
