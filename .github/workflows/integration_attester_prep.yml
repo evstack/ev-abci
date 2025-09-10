@@ -47,18 +47,22 @@ jobs:
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
           curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
+      - name: Ensure Ignite on PATH
+        run: |
+          # Some runners require explicitly adding /usr/local/bin to PATH for subsequent steps
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          ls -l /usr/local/bin/ignite || true
+
       - name: Verify Ignite
         run: |
           set -euo pipefail
-          if ! ignite version >/dev/null 2>&1; then
-            echo "Ignite not found after install" >&2
-            exit 1
-          fi
-          echo "Ignite version:" $(ignite version || ignite --version)
+          echo "PATH: $PATH"
+          echo "which ignite: $(which ignite || true)"
+          echo "Ignite binary details:"; ls -l /usr/local/bin/ignite || true
+          /usr/local/bin/ignite version || ignite --version
 
       - name: Verify auxiliary tools
         run: |
           set -euo pipefail
           echo "curl:" $(curl --version | head -n1)
           echo "jq:"   $(jq --version)
-
