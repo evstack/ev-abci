@@ -17,6 +17,8 @@ jobs:
     env:
       DO_NOT_TRACK: true
       IGNITE_VERSION: "v29.3.1"
+      EVNODE_VERSION: "v1.0.0-beta.2.0.20250908090838-0584153217ed"
+      IGNITE_EVOLVE_APP_VERSION: "main"
 
     steps:
       - name: Checkout
@@ -24,45 +26,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify Docker and Compose
-        run: |
-          set -euo pipefail
-          echo "Checking Docker availability..."
-          docker --version
-          echo "Checking Docker Compose (v2) availability..."
-          docker compose version
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: stable
           cache: true
 
-      - name: Verify Go
-        run: |
-          go version
-
       - name: Install Ignite CLI
         run: |
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
-          curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
+          curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
 
-      - name: Ensure Ignite on PATH
+      - name: Scaffold Evolve Chain
         run: |
-          # Some runners require explicitly adding /usr/local/bin to PATH for subsequent steps
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          ls -l /usr/local/bin/ignite || true
-
-      - name: Verify Ignite
-        run: |
-          set -euo pipefail
-          echo "PATH: $PATH"
-          echo "which ignite: $(which ignite || true)"
-          echo "Ignite binary details:"; ls -l /usr/local/bin/ignite || true
-          /usr/local/bin/ignite version || ignite --version
-
-      - name: Verify auxiliary tools
-        run: |
-          set -euo pipefail
-          echo "curl:" $(curl --version | head -n1)
-          echo "jq:"   $(jq --version)
+          echo "Scaffolding chain gm and adding evolve app (${IGNITE_EVOLVE_APP_VERSION})"
+          ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+          cd gm
+          ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
+          ignite evolve add
