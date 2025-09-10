@@ -67,7 +67,7 @@ jobs:
           docker compose -f .github/compose/stack/docker-compose.yml build --pull
           docker images | awk 'NR==1 || /integration-tests-binaries/ {print}' || true
 
-      - name: Start Local DA (docker compose)
+      - name: Start Local DA and Gaia (docker compose)
         run: |
-          docker compose -f .github/compose/stack/docker-compose.yml up -d local-da
+          docker compose -f .github/compose/stack/docker-compose.yml up -d local-da gaia-chain
           docker compose -f .github/compose/stack/docker-compose.yml ps
