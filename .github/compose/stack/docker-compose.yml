@@ -83,6 +83,41 @@ services:
     networks:
       - ibc-test
 
+  # GM chain using prebuilt gmd binary and prepared home from the workflow
+  gm-chain:
+    build:
+      context: ../../..
+      dockerfile: .github/compose/docker/Dockerfile.gm
+    container_name: gm-chain
+    environment:
+      - GM_HOME_IN_CONTAINER=/home/gm/.gm
+      - CHAIN_ID=gm
+      - MONIKER=gm-local
+      - ATTESTER_MODE=${ATTESTER_MODE:-false}
+    depends_on:
+      local-da:
+        condition: service_healthy
+    volumes:
+      # Mount host gmd binary (read-only) and GM home prepared by workflow
+      - ${GM_BINARY_PATH}:/usr/local/bin/gmd:ro
+      - ${GMD_HOME}:${GM_HOME_IN_CONTAINER}
+      # Mount gm source (read-only) for ignite evolve init inside container
+      - ../../gm:/home/gm/gm:ro
+    ports:
+      - "26757:26757"  # RPC
+      - "26756:26756"  # P2P
+      - "9190:9190"    # gRPC
+      - "1417:1417"    # API
+    entrypoint: ["/home/gm/run-gm.sh"]
+    healthcheck:
+      test: ["CMD", "sh", "-lc", "curl -sf http://localhost:26757/status >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ibc-test
+
 networks:
   ibc-test:
     driver: bridge

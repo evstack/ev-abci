@@ -55,7 +55,7 @@ jobs:
           ignite app install github.com/ignite/apps/evolve@$IGNITE_EVOLVE_APP_VERSION
           ignite evolve add
 
-      - name: Replace Modules and Prepare Chain
+      - name: Replace Modules and Build Gmd binary
         run: |
           echo "Replacing modules (ev-node @ ${EVNODE_VERSION}, ev-abci -> local)"
           CURRENT_DIR=$(pwd)
@@ -67,8 +67,17 @@ jobs:
           go mod tidy
           echo "Building chain with Ignite (skip proto)"
           ignite chain build --skip-proto
-          echo "Initializing evolve"
-          ignite evolve init
+
+      - name: Get gm binary and gmd home paths
+        id: paths
+        run: |
+          set -euo pipefail
+          GM_BINARY_PATH=$(which gmd)
+          echo "GM_BINARY_PATH=$GM_BINARY_PATH"
+          echo "GM_BINARY_PATH=$GM_BINARY_PATH" >> $GITHUB_ENV
+          GMD_HOME=$(gmd config home)
+          echo "GMD_HOME=$GMD_HOME"
+          echo "GMD_HOME=$GMD_HOME" >> $GITHUB_ENV
 
       - name: Build Docker images (compose)
         run: |
@@ -77,7 +86,7 @@ jobs:
           docker compose -f .github/compose/stack/docker-compose.yml build --pull
           docker images | awk 'NR==1 || /integration-tests-binaries/ {print}' || true
 
-      - name: Start Local DA and Gaia (docker compose)
+      - name: Start Local DA, Gaia and GM (docker compose)
         run: |
-          docker compose -f .github/compose/stack/docker-compose.yml up -d local-da gaia-chain
+          docker compose -f .github/compose/stack/docker-compose.yml up -d local-da gaia-chain gm-chain
           docker compose -f .github/compose/stack/docker-compose.yml ps
