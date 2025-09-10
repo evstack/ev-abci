@@ -58,6 +58,8 @@ jobs:
           path: |
             ${{ env.GOPATH_BIN }}/gmd
           key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('go.mod', 'go.sum', '**/*.go') }}
+          # TODO(jgimeno): remove save-always once CI cache stabilizes
+          save-always: true
 
       - name: Build Gmd Chain binary with Ignite
         if: steps.cache-gmd.outputs.cache-hit != 'true'
