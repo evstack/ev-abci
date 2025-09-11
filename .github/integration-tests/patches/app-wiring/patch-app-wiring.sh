@@ -92,6 +92,45 @@ insert_block_after_first_match() {
   ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
 }
 
+# Insert the module block inside the Modules: []*appv1alpha1.ModuleConfig{ ... }
+# just before the closing "}," of that slice. Robust against formatting.
+insert_block_into_modules_slice() {
+  local file="$1"; shift
+  local block="$1"; shift
+
+  # Idempotence: skip if module already present
+  if grep -qE 'appconfig\.WrapAny\(&networkmodulev1\.Module\{\}\)' "$file"; then
+    return 0
+  fi
+
+  awk -v block="$block" '
+    BEGIN{inmods=0; depth=0}
+    {
+      line=$0
+      if (!inmods) {
+        print line
+        if (line ~ /Modules:[[:space:]]*\[[^]]*\][[:space:]]*\*[[:space:]]*appv1alpha1\.ModuleConfig[[:space:]]*\{/){
+          inmods=1; depth=1
+        }
+        next
+      }
+      # in modules slice: track depth by braces
+      # Increase for each '{' and decrease for each '}'
+      # But do not let depth go negative
+      open=gsub(/\{/,"{"); close=gsub(/\}/,"}")
+      # If this line would close the modules slice (depth==1 and next would decrement), insert block before printing
+      if (depth==1 && close>open && line ~ /^[[:space:]]*},[[:space:]]*$/) {
+        print block
+        print line
+        inmods=0
+        next
+      }
+      print line
+      depth += open - close
+    }
+  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+}
+
 echo "[patch-app-wiring] Patching app_config.go imports and module config"
 
 # Imports for network module
@@ -115,14 +154,10 @@ BLOCK
 # Prefer inserting before the starport scaffolding marker if present.
 if grep -q "# stargate/app/moduleConfig" "$APP_CONFIG_GO"; then
   insert_block_before_marker "$APP_CONFIG_GO" "# stargate/app/moduleConfig" "$NETWORK_MODULE_BLOCK"
+else
+  # Insert heuristically near the end of Modules slice
+  insert_block_into_modules_slice "$APP_CONFIG_GO" "$NETWORK_MODULE_BLOCK"
 fi
-
-# Also ensure insertion after the Modules: []*appv1alpha1.ModuleConfig{ line (robust match),
-# to cover templates without the starport marker.
-insert_block_after_first_match \
-  "$APP_CONFIG_GO" \
-  'Modules:[[:space:]]*\[\][[:space:]]*\*?[[:space:]]*appv1alpha1\.ModuleConfig[[:space:]]*\{' \
-  "$NETWORK_MODULE_BLOCK"
 
 echo "[patch-app-wiring] Patching app.go imports, keeper and DI injection"
 
@@ -166,4 +201,4 @@ verify() {
 
 verify "$APP_CONFIG_GO" 'github.com/evstack/ev-abci/modules/network/module/v1'
 verify "$APP_CONFIG_GO" 'Config: appconfig.WrapAny\(&networkmodulev1.Module\{\}\)'
-verify "$APP_CONFIG_GO" 'networktypes.ModuleName'
+verify "$APP_CONFIG_GO" 'Name:[[:space:]]*networktypes.ModuleName'
