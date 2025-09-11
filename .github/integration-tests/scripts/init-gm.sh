@@ -103,6 +103,14 @@ node = "tcp://127.0.0.1:26757"
 EOF
 fi
 
+# Ensure minimum-gas-prices and API enabled in app.toml
+if [ -f "$GM_HOME/config/app.toml" ]; then
+  # set minimum-gas-prices to a sensible default for tests
+  sed -i -E 's|^minimum-gas-prices *=.*|minimum-gas-prices = "0.001stake"|' "$GM_HOME/config/app.toml" || true
+  # enable API (in case not enabled by flags)
+  sed -i -E '/^\[api\]/,/^\[/{s|^enable *=.*|enable = true|}' "$GM_HOME/config/app.toml" || true
+fi
+
 echo "💰 Adding genesis accounts..."
 "$BINARY" genesis add-genesis-account "$VALIDATOR_ADDRESS" "100000000stake,10000token" --home "$GM_HOME"
 "$BINARY" genesis add-genesis-account "$RELAYER_ADDRESS" "100000000stake,10000token" --home "$GM_HOME"
@@ -133,7 +141,9 @@ START_CMD=("$BINARY" start --rollkit.node.aggregator \
     --home "$GM_HOME" \
     --rpc.laddr tcp://0.0.0.0:26757 \
     --grpc.address 0.0.0.0:9190 \
-    --api.address tcp://0.0.0.0:1417)
+    --api.enable \
+    --api.address tcp://0.0.0.0:1417 \
+    --minimum-gas-prices 0.001stake)
 
 # Add attester-specific flag if in attester mode
 if [[ "$ATTESTER_MODE" == "true" ]]; then
