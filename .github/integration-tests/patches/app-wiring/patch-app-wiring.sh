@@ -55,9 +55,8 @@ insert_block_before_marker() {
   local marker="$1"; shift
   local block="$1"; shift
 
-  # Basic idempotence: if any unique token of the block already exists, skip
-  if echo "$block" | while read -r ln; do [[ -n "$ln" ]] && grep -qF "$ln" "$file" && exit 0; done; then
-    # found a line; assume present
+  # Idempotence: skip if module already present
+  if grep -qE 'appconfig\.WrapAny\(&networkmodulev1\.Module\{\}\)' "$file"; then
     return 0
   fi
 
@@ -76,8 +75,8 @@ insert_block_after_first_match() {
   local pattern="$1"; shift
   local block="$1"; shift
 
-  # If any unique token of the block already exists, skip
-  if echo "$block" | while read -r ln; do [[ -n "$ln" ]] && grep -qF "$ln" "$file" && exit 0; done; then
+  # Idempotence: skip if module already present
+  if grep -qE 'appconfig\.WrapAny\(&networkmodulev1\.Module\{\}\)' "$file"; then
     return 0
   fi
 
