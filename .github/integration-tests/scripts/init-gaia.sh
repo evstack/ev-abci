@@ -1,5 +1,5 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # Configuration
 CHAIN_ID="${CHAIN_ID:-gaia-local}"
@@ -22,7 +22,7 @@ echo "   Moniker: $MONIKER"
 echo "   Home: $GAIA_HOME"
 
 # Initialize chain
-if [[ ! -f "$GAIA_HOME/config/genesis.json" ]]; then
+if [ ! -f "$GAIA_HOME/config/genesis.json" ]; then
     echo "🔧 Initializing chain..."
     gaiad init "$MONIKER" --chain-id "$CHAIN_ID" --home "$GAIA_HOME"
 
@@ -49,7 +49,7 @@ if [[ ! -f "$GAIA_HOME/config/genesis.json" ]]; then
 
     # Configure app.toml
     APP_TOML="$GAIA_HOME/config/app.toml"
-    if [[ -f "$APP_TOML" ]]; then
+    if [ -f "$APP_TOML" ]; then
         echo "⚙️ Configuring minimum gas prices..."
         sed -i "s|^minimum-gas-prices = \".*\"|minimum-gas-prices = \"$MIN_GAS_PRICE\"|" "$APP_TOML"
         
@@ -60,7 +60,7 @@ if [[ ! -f "$GAIA_HOME/config/genesis.json" ]]; then
 
     # Configure config.toml for container networking
     CONFIG_TOML="$GAIA_HOME/config/config.toml"
-    if [[ -f "$CONFIG_TOML" ]]; then
+    if [ -f "$CONFIG_TOML" ]; then
         echo "⚙️ Configuring networking..."
         # Set RPC to listen on all interfaces
         sed -i 's|^laddr = "tcp://127.0.0.1:26657"|laddr = "tcp://0.0.0.0:26657"|' "$CONFIG_TOML"

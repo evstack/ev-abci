@@ -20,23 +20,25 @@ services:
 
   # Gaia chain (Cosmos Hub)
   gaia-chain:
-    build:
-      context: ..
-      dockerfile: integration-tests/docker/Dockerfile.gaia
+    image: ghcr.io/cosmos/gaia:${GAIA_VERSION:-v25.1.0}
     container_name: gaia-chain
+    environment:
+      - CHAIN_ID=gaia-local
+      - MONIKER=gaia-local
+      - KEYRING_BACKEND=test
+      - GAIAD_HOME=/root/.gaia_local
+      - GAIA_MNEMONIC=${GAIA_MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about}
     ports:
       - "26657:26657"  # RPC
       - "26656:26656"  # P2P
       - "9090:9090"    # gRPC
       - "1317:1317"    # API
     volumes:
-      - ../integration-tests/scripts:/home/gaia/scripts:ro
-    environment:
-      - CHAIN_ID=gaia-local
-      - MONIKER=gaia-local
-      - GAIA_HOME=/home/gaia/.gaia_local
+      - ../integration-tests/scripts/init-gaia.sh:/home/gaia/init-gaia.sh:ro
+    entrypoint: ["/bin/sh","-lc"]
+    command: ["chmod +x /home/gaia/init-gaia.sh && /bin/sh /home/gaia/init-gaia.sh"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:26657/status"]
+      test: ["CMD", "sh", "-lc", "gaiad status --node http://localhost:26657 >/dev/null 2>&1"]
       interval: 30s
       timeout: 10s
       retries: 5
