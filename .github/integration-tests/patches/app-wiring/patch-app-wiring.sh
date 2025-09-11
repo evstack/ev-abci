@@ -118,7 +118,7 @@ BLOCK
 if grep -q "# stargate/app/moduleConfig" "$APP_CONFIG_GO"; then
   insert_block_before_marker "$APP_CONFIG_GO" "# stargate/app/moduleConfig" "$NETWORK_MODULE_BLOCK"
 else
-  insert_block_after_first_match "$APP_CONFIG_GO" "Modules: \*\*appv1alpha1.ModuleConfig\{" "$NETWORK_MODULE_BLOCK"
+  insert_block_after_first_match "$APP_CONFIG_GO" $'Modules: \\[\]\*appv1alpha1.ModuleConfig\{' "$NETWORK_MODULE_BLOCK"
 fi
 
 echo "[patch-app-wiring] Patching app.go imports, keeper and DI injection"
