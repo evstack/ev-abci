@@ -138,10 +138,30 @@ insert_import_if_missing "$APP_CONFIG_GO" $'\tnetworkmodulev1 "github.com/evstac
 insert_import_if_missing "$APP_CONFIG_GO" $'\tnetworktypes "github.com/evstack/ev-abci/modules/network/types"'
 insert_import_if_missing "$APP_CONFIG_GO" $'\t_ "github.com/evstack/ev-abci/modules/network" // import for side-effects'
 
-# Add network module to BeginBlockers, EndBlockers, InitGenesis
-insert_before_marker "$APP_CONFIG_GO" "# stargate/app/beginBlockers" $'\t\t\t\t\tnetworktypes.ModuleName,'
-insert_before_marker "$APP_CONFIG_GO" "# stargate/app/endBlockers" $'\t\t\t\t\tnetworktypes.ModuleName,'
-insert_before_marker "$APP_CONFIG_GO" "# stargate/app/initGenesis" $'\t\t\t\t\tnetworktypes.ModuleName,'
+insert_in_named_list() {
+  local file="$1"; shift
+  local list_name="$1"; shift
+  local item="$1"; shift
+
+  # If already present in the list, skip
+  awk -v name="$list_name" -v item="$item" '
+    BEGIN{inlist=0; present=0}
+    $0 ~ name"[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{" { inlist=1 }
+    inlist && index($0, item) { present=1 }
+    inlist && $0 ~ /^[[:space:]]*\},/ {
+      if (!present) {
+        print item
+      }
+      inlist=0
+    }
+    { print $0 }
+  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+}
+
+# Ensure networktypes.ModuleName is included in these lists
+insert_in_named_list "$APP_CONFIG_GO" "BeginBlockers" $'\t\t\t\t\tnetworktypes.ModuleName,'
+insert_in_named_list "$APP_CONFIG_GO" "EndBlockers"   $'\t\t\t\t\tnetworktypes.ModuleName,'
+insert_in_named_list "$APP_CONFIG_GO" "InitGenesis"   $'\t\t\t\t\tnetworktypes.ModuleName,'
 
 # Add network module to module list
 read -r -d '' NETWORK_MODULE_BLOCK <<'BLOCK' || true
@@ -202,3 +222,15 @@ verify() {
 verify "$APP_CONFIG_GO" 'github.com/evstack/ev-abci/modules/network/module/v1'
 verify "$APP_CONFIG_GO" 'Config: appconfig.WrapAny\(&networkmodulev1.Module\{\}\)'
 verify "$APP_CONFIG_GO" 'Name:[[:space:]]*networktypes.ModuleName'
+
+# Verify networktypes.ModuleName is inside InitGenesis list
+awk '
+  BEGIN{inlist=0; found=0}
+  /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
+  inlist && /networktypes\.ModuleName/ { found=1 }
+  inlist && /^[[:space:]]*\},/ { exit }
+  END{ if (!found) exit 1 }
+' "$APP_CONFIG_GO" || {
+  echo "[patch-app-wiring] ERROR: networktypes.ModuleName not found in InitGenesis list" >&2
+  exit 1
+}
