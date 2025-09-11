@@ -69,6 +69,7 @@ services:
       - MONIKER=gm-local
       - GM_HOME=/home/gm/.gm
       - ATTESTER_MODE=true
+      - DEBUG=1
     depends_on:
       local-da:
         condition: service_healthy

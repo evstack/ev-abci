@@ -114,6 +114,16 @@ jobs:
 #          docker images | awk 'NR==1 || /integration-tests-binaries/ {print}' || true
 
       - name: Run integration tests (compose orchestrator)
+        env:
+          VERBOSE: "true"
         run: |
           set -euo pipefail
           bash .github/integration-tests/run-integration-tests.sh --timeout 900
+
+      - name: Upload integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: .github/integration-tests/logs/
+          if-no-files-found: warn

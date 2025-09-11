@@ -201,6 +201,9 @@ start_services() {
     
     if [[ $wait_count -ge $max_wait ]]; then
         log_error "Chains did not become healthy within ${max_wait}s"
+        # Dump recent gm-chain logs to console for quick diagnosis
+        log_info "Recent gm-chain logs (last 200 lines):"
+        docker compose logs --tail=200 gm-chain || true
         show_service_status
         return 1
     fi
@@ -392,6 +395,10 @@ collect_logs() {
     for service in local-da gaia-chain gm-chain attester ibc-setup hermes-relayer test-runner; do
         docker compose logs "$service" > "$log_archive/${service}.log" 2>/dev/null || echo "No logs for $service" > "$log_archive/${service}.log"
     done
+
+    # Attempt to collect gm-chain node home (config/data/logs)
+    mkdir -p "$log_archive/gm-home"
+    docker compose cp gm-chain:/home/gm/.gm "$log_archive/gm-home" 2>/dev/null || true
     
     # Collect service status
     docker compose ps > "$log_archive/service_status.txt" 2>/dev/null || true

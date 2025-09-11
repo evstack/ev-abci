@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+# Enable shell tracing when DEBUG=1 for easier CI debugging
+if [[ "${DEBUG:-0}" == "1" ]]; then
+  set -x
+fi
 
 # Configuration
 CHAIN_ID="${CHAIN_ID:-gm}"
@@ -19,6 +23,10 @@ echo "   Chain ID: $CHAIN_ID"
 echo "   Moniker: $MONIKER" 
 echo "   Home: $GM_HOME"
 echo "   Attester Mode: $ATTESTER_MODE"
+echo "   Ignite: $(command -v ignite || echo 'ignite not found')"
+if command -v ignite >/dev/null 2>&1; then
+  ignite version || true
+fi
 
 # Wait for local-da to be available
 echo "⏳ Waiting for local-da to be available..."
@@ -37,7 +45,9 @@ if [[ -d "$GM_HOME" ]]; then
 fi
 
 echo "🔧 Initializing chain with ignite evolve..."
-cd /home/gm/gm && ignite evolve init
+cd /home/gm/gm
+ls -la || true
+ignite evolve init
 
 echo "🔑 Setting up keys..."
 # Add validator key (same key will be used for attester)
