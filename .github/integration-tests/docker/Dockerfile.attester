@@ -12,6 +12,10 @@ COPY . /workspace/ev-abci
 COPY attester /workspace/ev-abci/attester
 # Build the attester binary (it has its own go.mod)
 WORKDIR /workspace/ev-abci/attester
+## Align module replacements and fetch deps
+RUN go mod edit -replace github.com/evstack/ev-abci=../ev-abci \
+    && (go mod edit -dropreplace github.com/evstack/ev-node || true) \
+    && go mod tidy
 RUN go build -o /workspace/attester .
 
 # Runtime stage
