@@ -34,9 +34,11 @@ RUN echo "===== BEGIN app/app_config.go (BEFORE PATCH) =====" && \
 COPY .github/integration-tests/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
 RUN bash /workspace/patch-app-wiring.sh
 
-# Show app/app_config.go after patching (for debugging)
+# Show app/app_config.go after patching (for debugging, with line numbers)
 RUN echo "===== BEGIN app/app_config.go (AFTER PATCH) =====" && \
-    sed -n '1,260p' app/app_config.go || true && \
+    nl -ba app/app_config.go | sed -n '1,800p' || true && \
+    echo "----- grep -n for network wiring -----" && \
+    (grep -n "network/module/v1\|network/types\|WrapAny(&networkmodulev1.Module{})\|Name: *networktypes.ModuleName" app/app_config.go || true) && \
     echo "===== END app/app_config.go (AFTER PATCH) ====="
 
 # Align module versions like in CI
