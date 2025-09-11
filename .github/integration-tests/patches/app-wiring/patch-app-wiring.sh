@@ -229,13 +229,25 @@ verify "$APP_CONFIG_GO" 'Config: appconfig.WrapAny\(&networkmodulev1.Module\{\}\
 verify "$APP_CONFIG_GO" 'Name:[[:space:]]*networktypes.ModuleName'
 
 # Verify networktypes.ModuleName is inside InitGenesis list
-awk '
+if ! awk '
   BEGIN{inlist=0; found=0}
   /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
   inlist && /networktypes\.ModuleName/ { found=1 }
   inlist && /^[[:space:]]*\},/ { exit }
   END{ if (!found) exit 1 }
-' "$APP_CONFIG_GO" || {
-  echo "[patch-app-wiring] ERROR: networktypes.ModuleName not found in InitGenesis list" >&2
-  exit 1
-}
+' "$APP_CONFIG_GO"; then
+  # Last resort: insert before Starport marker inside InitGenesis and re-verify
+  sed -i '/# stargate\/app\/initGenesis/i \t\t\t\t\tnetworktypes.ModuleName,' "$APP_CONFIG_GO" || true
+  awk '
+    BEGIN{inlist=0; found=0}
+    /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
+    inlist && /networktypes\.ModuleName/ { found=1 }
+    inlist && /^[[:space:]]*\},/ { exit }
+    END{ if (!found) exit 1 }
+  ' "$APP_CONFIG_GO" || {
+    echo "[patch-app-wiring] ERROR: networktypes.ModuleName not found in InitGenesis list after fallback insertion" >&2
+    echo "----- InitGenesis region context -----" >&2
+    nl -ba "$APP_CONFIG_GO" | sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' >&2 || true
+    exit 1
+  }
+fi
