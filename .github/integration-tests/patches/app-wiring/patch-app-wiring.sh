@@ -245,9 +245,13 @@ if ! awk '
     inlist && /^[[:space:]]*\},/ { exit }
     END{ if (!found) exit 1 }
   ' "$APP_CONFIG_GO" || {
-    echo "[patch-app-wiring] ERROR: networktypes.ModuleName not found in InitGenesis list after fallback insertion" >&2
-    echo "----- InitGenesis region context -----" >&2
-    nl -ba "$APP_CONFIG_GO" | sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' >&2 || true
-    exit 1
+  echo "[patch-app-wiring] ERROR: networktypes.ModuleName not found in InitGenesis list after fallback insertion" >&2
+  echo "----- InitGenesis region context -----" >&2
+  nl -ba "$APP_CONFIG_GO" | sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' >&2 || true
+  echo "----- FULL app_config.go (head 500 lines) -----" >&2
+  nl -ba "$APP_CONFIG_GO" | sed -n '1,500p' >&2 || true
+  echo "----- GREP summary -----" >&2
+  (grep -n "InitGenesis\|networktypes.ModuleName\|WrapAny(&networkmodulev1.Module{})" "$APP_CONFIG_GO" >&2 || true)
+  exit 1
   }
 fi
