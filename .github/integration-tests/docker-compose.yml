@@ -49,6 +49,10 @@ services:
     build:
       context: ../..
       dockerfile: .github/integration-tests/docker/Dockerfile.gm
+      args:
+        IGNITE_VERSION: ${IGNITE_VERSION:-v29.3.1}
+        IGNITE_EVOLVE_APP_VERSION: ${IGNITE_EVOLVE_APP_VERSION:-main}
+        EVNODE_VERSION: ${EVNODE_VERSION:-v1.0.0-beta.2}
     container_name: gm-chain
     ports:
       - "26757:26757"  # RPC
@@ -57,12 +61,6 @@ services:
       - "1417:1417"    # API
     volumes:
       - ../integration-tests/scripts:/home/gm/scripts:ro
-      - ./bin/gmd:/usr/local/bin/gmd:ro
-      - ../../gm:/home/gm/gm:rw
-      # Provide Ignite CLI and plugins from the host (preinstalled in workflow)
-      - ./bin/ignite:/usr/local/bin/ignite:ro
-      # Mount preseeded Ignite home read-only to a separate path; init script copies to a writable location
-      - ./ignite-home:/home/gm/.ignite-seed:ro
       - gm-data:/shared:Z
     environment:
       - CHAIN_ID=gm

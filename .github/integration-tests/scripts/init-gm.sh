@@ -28,22 +28,11 @@ if command -v ignite >/dev/null 2>&1; then
   ignite version || true
 fi
 
-# Prepare Ignite home: copy from seed (read-only bind mount) into writable location, fix permissions
+# Ensure Ignite home is writable (copied in image)
 export IGNITE_HOME=/home/gm/.ignite
-if [[ -d "/home/gm/.ignite-seed" ]]; then
-  mkdir -p "$IGNITE_HOME"
-  # Only copy if empty or missing expected files
-  if [[ -z "$(ls -A "$IGNITE_HOME" 2>/dev/null || true)" ]]; then
-    echo "📦 Seeding Ignite home from /home/gm/.ignite-seed"
-    set +e
-    sudo cp -a /home/gm/.ignite-seed/. "$IGNITE_HOME"/ 2>/dev/null
-    set -e
-  fi
-fi
-sudo chmod -R u+rwX,go+rX "$IGNITE_HOME" 2>/dev/null || true
+mkdir -p "$IGNITE_HOME/apps" 2>/dev/null || true
 sudo chown -R gm:gm "$IGNITE_HOME" 2>/dev/null || true
-mkdir -p /home/gm/.ignite/apps 2>/dev/null || true
-sudo chown -R gm:gm /home/gm/.ignite/apps 2>/dev/null || true
+sudo chmod -R u+rwX,go+rX "$IGNITE_HOME" 2>/dev/null || true
 
 # Wait for local-da to be available
 echo "⏳ Waiting for local-da to be available..."
@@ -65,21 +54,17 @@ echo "🔧 Initializing chain with ignite evolve..."
 cd /home/gm/gm
 ls -la || true
 
-# Ensure evolve app is available (best-effort). If not installed, try to install.
+# Ensure evolve app is available; install if needed
 if ! ignite app list -g 2>/dev/null | grep -qi "evolve"; then
-  echo "ℹ️  'evolve' app not found in Ignite. Attempting installation..."
-  ignite app install -g "github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION:-main}" || true
+  echo "ℹ️  'evolve' app not found in Ignite. Installing..."
+  ignite app install -g "github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION:-main}"
 fi
 
-# Try to run evolve init. If it doesn't produce a genesis, fallback to gmd init.
-set +e
+# Run evolve init and require success
 ignite evolve init
-rc=$?
-set -e
-
 if [[ ! -f "$GM_HOME/config/genesis.json" ]]; then
-  echo "⚠️  genesis.json not found after 'ignite evolve init' (rc=$rc). Falling back to 'gmd init'..."
-  gmd init "$MONIKER" --chain-id "$CHAIN_ID" --home "$GM_HOME"
+  echo "❌ ignite evolve init did not produce genesis.json. Aborting."
+  exit 1
 fi
 
 echo "🔑 Setting up keys..."

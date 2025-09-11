@@ -92,6 +92,21 @@ jobs:
           echo "Building chain with Ignite (skip proto)"
           ignite chain build --skip-proto
 
+      - name: Ensure GM workspace exists (scaffold + evolve)
+        run: |
+          set -euo pipefail
+          if [ ! -d "gm" ]; then
+            echo "Scaffolding gm chain workspace..."
+            ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+            cd gm
+            echo "Installing evolve app ${IGNITE_EVOLVE_APP_VERSION}..."
+            ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
+            echo "Applying evolve to source (ignite evolve add)..."
+            ignite evolve add
+          else
+            echo "gm/ workspace already present; skipping scaffold"
+          fi
+
       - name: Package gmd for compose
         run: |
           set -euo pipefail
