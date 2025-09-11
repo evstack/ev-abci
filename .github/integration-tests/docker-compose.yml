@@ -61,8 +61,8 @@ services:
       - ../../gm:/home/gm/gm:rw
       # Provide Ignite CLI and plugins from the host (preinstalled in workflow)
       - ./bin/ignite:/usr/local/bin/ignite:ro
-      # Ignite home needs write access for caches/plugins
-      - ./ignite-home:/home/gm/.ignite:rw
+      # Mount preseeded Ignite home read-only to a separate path; init script copies to a writable location
+      - ./ignite-home:/home/gm/.ignite-seed:ro
       - gm-data:/shared:Z
     environment:
       - CHAIN_ID=gm

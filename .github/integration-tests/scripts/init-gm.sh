@@ -28,6 +28,19 @@ if command -v ignite >/dev/null 2>&1; then
   ignite version || true
 fi
 
+# Prepare Ignite home: copy from seed (read-only bind mount) into writable location, fix permissions
+if [[ -d "/home/gm/.ignite-seed" ]]; then
+  mkdir -p /home/gm/.ignite
+  # Only copy if empty or missing expected files
+  if [[ -z "$(ls -A /home/gm/.ignite 2>/dev/null || true)" ]]; then
+    echo "📦 Seeding Ignite home from /home/gm/.ignite-seed"
+    cp -a /home/gm/.ignite-seed/. /home/gm/.ignite/
+  fi
+fi
+sudo chown -R gm:gm /home/gm/.ignite 2>/dev/null || chown -R gm:gm /home/gm/.ignite 2>/dev/null || true
+mkdir -p /home/gm/.ignite/apps 2>/dev/null || true
+sudo chown -R gm:gm /home/gm/.ignite/apps 2>/dev/null || true
+
 # Wait for local-da to be available
 echo "⏳ Waiting for local-da to be available..."
 ./wait-for-da.sh
