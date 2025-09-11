@@ -25,6 +25,10 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
 RUN ignite evolve add
 
+# Inject App wiring for ev-abci network module before building
+COPY .github/integration-tests/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
+RUN bash /workspace/patch-app-wiring.sh
+
 # Align module versions like in CI
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} \
     && go mod edit -replace github.com/evstack/ev-abci=../ev-abci \
