@@ -52,6 +52,16 @@ jobs:
           echo "Installing Ignite CLI ${IGNITE_VERSION}"
           curl -sSL https://get.ignite.com/cli@$IGNITE_VERSION! | bash
 
+      - name: Package Ignite for compose
+        run: |
+          set -euo pipefail
+          mkdir -p .github/integration-tests/bin .github/integration-tests/ignite-home
+          # Copy ignite binary
+          cp /usr/local/bin/ignite .github/integration-tests/bin/ignite
+          chmod +x .github/integration-tests/bin/ignite
+          # Copy Ignite home (plugins/config/cache)
+          cp -a "$HOME/.ignite/." .github/integration-tests/ignite-home/
+
       - name: Restore Gmd binary cache
         id: cache-gmd
         uses: actions/cache/restore@v4
