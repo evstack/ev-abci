@@ -113,13 +113,17 @@ read -r -d '' NETWORK_MODULE_BLOCK <<'BLOCK' || true
 			},
 BLOCK
 
-# Prefer inserting before the starport scaffolding marker if present,
-# otherwise insert right after the Modules: []*appv1alpha1.ModuleConfig{ line.
+# Prefer inserting before the starport scaffolding marker if present.
 if grep -q "# stargate/app/moduleConfig" "$APP_CONFIG_GO"; then
   insert_block_before_marker "$APP_CONFIG_GO" "# stargate/app/moduleConfig" "$NETWORK_MODULE_BLOCK"
-else
-  insert_block_after_first_match "$APP_CONFIG_GO" $'Modules: \\[\]\*appv1alpha1.ModuleConfig\{' "$NETWORK_MODULE_BLOCK"
 fi
+
+# Also ensure insertion after the Modules: []*appv1alpha1.ModuleConfig{ line (robust match),
+# to cover templates without the starport marker.
+insert_block_after_first_match \
+  "$APP_CONFIG_GO" \
+  'Modules:[[:space:]]*\[\][[:space:]]*\*?[[:space:]]*appv1alpha1\.ModuleConfig[[:space:]]*\{' \
+  "$NETWORK_MODULE_BLOCK"
 
 echo "[patch-app-wiring] Patching app.go imports, keeper and DI injection"
 
