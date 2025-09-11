@@ -47,7 +47,23 @@ fi
 echo "🔧 Initializing chain with ignite evolve..."
 cd /home/gm/gm
 ls -la || true
+
+# Ensure evolve app is available (best-effort). If not installed, try to install.
+if ! ignite app list -g 2>/dev/null | grep -qi "evolve"; then
+  echo "ℹ️  'evolve' app not found in Ignite. Attempting installation..."
+  ignite app install -g "github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION:-main}" || true
+fi
+
+# Try to run evolve init. If it doesn't produce a genesis, fallback to gmd init.
+set +e
 ignite evolve init
+rc=$?
+set -e
+
+if [[ ! -f "$GM_HOME/config/genesis.json" ]]; then
+  echo "⚠️  genesis.json not found after 'ignite evolve init' (rc=$rc). Falling back to 'gmd genesis init'..."
+  gmd genesis init "$MONIKER" --chain-id "$CHAIN_ID" --home "$GM_HOME"
+fi
 
 echo "🔑 Setting up keys..."
 # Add validator key (same key will be used for attester)
