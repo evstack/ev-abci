@@ -59,6 +59,9 @@ services:
       - ../integration-tests/scripts:/home/gm/scripts:ro
       - ./bin/gmd:/usr/local/bin/gmd:ro
       - ../../gm:/home/gm/gm:rw
+      # Provide Ignite CLI and plugins from the host (preinstalled in workflow)
+      - ./bin/ignite:/usr/local/bin/ignite:ro
+      - ./ignite-home:/home/gm/.ignite:ro
       - gm-data:/shared:Z
     environment:
       - CHAIN_ID=gm
