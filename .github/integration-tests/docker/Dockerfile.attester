@@ -8,6 +8,8 @@ WORKDIR /workspace
 
 # Copy ev-abci (repo root) and the scaffolded gm chain
 COPY . /workspace/ev-abci
+# Ensure attester sources are present (attester/main.go, etc.)
+COPY attester /workspace/ev-abci/attester
 COPY gm /workspace/gm
 WORKDIR /workspace/gm
 
