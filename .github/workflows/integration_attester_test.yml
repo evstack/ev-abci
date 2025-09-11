@@ -61,6 +61,7 @@ jobs:
           chmod +x .github/integration-tests/bin/ignite
           # Copy Ignite home (plugins/config/cache)
           cp -a "$HOME/.ignite/." .github/integration-tests/ignite-home/
+          chmod -R a+rX .github/integration-tests/ignite-home || true
 
       - name: Restore Gmd binary cache
         id: cache-gmd

@@ -29,15 +29,19 @@ if command -v ignite >/dev/null 2>&1; then
 fi
 
 # Prepare Ignite home: copy from seed (read-only bind mount) into writable location, fix permissions
+export IGNITE_HOME=/home/gm/.ignite
 if [[ -d "/home/gm/.ignite-seed" ]]; then
-  mkdir -p /home/gm/.ignite
+  mkdir -p "$IGNITE_HOME"
   # Only copy if empty or missing expected files
-  if [[ -z "$(ls -A /home/gm/.ignite 2>/dev/null || true)" ]]; then
+  if [[ -z "$(ls -A "$IGNITE_HOME" 2>/dev/null || true)" ]]; then
     echo "📦 Seeding Ignite home from /home/gm/.ignite-seed"
-    cp -a /home/gm/.ignite-seed/. /home/gm/.ignite/
+    set +e
+    sudo cp -a /home/gm/.ignite-seed/. "$IGNITE_HOME"/ 2>/dev/null
+    set -e
   fi
 fi
-sudo chown -R gm:gm /home/gm/.ignite 2>/dev/null || chown -R gm:gm /home/gm/.ignite 2>/dev/null || true
+sudo chmod -R u+rwX,go+rX "$IGNITE_HOME" 2>/dev/null || true
+sudo chown -R gm:gm "$IGNITE_HOME" 2>/dev/null || true
 mkdir -p /home/gm/.ignite/apps 2>/dev/null || true
 sudo chown -R gm:gm /home/gm/.ignite/apps 2>/dev/null || true
 
@@ -74,8 +78,8 @@ rc=$?
 set -e
 
 if [[ ! -f "$GM_HOME/config/genesis.json" ]]; then
-  echo "⚠️  genesis.json not found after 'ignite evolve init' (rc=$rc). Falling back to 'gmd genesis init'..."
-  gmd genesis init "$MONIKER" --chain-id "$CHAIN_ID" --home "$GM_HOME"
+  echo "⚠️  genesis.json not found after 'ignite evolve init' (rc=$rc). Falling back to 'gmd init'..."
+  gmd init "$MONIKER" --chain-id "$CHAIN_ID" --home "$GM_HOME"
 fi
 
 echo "🔑 Setting up keys..."
