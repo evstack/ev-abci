@@ -2,9 +2,9 @@ FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies
+# Install runtime dependencies (include Go for Ignite operations)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl jq bash sudo netcat-openbsd && \
+    ca-certificates curl jq bash sudo netcat-openbsd golang git && \
     rm -rf /var/lib/apt/lists/*
 
 # Create gm user
