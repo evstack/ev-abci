@@ -36,7 +36,7 @@ services:
     volumes:
       - ../integration-tests/scripts/init-gaia.sh:/home/gaia/init-gaia.sh:ro
     entrypoint: ["/bin/sh","-lc"]
-    command: ["chmod +x /home/gaia/init-gaia.sh && /bin/sh /home/gaia/init-gaia.sh"]
+    command: ["/bin/sh /home/gaia/init-gaia.sh"]
     healthcheck:
       test: ["CMD", "sh", "-lc", "gaiad status --node http://localhost:26657 >/dev/null 2>&1"]
       interval: 30s
