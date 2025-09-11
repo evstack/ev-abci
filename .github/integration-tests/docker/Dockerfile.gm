@@ -25,11 +25,6 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
 RUN ignite evolve add
 
-# Show generated app/app_config.go before patching (for debugging)
-RUN echo "===== BEGIN app/app_config.go (BEFORE PATCH) =====" && \
-    sed -n '1,260p' app/app_config.go || true && \
-    echo "===== END app/app_config.go (BEFORE PATCH) ====="
-
 # Inject App wiring for ev-abci network module before building
 COPY .github/integration-tests/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
 RUN bash /workspace/patch-app-wiring.sh

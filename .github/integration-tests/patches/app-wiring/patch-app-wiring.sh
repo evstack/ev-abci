@@ -163,6 +163,11 @@ insert_in_named_list "$APP_CONFIG_GO" "BeginBlockers" $'\t\t\t\t\tnetworktypes.M
 insert_in_named_list "$APP_CONFIG_GO" "EndBlockers"   $'\t\t\t\t\tnetworktypes.ModuleName,'
 insert_in_named_list "$APP_CONFIG_GO" "InitGenesis"   $'\t\t\t\t\tnetworktypes.ModuleName,'
 
+# Also insert before Starport markers as a fallback (covers differing formats)
+insert_before_marker "$APP_CONFIG_GO" "# stargate/app/beginBlockers" $'\t\t\t\t\tnetworktypes.ModuleName,'
+insert_before_marker "$APP_CONFIG_GO" "# stargate/app/endBlockers"   $'\t\t\t\t\tnetworktypes.ModuleName,'
+insert_before_marker "$APP_CONFIG_GO" "# stargate/app/initGenesis"   $'\t\t\t\t\tnetworktypes.ModuleName,'
+
 # Add network module to module list
 read -r -d '' NETWORK_MODULE_BLOCK <<'BLOCK' || true
 			{
