@@ -151,3 +151,22 @@ EOF
 fi
 
 echo "[patch-app-wiring] Completed"
+
+# Verify expected insertions; fail early with context if missing
+verify() {
+  local file="$1"; shift
+  local pattern="$1"; shift
+  if ! grep -Eq "$pattern" "$file"; then
+    echo "[patch-app-wiring] ERROR: verification failed for pattern: $pattern in $file" >&2
+    echo "----- BEGIN $file (head) -----" >&2
+    sed -n '1,200p' "$file" >&2 || true
+    echo "----- END $file (head) -----" >&2
+    exit 1
+  fi
+}
+
+verify "$APP_CONFIG_GO" 'github.com/evstack/ev-abci/modules/network/module/v1'
+verify "$APP_CONFIG_GO" 'Config: appconfig.WrapAny\(&networkmodulev1.Module\{\}\)'
+verify "$APP_CONFIG_GO" 'BeginBlockers:[^\n]*\{[\s\S]*networktypes.ModuleName'
+verify "$APP_CONFIG_GO" 'EndBlockers:[^\n]*\{[\s\S]*networktypes.ModuleName'
+verify "$APP_CONFIG_GO" 'InitGenesis:[^\n]*\{[\s\S]*networktypes.ModuleName'
