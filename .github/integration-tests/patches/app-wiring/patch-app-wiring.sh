@@ -71,6 +71,28 @@ insert_block_before_marker() {
   ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
 }
 
+insert_block_after_first_match() {
+  local file="$1"; shift
+  local pattern="$1"; shift
+  local block="$1"; shift
+
+  # If any unique token of the block already exists, skip
+  if echo "$block" | while read -r ln; do [[ -n "$ln" ]] && grep -qF "$ln" "$file" && exit 0; done; then
+    return 0
+  fi
+
+  awk -v pat="$pattern" -v block="$block" '
+    added==1 { print $0; next }
+    $0 ~ pat && added==0 {
+      print $0
+      print block
+      added=1
+      next
+    }
+    { print $0 }
+  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+}
+
 echo "[patch-app-wiring] Patching app_config.go imports and module config"
 
 # Imports for network module
@@ -91,7 +113,13 @@ read -r -d '' NETWORK_MODULE_BLOCK <<'BLOCK' || true
 			},
 BLOCK
 
-insert_block_before_marker "$APP_CONFIG_GO" "# stargate/app/moduleConfig" "$NETWORK_MODULE_BLOCK"
+# Prefer inserting before the starport scaffolding marker if present,
+# otherwise insert right after the Modules: []*appv1alpha1.ModuleConfig{ line.
+if grep -q "# stargate/app/moduleConfig" "$APP_CONFIG_GO"; then
+  insert_block_before_marker "$APP_CONFIG_GO" "# stargate/app/moduleConfig" "$NETWORK_MODULE_BLOCK"
+else
+  insert_block_after_first_match "$APP_CONFIG_GO" "Modules: \*\*appv1alpha1.ModuleConfig\{" "$NETWORK_MODULE_BLOCK"
+fi
 
 echo "[patch-app-wiring] Patching app.go imports, keeper and DI injection"
 
