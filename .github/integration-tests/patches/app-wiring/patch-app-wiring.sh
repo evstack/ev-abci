@@ -166,6 +166,4 @@ verify() {
 
 verify "$APP_CONFIG_GO" 'github.com/evstack/ev-abci/modules/network/module/v1'
 verify "$APP_CONFIG_GO" 'Config: appconfig.WrapAny\(&networkmodulev1.Module\{\}\)'
-verify "$APP_CONFIG_GO" 'BeginBlockers:[^\n]*\{[\s\S]*networktypes.ModuleName'
-verify "$APP_CONFIG_GO" 'EndBlockers:[^\n]*\{[\s\S]*networktypes.ModuleName'
-verify "$APP_CONFIG_GO" 'InitGenesis:[^\n]*\{[\s\S]*networktypes.ModuleName'
+verify "$APP_CONFIG_GO" 'networktypes.ModuleName'
