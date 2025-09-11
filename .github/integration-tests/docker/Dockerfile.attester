@@ -10,13 +10,9 @@ WORKDIR /workspace
 COPY . /workspace/ev-abci
 # Ensure attester sources are present (attester/main.go, etc.)
 COPY attester /workspace/ev-abci/attester
-COPY gm /workspace/gm
-WORKDIR /workspace/gm
-
-# Ensure local ev-abci replacement points to the copied path inside the image
-RUN go mod edit -replace github.com/evstack/ev-abci=../ev-abci && go mod tidy
 # Build the attester binary (it has its own go.mod)
-RUN cd hack/attester && go build -o /workspace/attester .
+WORKDIR /workspace/ev-abci/attester
+RUN go build -o /workspace/attester .
 
 # Runtime stage
 FROM alpine:3.18
