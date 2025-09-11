@@ -58,7 +58,9 @@ jobs:
         with:
           path: |
             ${{ env.GOPATH_BIN }}/gmd
-          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('go.mod', 'go.sum', '**/*.go') }}
+          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ env.IGNITE_VERSION }}-${{ env.IGNITE_EVOLVE_APP_VERSION }}-${{ hashFiles('go.mod','go.sum','*.go','pkg/**/*.go','server/**/*.go','modules/**/*.go') }}
+          restore-keys: |
+            gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ env.IGNITE_VERSION }}-${{ env.IGNITE_EVOLVE_APP_VERSION }}-
 
       - name: Build Gmd Chain binary with Ignite
         if: steps.cache-gmd.outputs.cache-hit != 'true'
@@ -92,7 +94,7 @@ jobs:
         with:
           path: |
             ${{ env.GOPATH_BIN }}/gmd
-          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ hashFiles('go.mod', 'go.sum', '**/*.go') }}
+          key: gmd-${{ runner.os }}-${{ runner.arch }}-${{ env.EVNODE_VERSION }}-${{ env.IGNITE_VERSION }}-${{ env.IGNITE_EVOLVE_APP_VERSION }}-${{ hashFiles('go.mod','go.sum','*.go','pkg/**/*.go','server/**/*.go','modules/**/*.go') }}
 
       - name: Build Docker images (compose)
         run: |
