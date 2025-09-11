@@ -58,7 +58,7 @@ services:
     volumes:
       - ../integration-tests/scripts:/home/gm/scripts:ro
       - ./bin/gmd:/usr/local/bin/gmd:ro
-      - ../../gm:/home/gm/gm:ro
+      - ../../gm:/home/gm/gm:rw
       - gm-data:/shared:Z
     environment:
       - CHAIN_ID=gm
