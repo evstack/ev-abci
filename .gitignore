@@ -1,1 +1,4 @@
-/attester
+.DS_Store
+coverage.txt
+vendor
+.idea
