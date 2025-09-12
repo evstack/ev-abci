@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"cosmossdk.io/math"
 	pvm "github.com/cometbft/cometbft/privval"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -503,7 +504,7 @@ func broadcastTx(ctx context.Context, config *Config, msg proto.Message, privKey
 	}
 
 	txBuilder.SetGasLimit(200000)
-	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin("stake", sdk.NewIntFromUint64(200))))
+	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(200))))
 	txBuilder.SetMemo("")
 	// Get account info from node
 	addr := sdk.AccAddress(privKey.PubKey().Address())
