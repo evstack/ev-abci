@@ -236,8 +236,11 @@ if ! awk '
   inlist && /^[[:space:]]*\},/ { exit }
   END{ if (!found) exit 1 }
 ' "$APP_CONFIG_GO"; then
-  # Last resort: insert before Starport marker inside InitGenesis and re-verify
-  sed -i '/# stargate\/app\/initGenesis/i \t\t\t\t\tnetworktypes.ModuleName,' "$APP_CONFIG_GO" || true
+  # Last resort: insert before Starport marker inside InitGenesis with real tabs and re-verify
+  TAB=$'\t\t\t\t\t'
+  sed -i "/# stargate\\\/app\\\/initGenesis/i ${TAB}networktypes.ModuleName," "$APP_CONFIG_GO" || true
+  # Clean up any accidental leading 't' characters from prior runs
+  sed -i -E 's/^t([[:space:]]+networktypes\.ModuleName,)/\1/' "$APP_CONFIG_GO" || true
   awk '
     BEGIN{inlist=0; found=0}
     /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
