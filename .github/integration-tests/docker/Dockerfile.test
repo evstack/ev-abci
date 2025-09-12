@@ -14,7 +14,7 @@ RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 WORKDIR /build/gm
 RUN go build -o /gmd ./cmd/gmd
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
