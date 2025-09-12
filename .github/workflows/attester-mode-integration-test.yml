@@ -25,6 +25,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and cache local-da image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/integration-tests/docker/Dockerfile.local-da
+          tags: local-da:latest
+          load: true
+          build-args: |
+            EV_DA_REF=${{ env.EVNODE_DA_VERSION }}
+          cache-from: type=gha,scope=local-da
+          cache-to: type=gha,mode=max,scope=local-da
+
       - name: Run integration tests (compose orchestrator)
         env:
           VERBOSE: "true"
