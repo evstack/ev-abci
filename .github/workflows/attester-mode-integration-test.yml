@@ -54,6 +54,16 @@ jobs:
           cache-from: type=gha,scope=gm-chain
           cache-to: type=gha,mode=max,scope=gm-chain
 
+      - name: Build and cache attester image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/integration-tests/docker/Dockerfile.attester
+          tags: attester:latest
+          load: true
+          cache-from: type=gha,scope=attester
+          cache-to: type=gha,mode=max,scope=attester
+
       - name: Run integration tests (compose orchestrator)
         env:
           VERBOSE: "true"

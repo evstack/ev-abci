@@ -75,9 +75,7 @@ services:
 
   # Attester service
   attester:
-    build:
-      context: ../..
-      dockerfile: .github/integration-tests/docker/Dockerfile.attester
+    image: attester:latest
     container_name: gm-attester
     volumes:
       - ../integration-tests/scripts:/home/attester/scripts:ro

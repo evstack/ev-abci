@@ -1,23 +1,24 @@
 FROM golang:1.24-alpine as builder
 
-# Install dependencies
+# Install system dependencies - this layer will be cached
 RUN apk add --no-cache git make gcc musl-dev
 
 # Set working directory
 WORKDIR /workspace
 
-# Copy ev-abci (repo root) and the scaffolded gm chain
+# Copy ev-abci source code
 COPY . /workspace/ev-abci
-# Ensure attester sources are present (attester/main.go, etc.)
-COPY attester /workspace/ev-abci/attester
+
 # Build the attester binary (it has its own go.mod)
 WORKDIR /workspace/ev-abci/attester
-## Align module replacements and fetch deps
-# attester lives at /workspace/ev-abci/attester, so the ev-abci root is one level up
+
+# Align module replacements and fetch deps - cached if dependencies don't change
 RUN go mod edit -dropreplace github.com/evstack/ev-abci || true \
     && go mod edit -replace github.com/evstack/ev-abci=.. \
     && go mod edit -dropreplace github.com/evstack/ev-node || true \
     && go mod tidy
+
+# Build attester binary - rebuilds only if source code changes
 RUN go build -o /workspace/attester .
 
 # Runtime stage
