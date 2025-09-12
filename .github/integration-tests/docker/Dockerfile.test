@@ -26,6 +26,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=gmd-builder /gmd /usr/local/bin/gmd
 RUN chmod +x /usr/local/bin/gmd
 
+# Download gaiad binary from official release
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then \
+        wget -q https://github.com/cosmos/gaia/releases/download/v20.0.0/gaiad-v20.0.0-linux-amd64 -O /usr/local/bin/gaiad; \
+    elif [ "$ARCH" = "arm64" ]; then \
+        wget -q https://github.com/cosmos/gaia/releases/download/v20.0.0/gaiad-v20.0.0-linux-arm64 -O /usr/local/bin/gaiad; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    chmod +x /usr/local/bin/gaiad
+
 # Create test user
 RUN useradd -m -s /bin/bash tester
 
