@@ -4,7 +4,7 @@ go 1.24.1
 
 require (
 	github.com/celestiaorg/go-square/v2 v2.2.0 // indirect
-	github.com/celestiaorg/tastora v0.2.3
+	github.com/celestiaorg/tastora v0.3.0
 	github.com/moby/moby v27.5.1+incompatible
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
@@ -16,22 +16,18 @@ require (
 )
 
 require (
-	cosmossdk.io/x/upgrade v0.1.4 // indirect
-	github.com/chzyer/readline v1.5.1 // indirect
-	github.com/cosmos/ibc-go/modules/capability v1.0.1 // indirect
-	github.com/cosmos/ibc-go/v8 v8.7.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/orderedcode v0.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grafana/otel-profiling-go v0.5.1 // indirect
 	github.com/grafana/pyroscope-go v1.2.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
+	github.com/hashicorp/go-uuid v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/ipfs/go-cid v0.5.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
-	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/minio/highwayhash v1.0.3 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
@@ -41,7 +37,9 @@ require (
 	github.com/multiformats/go-multibase v0.2.0 // indirect
 	github.com/multiformats/go-multicodec v0.9.1 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
+	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/ugorji/go/codec v1.2.11 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.37.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.34.0 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect

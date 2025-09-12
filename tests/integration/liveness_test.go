@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"cosmossdk.io/math"
-	"github.com/celestiaorg/tastora/framework/docker"
+	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/testutil/wallet"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -65,7 +65,7 @@ func (s *DockerIntegrationTestSuite) TestLivenessWithCelestiaDA() {
 }
 
 // testTransactionSubmissionAndQuery tests sending transactions and querying results using tastora API
-func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testing.T, ctx context.Context, rollkitChain *docker.Chain) {
+func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testing.T, ctx context.Context, rollkitChain *cosmos.Chain) {
 	// hack to get around global, need to set the address prefix before use.
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 
@@ -76,7 +76,9 @@ func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testin
 	require.NoError(t, err, "failed to create carol wallet")
 
 	t.Log("Querying Bob's initial balance...")
-	initialBalance, err := queryBankBalance(ctx, rollkitChain.GetGRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
+	networkInfo, err := rollkitChain.GetNodes()[0].GetNetworkInfo(ctx)
+	require.NoError(t, err, "failed to get network info")
+	initialBalance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
 	require.NoError(t, err, "failed to query bob's initial balance")
 	require.True(t, initialBalance.Amount.Equal(math.NewInt(1000)), "bob should have 1000 tokens")
 
@@ -87,15 +89,15 @@ func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testin
 	err = s.sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 1)
 	require.NoError(t, err, "failed to send funds from Bob to Carol")
 
-	finalBalance, err := queryBankBalance(ctx, rollkitChain.GetGRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
+	finalBalance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
 	require.NoError(t, err, "failed to query bob's final balance")
 
 	expectedBalance := initialBalance.Amount.Sub(math.NewInt(100))
 	require.True(t, finalBalance.Amount.Equal(expectedBalance), "final balance should be exactly initial minus 100")
 
-	carolBalance, err := queryBankBalance(ctx, rollkitChain.GetGRPCAddress(), carolsWallet.GetFormattedAddress(), denom)
+	carolBalance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), carolsWallet.GetFormattedAddress(), denom)
 	require.NoError(t, err, "failed to query carol's balance")
-	require.True(t, carolBalance.Amount.Equal(math.NewInt(100)), "carol should have received 100 tokens")
+	require.True(t, carolBalance.Amount.Equal(math.NewInt(100)), "carol shouldaddFollowerNode have received 100 tokens")
 }
 
 // getEvolveAppContainer returns the evolve app container image.
