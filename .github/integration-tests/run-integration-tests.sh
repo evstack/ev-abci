@@ -16,6 +16,14 @@ VERBOSE=${VERBOSE:-false}
 BUILD_FRESH=${BUILD_FRESH:-false}
 TIMEOUT=${TIMEOUT:-600}  # 10 minutes default timeout
 
+export DO_NOT_TRACK=${DO_NOT_TRACK:-true}
+export EVNODE_VERSION=${EVNODE_VERSION:-"v1.0.0-beta.2.0.20250908090838-0584153217ed"}
+export EVNODE_DA_VERSION=${EVNODE_DA_VERSION:-"v1.0.0-beta.1"}
+export IGNITE_VERSION=${IGNITE_VERSION:-"v29.3.1"}
+export IGNITE_EVOLVE_APP_VERSION=${IGNITE_EVOLVE_APP_VERSION:-"main"}
+export GAIA_VERSION=${GAIA_VERSION:-"v25.1.0"}
+export TASTORA_REF=${TASTORA_REF:-"main"}
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -165,6 +173,8 @@ build_images() {
     if [[ "$VERBOSE" == "true" ]]; then
         build_args+=(--progress=plain)
     fi
+    
+    log_info "Using versions: IGNITE_VERSION=$IGNITE_VERSION, IGNITE_EVOLVE_APP_VERSION=$IGNITE_EVOLVE_APP_VERSION, EVNODE_VERSION=$EVNODE_VERSION, EVNODE_DA_VERSION=$EVNODE_DA_VERSION, GAIA_VERSION=$GAIA_VERSION"
     
     if ! docker compose build "${build_args[@]+"${build_args[@]}"}"; then
         log_error "Failed to build Docker images"

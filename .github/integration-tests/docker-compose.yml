@@ -54,7 +54,7 @@ services:
       args:
         IGNITE_VERSION: ${IGNITE_VERSION:-v29.3.1}
         IGNITE_EVOLVE_APP_VERSION: ${IGNITE_EVOLVE_APP_VERSION:-main}
-        EVNODE_VERSION: ${EVNODE_VERSION:-v1.0.0-beta.2}
+        EVNODE_VERSION: ${EVNODE_VERSION:-v1.0.0-beta.2.0.20250908090838-0584153217ed}
     container_name: gm-chain
     ports:
       - "26757:26757"  # RPC

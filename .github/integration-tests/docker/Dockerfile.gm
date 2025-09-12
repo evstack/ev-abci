@@ -27,14 +27,10 @@ RUN ignite evolve add
 
 # Inject App wiring for ev-abci network module before building
 COPY .github/integration-tests/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
-RUN bash /workspace/patch-app-wiring.sh
+RUN chmod +x /workspace/patch-app-wiring.sh && \
+    echo "===== Running network module patch =====" && \
+    bash /workspace/patch-app-wiring.sh
 
-# Show app/app_config.go after patching (for debugging, with line numbers)
-RUN echo "===== BEGIN app/app_config.go (AFTER PATCH) =====" && \
-    nl -ba app/app_config.go | sed -n '1,800p' || true && \
-    echo "----- grep -n for network wiring -----" && \
-    (grep -n "network/module/v1\|network/types\|WrapAny(&networkmodulev1.Module{})\|Name: *networktypes.ModuleName" app/app_config.go || true) && \
-    echo "===== END app/app_config.go (AFTER PATCH) ====="
 
 # Align module versions like in CI
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} \

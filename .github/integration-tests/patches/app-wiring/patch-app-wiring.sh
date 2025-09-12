@@ -1,26 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[patch-app-wiring] Starting app wiring patch for network module"
+echo "[patch-app-wiring] Starting app wiring patch for network module (v2)"
 
-APP_DIR="/workspace/gm"
+# Resolve APP_DIR
+APP_DIR=${APP_DIR:-}
+if [[ -z "${APP_DIR}" ]]; then
+  candidates=("/workspace/gm" "$PWD/gm")
+  if command -v git >/dev/null 2>&1; then
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    if [[ -n "$repo_root" ]]; then
+      candidates+=("$repo_root/gm")
+    fi
+  fi
+  for d in "${candidates[@]}"; do
+    if [[ -d "$d" ]]; then APP_DIR="$d"; break; fi
+  done
+fi
+
 APP_GO="${APP_DIR}/app/app.go"
 APP_CONFIG_GO="${APP_DIR}/app/app_config.go"
 
 if [[ ! -f "$APP_GO" || ! -f "$APP_CONFIG_GO" ]]; then
-  echo "[patch-app-wiring] ERROR: expected files not found: $APP_GO or $APP_CONFIG_GO" >&2
+  echo "[patch-app-wiring] ERROR: expected files not found: $APP_GO or $APP_CONFIG_GO (APP_DIR=$APP_DIR)" >&2
   exit 1
 fi
 
-insert_import_if_missing() {
-  local file="$1"; shift
-  local import_line="$1"; shift
-
-  if grep -qF "$import_line" "$file"; then
+# Function to add import if missing
+add_import() {
+  local file="$1"
+  local import_line="$2"
+  local import_path=$(echo "$import_line" | sed 's|.*"\(.*\)".*|\1|')
+  
+  if grep -qF "\"$import_path\"" "$file"; then
+    echo "[patch-app-wiring] Import already exists: $import_path"
     return 0
   fi
-
-  # Insert before closing ) of the first import block
+  
+  echo "[patch-app-wiring] Adding import: $import_line"
   awk -v newimp="$import_line" '
     BEGIN{added=0; inblock=0}
     /^[[:space:]]*import[[:space:]]*\(/ { inblock=1 }
@@ -35,185 +52,130 @@ insert_import_if_missing() {
   ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
 }
 
-insert_before_marker() {
-  local file="$1"; shift
-  local marker="$1"; shift
-  local line_to_insert="$1"; shift
-
-  if grep -qF "$line_to_insert" "$file"; then
+# Function to add module to list if not present
+add_to_list() {
+  local file="$1"
+  local list_name="$2"
+  local module_name="networktypes.ModuleName"
+  
+  # Check if already in the specific list
+  if awk -v list="$list_name" -v module="$module_name" '
+    BEGIN { in_list=0; found=0 }
+    $0 ~ list".*:.*\\[" { in_list=1 }
+    in_list && $0 ~ module { found=1; exit }
+    in_list && /^[[:space:]]*\},/ { in_list=0 }
+    END { exit (found ? 0 : 1) }
+  ' "$file"; then
+    echo "[patch-app-wiring] $module_name already in $list_name"
     return 0
   fi
-  # Insert the line immediately before the marker
-  awk -v marker="$marker" -v newline="$line_to_insert" '
-    index($0, marker) { print newline; print $0; next }
-    { print $0 }
-  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
+  
+  echo "[patch-app-wiring] Adding $module_name to $list_name"
+  
+  # Insert before stargate marker - note: Ignite uses camelCase for these markers
+  local marker_name=""
+  case "$list_name" in
+    "BeginBlockers")
+      marker_name="beginBlockers"
+      ;;
+    "EndBlockers")
+      marker_name="endBlockers"
+      ;;
+    "InitGenesis")
+      marker_name="initGenesis"
+      ;;
+  esac
+  local marker="# stargate/app/${marker_name}"
+  
+  # Debug: show what we're looking for
+  echo "[patch-app-wiring] Looking for marker: $marker"
+  
+  if ! grep -q "$marker" "$file"; then
+    echo "[patch-app-wiring] WARNING: Marker not found: $marker"
+    # Fallback: insert after "// chain modules"
+    if grep -q "// chain modules" "$file"; then
+      echo "[patch-app-wiring] Using fallback: inserting after '// chain modules'"
+      awk -v module="$module_name" '
+        /\/\/ chain modules/ && !added {
+          print
+          printf "\t\t\t\t\t%s,\n", module
+          added=1
+          next
+        }
+        { print }
+      ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+    fi
+  else
+    awk -v marker="$marker" -v module="$module_name" '
+      BEGIN { added=0 }
+      $0 ~ marker && !added {
+        printf "\t\t\t\t\t%s,\n", module
+        added=1
+      }
+      { print }
+    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+  fi
 }
 
-insert_block_before_marker() {
-  local file="$1"; shift
-  local marker="$1"; shift
-  local block="$1"; shift
+echo "[patch-app-wiring] Step 1: Adding imports to app_config.go"
+add_import "$APP_CONFIG_GO" $'\tnetworkmodulev1 "github.com/evstack/ev-abci/modules/network/module/v1"'
+add_import "$APP_CONFIG_GO" $'\tnetworktypes "github.com/evstack/ev-abci/modules/network/types"'
+add_import "$APP_CONFIG_GO" $'\t_ "github.com/evstack/ev-abci/modules/network" // import for side-effects'
 
-  # Idempotence: skip if module already present
-  if grep -qE 'appconfig\.WrapAny\(&networkmodulev1\.Module\{\}\)' "$file"; then
-    return 0
-  fi
+echo "[patch-app-wiring] Step 2: Adding network module to ordering lists"
+add_to_list "$APP_CONFIG_GO" "BeginBlockers"
+add_to_list "$APP_CONFIG_GO" "EndBlockers"
+add_to_list "$APP_CONFIG_GO" "InitGenesis"
 
-  awk -v marker="$marker" -v block="$block" '
-    index($0, marker) {
-      print block
-      print $0
-      next
-    }
-    { print $0 }
-  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
-}
-
-insert_block_after_first_match() {
-  local file="$1"; shift
-  local pattern="$1"; shift
-  local block="$1"; shift
-
-  # Idempotence: skip if module already present
-  if grep -qE 'appconfig\.WrapAny\(&networkmodulev1\.Module\{\}\)' "$file"; then
-    return 0
-  fi
-
-  awk -v pat="$pattern" -v block="$block" '
-    added==1 { print $0; next }
-    $0 ~ pat && added==0 {
-      print $0
+echo "[patch-app-wiring] Step 3: Adding network module configuration"
+if ! grep -q "Name:.*networktypes.ModuleName" "$APP_CONFIG_GO"; then
+  echo "[patch-app-wiring] Adding network module to Modules array"
+  
+  # Create the module block
+  MODULE_BLOCK="		{
+			Name:   networktypes.ModuleName,
+			Config: appconfig.WrapAny(&networkmodulev1.Module{}),
+		},"
+  
+  # Insert before stargate marker
+  awk -v block="$MODULE_BLOCK" '
+    /# stargate\/app\/moduleConfig/ && !added {
       print block
       added=1
-      next
     }
-    { print $0 }
-  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
-}
-
-# Insert the module block inside the Modules: []*appv1alpha1.ModuleConfig{ ... }
-# just before the closing "}," of that slice. Robust against formatting.
-insert_block_into_modules_slice() {
-  local file="$1"; shift
-  local block="$1"; shift
-
-  # Idempotence: skip if module already present
-  if grep -qE 'appconfig\.WrapAny\(&networkmodulev1\.Module\{\}\)' "$file"; then
-    return 0
-  fi
-
-  awk -v block="$block" '
-    BEGIN{inmods=0; depth=0}
-    {
-      line=$0
-      if (!inmods) {
-        print line
-        if (line ~ /Modules:[[:space:]]*\[[^]]*\][[:space:]]*\*[[:space:]]*appv1alpha1\.ModuleConfig[[:space:]]*\{/){
-          inmods=1; depth=1
-        }
-        next
-      }
-      # in modules slice: track depth by braces
-      # Increase for each '{' and decrease for each '}'
-      # But do not let depth go negative
-      open=gsub(/\{/,"{"); close=gsub(/\}/,"}")
-      # If this line would close the modules slice (depth==1 and next would decrement), insert block before printing
-      if (depth==1 && close>open && line ~ /^[[:space:]]*},[[:space:]]*$/) {
-        print block
-        print line
-        inmods=0
-        next
-      }
-      print line
-      depth += open - close
-    }
-  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
-}
-
-echo "[patch-app-wiring] Patching app_config.go imports and module config"
-
-# Imports for network module
-insert_import_if_missing "$APP_CONFIG_GO" $'\tnetworkmodulev1 "github.com/evstack/ev-abci/modules/network/module/v1"'
-insert_import_if_missing "$APP_CONFIG_GO" $'\tnetworktypes "github.com/evstack/ev-abci/modules/network/types"'
-insert_import_if_missing "$APP_CONFIG_GO" $'\t_ "github.com/evstack/ev-abci/modules/network" // import for side-effects'
-
-insert_in_named_list() {
-  local file="$1"; shift
-  local list_name="$1"; shift
-  local item="$1"; shift
-
-  # If already present in the list, skip
-  awk -v name="$list_name" -v item="$item" '
-    BEGIN{inlist=0; present=0}
-    $0 ~ name"[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{" { inlist=1 }
-    inlist && index($0, item) { present=1 }
-    inlist && $0 ~ /^[[:space:]]*\},/ {
-      if (!present) {
-        print item
-      }
-      inlist=0
-    }
-    { print $0 }
-  ' "$file" >"${file}.tmp" && mv "${file}.tmp" "$file"
-}
-
-# Ensure networktypes.ModuleName is included in these lists
-insert_in_named_list "$APP_CONFIG_GO" "BeginBlockers" $'\t\t\t\t\tnetworktypes.ModuleName,'
-insert_in_named_list "$APP_CONFIG_GO" "EndBlockers"   $'\t\t\t\t\tnetworktypes.ModuleName,'
-insert_in_named_list "$APP_CONFIG_GO" "InitGenesis"   $'\t\t\t\t\tnetworktypes.ModuleName,'
-
-# Also insert before Starport markers as a fallback (covers differing formats)
-insert_before_marker "$APP_CONFIG_GO" "# stargate/app/beginBlockers" $'\t\t\t\t\tnetworktypes.ModuleName,'
-insert_before_marker "$APP_CONFIG_GO" "# stargate/app/endBlockers"   $'\t\t\t\t\tnetworktypes.ModuleName,'
-insert_before_marker "$APP_CONFIG_GO" "# stargate/app/initGenesis"   $'\t\t\t\t\tnetworktypes.ModuleName,'
-
-# As an extra fallback, insert inside InitGenesis just before the "// chain modules" comment
-awk -v item=$'\t\t\t\t\tnetworktypes.ModuleName,' '
-  BEGIN { inlist=0; inserted=0 }
-  /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
-  inlist && /networktypes\.ModuleName/ { inserted=1 }
-  inlist && /\/\/ chain modules/ && !inserted {
-    print item
-    inserted=1
-  }
-  { print }
-  inlist && /^[[:space:]]*\},/ { inlist=0 }
-' "$APP_CONFIG_GO" >"${APP_CONFIG_GO}.tmp" && mv "${APP_CONFIG_GO}.tmp" "$APP_CONFIG_GO"
-
-# Add network module to module list
-read -r -d '' NETWORK_MODULE_BLOCK <<'BLOCK' || true
-			{
-				Name:   networktypes.ModuleName,
-				Config: appconfig.WrapAny(&networkmodulev1.Module{}),
-			},
-BLOCK
-
-# Prefer inserting before the starport scaffolding marker if present.
-if grep -q "# stargate/app/moduleConfig" "$APP_CONFIG_GO"; then
-  insert_block_before_marker "$APP_CONFIG_GO" "# stargate/app/moduleConfig" "$NETWORK_MODULE_BLOCK"
+    { print }
+  ' "$APP_CONFIG_GO" > "${APP_CONFIG_GO}.tmp" && mv "${APP_CONFIG_GO}.tmp" "$APP_CONFIG_GO"
 else
-  # Insert heuristically near the end of Modules slice
-  insert_block_into_modules_slice "$APP_CONFIG_GO" "$NETWORK_MODULE_BLOCK"
+  echo "[patch-app-wiring] Network module already in Modules array"
 fi
 
-echo "[patch-app-wiring] Patching app.go imports, keeper and DI injection"
+echo "[patch-app-wiring] Step 4: Patching app.go"
+add_import "$APP_GO" $'\tnetworkkeeper "github.com/evstack/ev-abci/modules/network/keeper"'
+add_import "$APP_GO" $'\t_ "github.com/evstack/ev-abci/modules/network" // import for module registration'
 
-# Import keeper
-insert_import_if_missing "$APP_GO" $'\tnetworkkeeper "github.com/evstack/ev-abci/modules/network/keeper"'
+# Add keeper field
+if ! grep -q "NetworkKeeper networkkeeper.Keeper" "$APP_GO"; then
+  echo "[patch-app-wiring] Adding NetworkKeeper field"
+  awk '/# stargate\/app\/keeperDeclaration/ {
+    print "\tNetworkKeeper networkkeeper.Keeper"
+  }
+  { print }' "$APP_GO" > "${APP_GO}.tmp" && mv "${APP_GO}.tmp" "$APP_GO"
+fi
 
-# Keeper field in App struct
-insert_before_marker "$APP_GO" "# stargate/app/keeperDeclaration" $'\tNetworkKeeper networkkeeper.Keeper'
-
-# Add to depinject.Inject argument list
+# Add to depinject.Inject
 if ! grep -q "&app.NetworkKeeper" "$APP_GO"; then
-  sed -i -E '/&app\.ParamsKeeper,/a\
-\t\t&app.NetworkKeeper,\
-' "$APP_GO" || true
+  echo "[patch-app-wiring] Adding NetworkKeeper to depinject.Inject"
+  awk '/&app\.ParamsKeeper,/ { 
+    print; 
+    print "\t\t&app.NetworkKeeper,"; 
+    next 
+  } 
+  { print }' "$APP_GO" > "${APP_GO}.tmp" && mv "${APP_GO}.tmp" "$APP_GO"
 fi
 
-# Add getter if missing
+# Add getter method
 if ! grep -q "GetNetworkKeeper()" "$APP_GO"; then
+  echo "[patch-app-wiring] Adding GetNetworkKeeper method"
   cat >>"$APP_GO" <<'EOF'
 
 func (app *App) GetNetworkKeeper() networkkeeper.Keeper {
@@ -222,59 +184,39 @@ func (app *App) GetNetworkKeeper() networkkeeper.Keeper {
 EOF
 fi
 
-echo "[patch-app-wiring] Completed"
+echo "[patch-app-wiring] Step 5: Final validation"
 
-# Verify expected insertions; fail early with context if missing
-verify() {
-  local file="$1"; shift
-  local pattern="$1"; shift
-  if ! grep -Eq "$pattern" "$file"; then
-    echo "[patch-app-wiring] ERROR: verification failed for pattern: $pattern in $file" >&2
-    echo "----- BEGIN $file (head) -----" >&2
-    sed -n '1,200p' "$file" >&2 || true
-    echo "----- END $file (head) -----" >&2
-    exit 1
+# Validate critical components
+errors=0
+
+if ! grep -q '_ "github.com/evstack/ev-abci/modules/network"' "$APP_CONFIG_GO"; then
+  echo "[patch-app-wiring] ERROR: Network module import missing in app_config.go!" >&2
+  errors=$((errors + 1))
+fi
+
+if ! grep -q "Name:.*networktypes.ModuleName" "$APP_CONFIG_GO"; then
+  echo "[patch-app-wiring] ERROR: Network module not in Modules array!" >&2
+  errors=$((errors + 1))
+fi
+
+# Check each list
+for list in BeginBlockers EndBlockers InitGenesis; do
+  if ! awk -v list="$list" '
+    BEGIN { in_list=0; found=0 }
+    $0 ~ list".*:.*\\[" { in_list=1 }
+    in_list && /networktypes\.ModuleName/ { found=1; exit }
+    in_list && /^[[:space:]]*\},/ { in_list=0 }
+    END { exit (found ? 0 : 1) }
+  ' "$APP_CONFIG_GO"; then
+    echo "[patch-app-wiring] ERROR: Network module not in $list!" >&2
+    errors=$((errors + 1))
   fi
-}
+done
 
-verify "$APP_CONFIG_GO" 'github.com/evstack/ev-abci/modules/network/module/v1'
-verify "$APP_CONFIG_GO" 'Config: appconfig.WrapAny\(&networkmodulev1.Module\{\}\)'
-verify "$APP_CONFIG_GO" 'Name:[[:space:]]*networktypes.ModuleName'
-
-has_network_in_initgenesis() {
-  # Robust region scan: from InitGenesis opening line to its closing "},"
-  awk '
-    BEGIN{inlist=0; found=0}
-    /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
-    inlist && /networktypes\.ModuleName/ { found=1 }
-    inlist && /^[[:space:]]*\},/ { inlist=0 }
-    END{ if (found) exit 0; else exit 1 }
-  ' "$APP_CONFIG_GO"
-}
-
-# Verify networktypes.ModuleName is inside InitGenesis list
-if ! has_network_in_initgenesis; then
-  # Additional targeted fallback: insert right after icatypes.ModuleName,
-  sed -i '/icatypes\.ModuleName,/a \	\t\t\t\tnetworktypes.ModuleName,' "$APP_CONFIG_GO" || true
+if [[ $errors -gt 0 ]]; then
+  echo "[patch-app-wiring] Validation failed with $errors errors!" >&2
+  exit 1
 fi
 
-# Re-verify; if still missing, attempt marker-based insertion and cleanups
-if ! has_network_in_initgenesis; then
-  # Last resort: insert before Starport marker inside InitGenesis with real tabs and re-verify
-  TAB=$'\t\t\t\t\t'
-  sed -i "/# stargate\\\/app\\\/initGenesis/i ${TAB}networktypes.ModuleName," "$APP_CONFIG_GO" || true
-  # Clean up any accidental leading 't' characters from prior runs
-  sed -i -E 's/^t([[:space:]]+networktypes\.ModuleName,)/\1/' "$APP_CONFIG_GO" || true
-fi
-
-# Final relaxed verification: accept if region scan passes OR the sliced region contains the item
-if ! has_network_in_initgenesis; then
-  if ! sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' "$APP_CONFIG_GO" | grep -q 'networktypes\.ModuleName'; then
-    echo "[patch-app-wiring] WARNING: networktypes.ModuleName no detectado por el verificador en InitGenesis, pero continuamos (el símbolo aparece en el archivo)." >&2
-    echo "----- InitGenesis region context (best-effort) -----" >&2
-    nl -ba "$APP_CONFIG_GO" | sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' >&2 || true
-    echo "----- GREP summary -----" >&2
-    (grep -n "InitGenesis\|networktypes.ModuleName\|WrapAny(&networkmodulev1.Module{})" "$APP_CONFIG_GO" >&2 || true)
-    # Do not fail hard; allow build to proceed since insertion is visible elsewhere
-  fi
-fi
+echo "[patch-app-wiring] All validations passed successfully!"
+echo "[patch-app-wiring] Patch completed successfully"
