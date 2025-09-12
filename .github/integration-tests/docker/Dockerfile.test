@@ -1,8 +1,12 @@
 # Build a minimal gmd binary in this same Dockerfile
-FROM golang:1.24-slim AS gmd-builder
+FROM golang:1.24-bookworm AS gmd-builder
 
-RUN apt-get update && apt-get install -y git curl && \
-    curl -sSL https://get.ignite.com/cli! | bash
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl bash ca-certificates make gcc musl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Ignite CLI
+RUN curl -sSL https://get.ignite.com/cli! | bash
 
 WORKDIR /build
 # Create a minimal GM app just to get the binary
