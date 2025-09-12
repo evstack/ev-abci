@@ -168,6 +168,19 @@ insert_before_marker "$APP_CONFIG_GO" "# stargate/app/beginBlockers" $'\t\t\t\t\
 insert_before_marker "$APP_CONFIG_GO" "# stargate/app/endBlockers"   $'\t\t\t\t\tnetworktypes.ModuleName,'
 insert_before_marker "$APP_CONFIG_GO" "# stargate/app/initGenesis"   $'\t\t\t\t\tnetworktypes.ModuleName,'
 
+# As an extra fallback, insert inside InitGenesis just before the "// chain modules" comment
+awk -v item=$'\t\t\t\t\tnetworktypes.ModuleName,' '
+  BEGIN { inlist=0; inserted=0 }
+  /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
+  inlist && /networktypes\.ModuleName/ { inserted=1 }
+  inlist && /\/\/ chain modules/ && !inserted {
+    print item
+    inserted=1
+  }
+  { print }
+  inlist && /^[[:space:]]*\},/ { inlist=0 }
+' "$APP_CONFIG_GO" >"${APP_CONFIG_GO}.tmp" && mv "${APP_CONFIG_GO}.tmp" "$APP_CONFIG_GO"
+
 # Add network module to module list
 read -r -d '' NETWORK_MODULE_BLOCK <<'BLOCK' || true
 			{
