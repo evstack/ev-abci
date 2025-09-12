@@ -18,6 +18,8 @@ WORKDIR /workspace
 ARG IGNITE_EVOLVE_APP_VERSION=main
 RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 WORKDIR /workspace/gm
+
+# Install evolve plugin - cached separately
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
 RUN ignite evolve add
 
@@ -36,7 +38,7 @@ RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$
     && go mod edit -replace github.com/evstack/ev-abci=../ev-abci \
     && go mod tidy
 
-# Build gmd binary - this will rebuild if source code changes
+# Build gmd binary - this will rebuild only if source code changes
 ENV GOBIN=/workspace/bin
 RUN ignite chain build --skip-proto && \
     test -x "${GOBIN}/gmd"

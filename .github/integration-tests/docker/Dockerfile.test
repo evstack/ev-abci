@@ -1,15 +1,17 @@
 # Build a minimal gmd binary in this same Dockerfile
 FROM golang:1.24-bookworm AS gmd-builder
 
+# Install system dependencies - this layer will be cached
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl bash ca-certificates make gcc musl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Ignite CLI
-RUN curl -sSL https://get.ignite.com/cli! | bash
+# Install Ignite CLI - cached if version doesn't change
+ARG IGNITE_VERSION=latest
+RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
 WORKDIR /build
-# Create a minimal GM app just to get the binary
+# Create a minimal GM app just to get the binary - cached if scaffold doesn't change
 RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 WORKDIR /build/gm
 RUN go build -o /gmd ./cmd/gmd
@@ -26,12 +28,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=gmd-builder /gmd /usr/local/bin/gmd
 RUN chmod +x /usr/local/bin/gmd
 
-# Download gaiad binary from official release
+# Download gaiad binary from official release - cached if GAIA_VERSION doesn't change
+ARG GAIA_VERSION=v20.0.0
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then \
-        wget -q https://github.com/cosmos/gaia/releases/download/v20.0.0/gaiad-v20.0.0-linux-amd64 -O /usr/local/bin/gaiad; \
+        wget -q https://github.com/cosmos/gaia/releases/download/${GAIA_VERSION}/gaiad-${GAIA_VERSION}-linux-amd64 -O /usr/local/bin/gaiad; \
     elif [ "$ARCH" = "arm64" ]; then \
-        wget -q https://github.com/cosmos/gaia/releases/download/v20.0.0/gaiad-v20.0.0-linux-arm64 -O /usr/local/bin/gaiad; \
+        wget -q https://github.com/cosmos/gaia/releases/download/${GAIA_VERSION}/gaiad-${GAIA_VERSION}-linux-arm64 -O /usr/local/bin/gaiad; \
     else \
         echo "Unsupported architecture: $ARCH" && exit 1; \
     fi && \

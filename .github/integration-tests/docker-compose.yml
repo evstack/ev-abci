@@ -167,9 +167,7 @@ services:
 
   # Test runner (runs after IBC setup)
   test-runner:
-    build:
-      context: ..
-      dockerfile: integration-tests/docker/Dockerfile.test
+    image: test-runner:latest
     container_name: ibc-test-runner
     depends_on:
       - gm-chain

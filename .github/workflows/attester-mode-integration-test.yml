@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   integration:
-    name: Setup Evolve Chain (scaffold & build)
+    name: Build Images and Run Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -63,6 +63,19 @@ jobs:
           load: true
           cache-from: type=gha,scope=attester
           cache-to: type=gha,mode=max,scope=attester
+
+      - name: Build and cache test-runner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/integration-tests/docker/Dockerfile.test
+          tags: test-runner:latest
+          load: true
+          build-args: |
+            IGNITE_VERSION=${{ env.IGNITE_VERSION }}
+            GAIA_VERSION=${{ env.GAIA_VERSION }}
+          cache-from: type=gha,scope=test-runner
+          cache-to: type=gha,mode=max,scope=test-runner
 
       - name: Run integration tests (compose orchestrator)
         env:
