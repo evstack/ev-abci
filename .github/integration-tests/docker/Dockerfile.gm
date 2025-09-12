@@ -18,25 +18,31 @@ WORKDIR /workspace
 ARG IGNITE_EVOLVE_APP_VERSION=main
 RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 WORKDIR /workspace/gm
+
+# Install evolve plugin - cached separately
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
 RUN ignite evolve add
 
-# Copy ev-abci repo after scaffolding to avoid cache invalidation on code changes
-COPY . /workspace/ev-abci
-
-# Inject App wiring for ev-abci network module before building
+# Copy only patch script first - cached if patch doesn't change
 COPY .github/integration-tests/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
 RUN chmod +x /workspace/patch-app-wiring.sh && \
     echo "===== Running network module patch =====" && \
     bash /workspace/patch-app-wiring.sh
 
-# Align module versions like in CI - cached if EVNODE_VERSION doesn't change
+# Copy only go.mod and go.sum files for dependency caching
+COPY go.mod go.sum /workspace/ev-abci/
+COPY attester/go.mod attester/go.sum /workspace/ev-abci/attester/
+
+# Set up module replacements - cached if versions don't change  
 ARG EVNODE_VERSION=v1.0.0-beta.2
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} \
     && go mod edit -replace github.com/evstack/ev-abci=../ev-abci \
     && go mod tidy
 
-# Build gmd binary - this will rebuild if source code changes
+# Copy source code only after dependencies are resolved
+COPY . /workspace/ev-abci
+
+# Build gmd binary - this will rebuild only if source code changes
 ENV GOBIN=/workspace/bin
 RUN ignite chain build --skip-proto && \
     test -x "${GOBIN}/gmd"
