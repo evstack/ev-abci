@@ -46,7 +46,7 @@ WORKDIR /home/attester
 
 # Environment variables
 ENV CHAIN_ID=gm
-ENV GM_HOME=/tmp/.gm
+ENV GM_HOME=/home/attester/.gm
 ENV GM_NODE=http://gm-chain:26757
 ENV GM_API=http://gm-chain:1417
 ENV MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

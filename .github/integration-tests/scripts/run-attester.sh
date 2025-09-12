@@ -19,6 +19,33 @@ echo "   Home: $GM_HOME"
 echo "⏳ Waiting for GM chain to be ready..."
 ./wait-for-chain.sh "$GM_NODE" "$GM_API"
 
+echo "🔍 Checking for required validator files..."
+echo "   Looking for files in $GM_HOME..."
+echo "   Directory contents:"
+find "$GM_HOME" -type f 2>/dev/null || echo "   Directory doesn't exist or is empty"
+
+# The gm-chain copies files to /shared which is mounted as $GM_HOME
+# Files should be at $GM_HOME/config/ and $GM_HOME/data/ 
+PRIV_KEY_FILE="$GM_HOME/config/priv_validator_key.json"
+PRIV_STATE_FILE="$GM_HOME/data/priv_validator_state.json"
+
+if [[ ! -f "$PRIV_KEY_FILE" ]]; then
+    echo "❌ ERROR: priv_validator_key.json not found at $PRIV_KEY_FILE"
+    echo "   Available files in config:"
+    ls -la "$GM_HOME/config/" 2>/dev/null || echo "   config/ directory doesn't exist"
+    exit 1
+fi
+
+if [[ ! -f "$PRIV_STATE_FILE" ]]; then
+    echo "❌ ERROR: priv_validator_state.json not found at $PRIV_STATE_FILE"
+    echo "   Available files in data:"
+    ls -la "$GM_HOME/data/" 2>/dev/null || echo "   data/ directory doesn't exist"
+    exit 1
+fi
+
+echo "✅ Validator files found at:"
+echo "   Key: $PRIV_KEY_FILE"
+echo "   State: $PRIV_STATE_FILE"
 echo "🚀 Attester is ready, starting attestation..."
 
 # Build attester command
