@@ -503,7 +503,7 @@ func broadcastTx(ctx context.Context, config *Config, msg proto.Message, privKey
 	}
 
 	txBuilder.SetGasLimit(200000)
-	txBuilder.SetFeeAmount(sdk.NewCoins())
+	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.NewCoin("stake", sdk.NewInt(200))))
 	txBuilder.SetMemo("")
 	// Get account info from node
 	addr := sdk.AccAddress(privKey.PubKey().Address())
