@@ -1,5 +1,14 @@
-# Use the gm image as the base to get the gmd binary
-FROM integration-tests-gm-chain AS gm-builder
+# Build a minimal gmd binary in this same Dockerfile
+FROM golang:1.24-slim AS gmd-builder
+
+RUN apt-get update && apt-get install -y git curl && \
+    curl -sSL https://get.ignite.com/cli! | bash
+
+WORKDIR /build
+# Create a minimal GM app just to get the binary
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+WORKDIR /build/gm
+RUN go build -o /gmd ./cmd/gmd
 
 FROM debian:bullseye-slim
 
@@ -9,8 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl jq bash coreutils netcat-openbsd openssl wget git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy gmd binary from the gm-chain image
-COPY --from=gm-builder /usr/local/bin/gmd /usr/local/bin/gmd
+# Copy gmd binary from the builder stage
+COPY --from=gmd-builder /gmd /usr/local/bin/gmd
 RUN chmod +x /usr/local/bin/gmd
 
 # Create test user

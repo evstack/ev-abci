@@ -183,6 +183,8 @@ services:
       context: ..
       dockerfile: integration-tests/docker/Dockerfile.test
     container_name: ibc-test-runner
+    depends_on:
+      - gm-chain
     volumes:
       - ../integration-tests/scripts:/home/tester/scripts:ro
       - ../integration-tests/config:/home/tester/config:ro
