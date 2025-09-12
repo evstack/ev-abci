@@ -22,6 +22,7 @@ func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNo
 			return nil, err
 		}
 
+		fmt.Println("-----------agg node------------")
 		return createVote(header, blockID), nil
 	}
 }
@@ -58,6 +59,7 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureB
 			}
 		}
 
+		fmt.Println("-----------sync node------------")
 		return createVote(header, blockID), nil
 	}
 }
@@ -76,6 +78,9 @@ func createVote(header *evtypes.Header, blockID *cmttypes.BlockID) []byte {
 
 	chainID := header.ChainID()
 	consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
+
+	fmt.Println(consensusVoteBytes)
+	fmt.Println("-----------------------")
 
 	return consensusVoteBytes
 }
