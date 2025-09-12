@@ -248,7 +248,13 @@ setup_ibc() {
         # Show some progress by showing recent logs
         if [[ $((wait_count % 60)) -eq 0 ]]; then
             log_info "Recent IBC setup logs:"
-            docker compose logs --tail=5 ibc-setup || true
+            docker compose logs --tail=10 ibc-setup || true
+            
+            # Also check if attester is still having issues
+            if docker compose ps attester | grep -q "Restarting\|Exited"; then
+                log_warning "Note: Attester service is still restarting, which may affect IBC setup"
+                docker compose logs --tail=5 attester || true
+            fi
         fi
     done
 
@@ -363,8 +369,16 @@ show_service_status() {
         for service in local-da gaia-chain gm-chain attester; do
             echo ""
             echo "=== $service ==="
-            docker compose logs --tail=10 "$service" 2>/dev/null || echo "No logs available"
+            docker compose logs --tail=20 "$service" 2>/dev/null || echo "No logs available"
         done
+    else
+        # Always show attester logs if it's having issues
+        if docker compose ps attester | grep -q "Restarting\|Exited"; then
+            echo ""
+            log_warning "Attester service appears to be having issues:"
+            echo "=== attester logs ==="
+            docker compose logs --tail=50 attester 2>/dev/null || echo "No logs available"
+        fi
     fi
 }
 
