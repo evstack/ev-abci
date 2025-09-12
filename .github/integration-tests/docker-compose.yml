@@ -20,7 +20,7 @@ services:
 
   # Gaia chain (Cosmos Hub)
   gaia-chain:
-    image: ghcr.io/cosmos/gaia:${GAIA_VERSION:-v20.0.0}
+    image: ghcr.io/cosmos/gaia:${GAIA_VERSION:-v25.1.0}
     platform: linux/amd64
     container_name: gaia-chain
     environment:

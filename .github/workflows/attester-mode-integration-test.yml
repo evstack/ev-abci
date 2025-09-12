@@ -1,4 +1,4 @@
-name: integration_attester_test
+name: Attester Mode Integration Test
 
 on:
   push:
@@ -19,7 +19,6 @@ jobs:
       IGNITE_VERSION: "v29.3.1"
       IGNITE_EVOLVE_APP_VERSION: "main"
       GAIA_VERSION: "v25.1.0"
-      TASTORA_REF: "main"
 
     steps:
       - uses: actions/checkout@v5
