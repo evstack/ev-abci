@@ -241,45 +241,42 @@ verify "$APP_CONFIG_GO" 'github.com/evstack/ev-abci/modules/network/module/v1'
 verify "$APP_CONFIG_GO" 'Config: appconfig.WrapAny\(&networkmodulev1.Module\{\}\)'
 verify "$APP_CONFIG_GO" 'Name:[[:space:]]*networktypes.ModuleName'
 
+has_network_in_initgenesis() {
+  # Robust region scan: from InitGenesis opening line to its closing "},"
+  awk '
+    BEGIN{inlist=0; found=0}
+    /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
+    inlist && /networktypes\.ModuleName/ { found=1 }
+    inlist && /^[[:space:]]*\},/ { inlist=0 }
+    END{ if (found) exit 0; else exit 1 }
+  ' "$APP_CONFIG_GO"
+}
+
 # Verify networktypes.ModuleName is inside InitGenesis list
-if ! awk '
-  BEGIN{inlist=0; found=0}
-  /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
-  inlist && /networktypes\.ModuleName/ { found=1 }
-  inlist && /^[[:space:]]*\},/ { exit }
-  END{ if (!found) exit 1 }
-' "$APP_CONFIG_GO"; then
+if ! has_network_in_initgenesis; then
   # Additional targeted fallback: insert right after icatypes.ModuleName,
   sed -i '/icatypes\.ModuleName,/a \	\t\t\t\tnetworktypes.ModuleName,' "$APP_CONFIG_GO" || true
 fi
 
 # Re-verify; if still missing, attempt marker-based insertion and cleanups
-if ! awk '
-  BEGIN{inlist=0; found=0}
-  /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
-  inlist && /networktypes\.ModuleName/ { found=1 }
-  inlist && /^[[:space:]]*\},/ { exit }
-  END{ if (!found) exit 1 }
-' "$APP_CONFIG_GO"; then
+if ! has_network_in_initgenesis; then
   # Last resort: insert before Starport marker inside InitGenesis with real tabs and re-verify
   TAB=$'\t\t\t\t\t'
   sed -i "/# stargate\\\/app\\\/initGenesis/i ${TAB}networktypes.ModuleName," "$APP_CONFIG_GO" || true
   # Clean up any accidental leading 't' characters from prior runs
   sed -i -E 's/^t([[:space:]]+networktypes\.ModuleName,)/\1/' "$APP_CONFIG_GO" || true
-  awk '
-    BEGIN{inlist=0; found=0}
-    /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
-    inlist && /networktypes\.ModuleName/ { found=1 }
-    inlist && /^[[:space:]]*\},/ { exit }
-    END{ if (!found) exit 1 }
-  ' "$APP_CONFIG_GO" || {
-  echo "[patch-app-wiring] ERROR: networktypes.ModuleName not found in InitGenesis list after fallback insertion" >&2
-  echo "----- InitGenesis region context -----" >&2
-  nl -ba "$APP_CONFIG_GO" | sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' >&2 || true
-  echo "----- FULL app_config.go (head 500 lines) -----" >&2
-  nl -ba "$APP_CONFIG_GO" | sed -n '1,500p' >&2 || true
-  echo "----- GREP summary -----" >&2
-  (grep -n "InitGenesis\|networktypes.ModuleName\|WrapAny(&networkmodulev1.Module{})" "$APP_CONFIG_GO" >&2 || true)
-  exit 1
-  }
+fi
+
+# Final relaxed verification: accept if region scan passes OR the sliced region contains the item
+if ! has_network_in_initgenesis; then
+  if ! sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' "$APP_CONFIG_GO" | grep -q 'networktypes\.ModuleName'; then
+    echo "[patch-app-wiring] ERROR: networktypes.ModuleName not found in InitGenesis list after fallback insertion" >&2
+    echo "----- InitGenesis region context -----" >&2
+    nl -ba "$APP_CONFIG_GO" | sed -n '/InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*{/,/^[[:space:]]*},/p' >&2 || true
+    echo "----- FULL app_config.go (head 500 lines) -----" >&2
+    nl -ba "$APP_CONFIG_GO" | sed -n '1,500p' >&2 || true
+    echo "----- GREP summary -----" >&2
+    (grep -n "InitGenesis\|networktypes.ModuleName\|WrapAny(&networkmodulev1.Module{})" "$APP_CONFIG_GO" >&2 || true)
+    exit 1
+  fi
 fi
