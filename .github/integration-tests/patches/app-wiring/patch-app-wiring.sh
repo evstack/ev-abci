@@ -249,6 +249,18 @@ if ! awk '
   inlist && /^[[:space:]]*\},/ { exit }
   END{ if (!found) exit 1 }
 ' "$APP_CONFIG_GO"; then
+  # Additional targeted fallback: insert right after icatypes.ModuleName,
+  sed -i '/icatypes\.ModuleName,/a \	\t\t\t\tnetworktypes.ModuleName,' "$APP_CONFIG_GO" || true
+fi
+
+# Re-verify; if still missing, attempt marker-based insertion and cleanups
+if ! awk '
+  BEGIN{inlist=0; found=0}
+  /InitGenesis[[:space:]]*:[[:space:]]*\[[^]]*\][[:space:]]*\{/ { inlist=1 }
+  inlist && /networktypes\.ModuleName/ { found=1 }
+  inlist && /^[[:space:]]*\},/ { exit }
+  END{ if (!found) exit 1 }
+' "$APP_CONFIG_GO"; then
   # Last resort: insert before Starport marker inside InitGenesis with real tabs and re-verify
   TAB=$'\t\t\t\t\t'
   sed -i "/# stargate\\\/app\\\/initGenesis/i ${TAB}networktypes.ModuleName," "$APP_CONFIG_GO" || true
