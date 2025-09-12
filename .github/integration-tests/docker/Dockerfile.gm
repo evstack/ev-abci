@@ -3,27 +3,26 @@
 ##########
 FROM golang:1.24-bookworm AS builder
 
-ARG IGNITE_VERSION=latest
-ARG IGNITE_EVOLVE_APP_VERSION=main
-ARG EVNODE_VERSION=v1.0.0-beta.2
-
+# Install system dependencies - this layer will be cached
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl bash ca-certificates make gcc musl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Ignite CLI at requested version
+# Install Ignite CLI at requested version - cached if IGNITE_VERSION doesn't change
+ARG IGNITE_VERSION=latest
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
 WORKDIR /workspace
 
-# Copy ev-abci repo (root)
-COPY . /workspace/ev-abci
-
-# Scaffold GM app and apply evolve plugin
+# Scaffold GM app - cached if IGNITE_EVOLVE_APP_VERSION doesn't change
+ARG IGNITE_EVOLVE_APP_VERSION=main
 RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
 RUN ignite evolve add
+
+# Copy ev-abci repo after scaffolding to avoid cache invalidation on code changes
+COPY . /workspace/ev-abci
 
 # Inject App wiring for ev-abci network module before building
 COPY .github/integration-tests/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
@@ -31,13 +30,13 @@ RUN chmod +x /workspace/patch-app-wiring.sh && \
     echo "===== Running network module patch =====" && \
     bash /workspace/patch-app-wiring.sh
 
-
-# Align module versions like in CI
+# Align module versions like in CI - cached if EVNODE_VERSION doesn't change
+ARG EVNODE_VERSION=v1.0.0-beta.2
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} \
     && go mod edit -replace github.com/evstack/ev-abci=../ev-abci \
     && go mod tidy
 
-# Build gmd binary
+# Build gmd binary - this will rebuild if source code changes
 ENV GOBIN=/workspace/bin
 RUN ignite chain build --skip-proto && \
     test -x "${GOBIN}/gmd"

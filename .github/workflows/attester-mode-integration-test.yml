@@ -40,6 +40,20 @@ jobs:
           cache-from: type=gha,scope=local-da
           cache-to: type=gha,mode=max,scope=local-da
 
+      - name: Build and cache gm-chain image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/integration-tests/docker/Dockerfile.gm
+          tags: gm-chain:latest
+          load: true
+          build-args: |
+            IGNITE_VERSION=${{ env.IGNITE_VERSION }}
+            IGNITE_EVOLVE_APP_VERSION=${{ env.IGNITE_EVOLVE_APP_VERSION }}
+            EVNODE_VERSION=${{ env.EVNODE_VERSION }}
+          cache-from: type=gha,scope=gm-chain
+          cache-to: type=gha,mode=max,scope=gm-chain
+
       - name: Run integration tests (compose orchestrator)
         env:
           VERBOSE: "true"
