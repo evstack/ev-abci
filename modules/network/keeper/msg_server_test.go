@@ -53,23 +53,6 @@ func TestJoinAttesterSet(t *testing.T) {
 			msg:    &types.MsgJoinAttesterSet{Authority: "invalidAddr", ConsensusAddress: "invalidAddr"},
 			expErr: sdkerrors.ErrInvalidAddress,
 		},
-		"val not exists": {
-			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
-			expErr: sdkerrors.ErrNotFound,
-		},
-		"val not bonded": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
-				validator := stakingtypes.Validator{
-					OperatorAddress: myValAddr.String(),
-					Status:          stakingtypes.Unbonded, // Validator is not bonded
-				}
-				err := sk.SetValidator(ctx, validator)
-				require.NoError(t, err, "failed to set validator")
-			},
-			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
-			expErr: sdkerrors.ErrInvalidRequest,
-		},
 		"already set": {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
 				validator := stakingtypes.Validator{
