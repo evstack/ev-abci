@@ -51,9 +51,13 @@ func CmdAttest() *cobra.Command {
 			}
 
 			vote := []byte(args[1])
-			valAddress := sdk.ValAddress(clientCtx.GetFromAddress()).String()
+			// Authority is the account that signs and pays for the transaction
+			authority := clientCtx.GetFromAddress().String()
+			// Consensus address is the validator address
+			consensusAddress := sdk.ValAddress(clientCtx.GetFromAddress()).String()
 			msg := types.NewMsgAttest(
-				valAddress,
+				authority,
+				consensusAddress,
 				height,
 				vote,
 			)
@@ -84,7 +88,7 @@ func CmdJoinAttesterSet() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			
+
 			if pubkeyStr == "" {
 				return fmt.Errorf("must specify the validator's public key using --pubkey flag")
 			}
@@ -95,8 +99,11 @@ func CmdJoinAttesterSet() *cobra.Command {
 				return fmt.Errorf("failed to parse public key: %w", err)
 			}
 
-			valAddress := sdk.ValAddress(clientCtx.GetFromAddress()).String()
-			msg, err := types.NewMsgJoinAttesterSet(valAddress, pubkey)
+			// Authority is the account that signs and pays for the transaction
+			authority := clientCtx.GetFromAddress().String()
+			// Consensus address is the validator address
+			consensusAddress := sdk.ValAddress(clientCtx.GetFromAddress()).String()
+			msg, err := types.NewMsgJoinAttesterSet(authority, consensusAddress, pubkey)
 			if err != nil {
 				return fmt.Errorf("failed to create MsgJoinAttesterSet: %w", err)
 			}
@@ -124,8 +131,11 @@ func CmdLeaveAttesterSet() *cobra.Command {
 				return err
 			}
 
-			valAddress := sdk.ValAddress(clientCtx.GetFromAddress()).String()
-			msg := types.NewMsgLeaveAttesterSet(valAddress)
+			// Authority is the account that signs and pays for the transaction
+			authority := clientCtx.GetFromAddress().String()
+			// Consensus address is the validator address
+			consensusAddress := sdk.ValAddress(clientCtx.GetFromAddress()).String()
+			msg := types.NewMsgLeaveAttesterSet(authority, consensusAddress)
 
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
