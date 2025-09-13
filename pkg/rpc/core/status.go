@@ -12,6 +12,7 @@ import (
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cometbft/cometbft/version"
+
 	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 

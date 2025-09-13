@@ -34,6 +34,7 @@ import (
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/hashicorp/go-metrics"
 	ds "github.com/ipfs/go-datastore"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -50,7 +51,6 @@ import (
 	"github.com/evstack/ev-node/pkg/store"
 	"github.com/evstack/ev-node/sequencers/single"
 	rollkittypes "github.com/evstack/ev-node/types"
-	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
 	"github.com/evstack/ev-abci/pkg/rpc"
