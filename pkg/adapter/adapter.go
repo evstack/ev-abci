@@ -629,20 +629,21 @@ type StackedEvent struct {
 	validatorUpdates []*cmttypes.Validator
 }
 
-func (a *Adapter) stackBlockCommitEvents(
-	blockID *cmttypes.BlockID,
-	block *cmttypes.Block,
-	abciResponse *abci.ResponseFinalizeBlock,
-	validatorUpdates []*cmttypes.Validator,
-) {
-	// todo (Alex): we need this persisted to recover from restart
-	a.stackedEvents = append(a.stackedEvents, StackedEvent{
-		blockID:          blockID,
-		block:            block,
-		abciResponse:     abciResponse,
-		validatorUpdates: validatorUpdates,
-	})
-}
+// stackBlockCommitEvents is commented out for future use
+// func (a *Adapter) stackBlockCommitEvents(
+// 	blockID *cmttypes.BlockID,
+// 	block *cmttypes.Block,
+// 	abciResponse *abci.ResponseFinalizeBlock,
+// 	validatorUpdates []*cmttypes.Validator,
+// ) {
+// 	// todo (Alex): we need this persisted to recover from restart
+// 	a.stackedEvents = append(a.stackedEvents, StackedEvent{
+// 		blockID:          blockID,
+// 		block:            block,
+// 		abciResponse:     abciResponse,
+// 		validatorUpdates: validatorUpdates,
+// 	})
+// }
 
 // GetTxs calls PrepareProposal with the next height from the store and returns the transactions from the ABCI app
 func (a *Adapter) GetTxs(ctx context.Context) ([][]byte, error) {

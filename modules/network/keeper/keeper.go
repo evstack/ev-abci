@@ -173,7 +173,7 @@ func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer iterator.Close()
+	defer func() { _ = iterator.Close() }()
 
 	for ; iterator.Valid(); iterator.Next() {
 		addr, err := iterator.Key()

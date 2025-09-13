@@ -1,9 +1,9 @@
 package types
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const TypeMsgAttest = "attest"
@@ -32,7 +32,7 @@ func NewMsgJoinAttesterSet(authority string, consensusAddress string, pubkey cry
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &MsgJoinAttesterSet{
 		Authority:        authority,
 		ConsensusAddress: consensusAddress,

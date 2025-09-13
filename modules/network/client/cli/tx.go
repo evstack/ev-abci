@@ -113,7 +113,7 @@ func CmdJoinAttesterSet() *cobra.Command {
 	}
 
 	cmd.Flags().String("pubkey", "", "The validator's Protobuf JSON encoded public key")
-	cmd.MarkFlagRequired("pubkey")
+	_ = cmd.MarkFlagRequired("pubkey")
 	flags.AddTxFlagsToCmd(cmd)
 
 	return cmd

@@ -3,9 +3,9 @@ package types
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
 )
@@ -39,10 +39,10 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 }
 
 var (
-	Amino     = codec.NewLegacyAmino()
+	Amino = codec.NewLegacyAmino()
 	// Create a separate interface registry for this module to avoid conflicts
 	moduleInterfaceRegistry = cdctypes.NewInterfaceRegistry()
-	ModuleCdc = codec.NewProtoCodec(moduleInterfaceRegistry)
+	ModuleCdc               = codec.NewProtoCodec(moduleInterfaceRegistry)
 )
 
 func init() {

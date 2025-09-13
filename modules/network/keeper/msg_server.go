@@ -159,11 +159,11 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 
 	// Store the attester information including pubkey (key by consensus address)
 	attesterInfo := &types.AttesterInfo{
-		Validator:     msg.ConsensusAddress,  // Use consensus address as primary key
-		Pubkey:        msg.Pubkey,
-		JoinedHeight:  ctx.BlockHeight(),
+		Validator:    msg.ConsensusAddress, // Use consensus address as primary key
+		Pubkey:       msg.Pubkey,
+		JoinedHeight: ctx.BlockHeight(),
 	}
-	
+
 	if err := k.SetAttesterInfo(ctx, msg.ConsensusAddress, attesterInfo); err != nil {
 		return nil, sdkerr.Wrap(err, "set attester info")
 	}
