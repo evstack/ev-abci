@@ -45,17 +45,17 @@ func TestJoinAttesterSet(t *testing.T) {
 				err := sk.SetValidator(ctx, validator)
 				require.NoError(t, err, "failed to set validator")
 			},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
+			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
 			expSet: true,
 		},
 		"invalid_addr": {
 			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Validator: "invalidAddr"},
+			msg:    &types.MsgJoinAttesterSet{Authority: "invalidAddr", ConsensusAddress: "invalidAddr"},
 			expErr: sdkerrors.ErrInvalidAddress,
 		},
 		"val not exists": {
 			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
+			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
 			expErr: sdkerrors.ErrNotFound,
 		},
 		"val not bonded": {
@@ -67,7 +67,7 @@ func TestJoinAttesterSet(t *testing.T) {
 				err := sk.SetValidator(ctx, validator)
 				require.NoError(t, err, "failed to set validator")
 			},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
+			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
 			expErr: sdkerrors.ErrInvalidRequest,
 		},
 		"already set": {
@@ -79,7 +79,7 @@ func TestJoinAttesterSet(t *testing.T) {
 				require.NoError(t, sk.SetValidator(ctx, validator))
 				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
 			},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
+			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
 			expErr: sdkerrors.ErrInvalidRequest,
 			expSet: true,
 		},
@@ -127,14 +127,14 @@ func TestJoinAttesterSet(t *testing.T) {
 			if spec.expErr != nil {
 				require.ErrorIs(t, err, spec.expErr)
 				require.Nil(t, rsp)
-				exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.Validator)
+				exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
 				require.NoError(t, gotErr)
 				assert.Equal(t, exists, spec.expSet)
 				return
 			}
 			require.NoError(t, err)
 			require.NotNil(t, rsp)
-			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.Validator)
+			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
 			require.NoError(t, gotErr)
 			assert.True(t, exists)
 		})
