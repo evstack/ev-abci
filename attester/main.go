@@ -41,29 +41,37 @@ import (
 )
 
 const (
-	flagChainID  = "chain-id"
-	flagNode     = "node"
-	flagAPIAddr  = "api-addr"
-	flagHome     = "home"
-	flagVerbose  = "verbose"
-	flagMnemonic = "mnemonic"
+	flagChainID               = "chain-id"
+	flagNode                  = "node"
+	flagAPIAddr               = "api-addr"
+	flagHome                  = "home"
+	flagVerbose               = "verbose"
+	flagMnemonic              = "mnemonic"
+	flagBech32AccountPrefix   = "bech32-account-prefix"
+	flagBech32AccountPubkey   = "bech32-account-pubkey"
+	flagBech32ValidatorPrefix = "bech32-validator-prefix"
+	flagBech32ValidatorPubkey = "bech32-validator-pubkey"
 )
 
 // Config holds all configuration parameters for the attester
 type Config struct {
-	ChainID  string
-	Node     string
-	APIAddr  string
-	Home     string
-	Verbose  bool
-	Mnemonic string
+	ChainID               string
+	Node                  string
+	APIAddr               string
+	Home                  string
+	Verbose               bool
+	Mnemonic              string
+	Bech32AccountPrefix   string
+	Bech32AccountPubkey   string
+	Bech32ValidatorPrefix string
+	Bech32ValidatorPubkey string
 }
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:                        "attester_ws",
-		Short:                      "Attester client for Rollkit using websocket",
-		Long:                       `Attester client for Rollkit that joins the attester set and attests to blocks at the end of each epoch.`,
+		Use:                        "attester",
+		Short:                      "Attester client for Rollkit",
+		Long:                       `Attester client for Rollkit that joins the attester set and attests to blocks`,
 		DisableFlagParsing:         false,
 		SuggestionsMinimumDistance: 2,
 		RunE:                       runAttester,
@@ -76,6 +84,10 @@ func main() {
 	rootCmd.Flags().String(flagHome, "", "Directory for config and data")
 	rootCmd.Flags().Bool(flagVerbose, false, "Enable verbose output")
 	rootCmd.Flags().String(flagMnemonic, "", "Mnemonic for the private key")
+	rootCmd.Flags().String(flagBech32AccountPrefix, "gm", "Bech32 prefix for account addresses")
+	rootCmd.Flags().String(flagBech32AccountPubkey, "gmpub", "Bech32 prefix for account public keys")
+	rootCmd.Flags().String(flagBech32ValidatorPrefix, "gmvaloper", "Bech32 prefix for validator addresses")
+	rootCmd.Flags().String(flagBech32ValidatorPubkey, "gmvaloperpub", "Bech32 prefix for validator public keys")
 
 	_ = rootCmd.MarkFlagRequired(flagChainID)
 	_ = rootCmd.MarkFlagRequired(flagMnemonic)
@@ -119,13 +131,37 @@ func ParseFlags(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
+	bech32AccountPrefix, err := cmd.Flags().GetString(flagBech32AccountPrefix)
+	if err != nil {
+		return nil, err
+	}
+
+	bech32AccountPubkey, err := cmd.Flags().GetString(flagBech32AccountPubkey)
+	if err != nil {
+		return nil, err
+	}
+
+	bech32ValidatorPrefix, err := cmd.Flags().GetString(flagBech32ValidatorPrefix)
+	if err != nil {
+		return nil, err
+	}
+
+	bech32ValidatorPubkey, err := cmd.Flags().GetString(flagBech32ValidatorPubkey)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
-		ChainID:  chainID,
-		Node:     node,
-		APIAddr:  apiAddr,
-		Home:     home,
-		Verbose:  verbose,
-		Mnemonic: mnemonic,
+		ChainID:               chainID,
+		Node:                  node,
+		APIAddr:               apiAddr,
+		Home:                  home,
+		Verbose:               verbose,
+		Mnemonic:              mnemonic,
+		Bech32AccountPrefix:   bech32AccountPrefix,
+		Bech32AccountPubkey:   bech32AccountPubkey,
+		Bech32ValidatorPrefix: bech32ValidatorPrefix,
+		Bech32ValidatorPubkey: bech32ValidatorPubkey,
 	}, nil
 }
 
@@ -139,9 +175,17 @@ func runAttester(cmd *cobra.Command, _ []string) error {
 	defer cancel()
 
 	sdkConfig := sdk.GetConfig()
-	sdkConfig.SetBech32PrefixForAccount("gm", "gmpub")
-	sdkConfig.SetBech32PrefixForValidator("gmvaloper", "gmvaloperpub")
+	sdkConfig.SetBech32PrefixForAccount(config.Bech32AccountPrefix, config.Bech32AccountPubkey)
+	sdkConfig.SetBech32PrefixForValidator(config.Bech32ValidatorPrefix, config.Bech32ValidatorPubkey)
 	sdkConfig.Seal()
+
+	if config.Verbose {
+		fmt.Printf("Bech32 Configuration:\n")
+		fmt.Printf("  Account prefix: %s\n", config.Bech32AccountPrefix)
+		fmt.Printf("  Account pubkey: %s\n", config.Bech32AccountPubkey)
+		fmt.Printf("  Validator prefix: %s\n", config.Bech32ValidatorPrefix)
+		fmt.Printf("  Validator pubkey: %s\n", config.Bech32ValidatorPubkey)
+	}
 
 	operatorPrivKey, err := privateKeyFromMnemonic(config.Mnemonic)
 	if err != nil {

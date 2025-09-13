@@ -99,6 +99,10 @@ services:
       - GM_HOME=/home/attester/.gm
       - MNEMONIC=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about
       - VERBOSE=true
+      - BECH32_ACCOUNT_PREFIX=gm
+      - BECH32_ACCOUNT_PUBKEY=gmpub
+      - BECH32_VALIDATOR_PREFIX=gmvaloper
+      - BECH32_VALIDATOR_PUBKEY=gmvaloperpub
     depends_on:
       gm-chain:
         condition: service_healthy

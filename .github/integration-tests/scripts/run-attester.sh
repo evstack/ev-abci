@@ -9,11 +9,20 @@ GM_API="${GM_API:-http://gm-chain:1417}"
 MNEMONIC="${MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about}"
 VERBOSE="${VERBOSE:-true}"
 
+# Bech32 prefix configuration
+BECH32_ACCOUNT_PREFIX="${BECH32_ACCOUNT_PREFIX:-gm}"
+BECH32_ACCOUNT_PUBKEY="${BECH32_ACCOUNT_PUBKEY:-gmpub}"
+BECH32_VALIDATOR_PREFIX="${BECH32_VALIDATOR_PREFIX:-gmvaloper}"
+BECH32_VALIDATOR_PUBKEY="${BECH32_VALIDATOR_PUBKEY:-gmvaloperpub}"
+
 echo "🤖 Starting attester service..."
 echo "   Chain ID: $CHAIN_ID"
 echo "   Node: $GM_NODE"
 echo "   API: $GM_API"
 echo "   Home: $GM_HOME"
+echo "   Bech32 Prefixes:"
+echo "     Account: $BECH32_ACCOUNT_PREFIX / $BECH32_ACCOUNT_PUBKEY"
+echo "     Validator: $BECH32_VALIDATOR_PREFIX / $BECH32_VALIDATOR_PUBKEY"
 
 # Wait for GM chain to be ready
 echo "⏳ Waiting for GM chain to be ready..."
@@ -55,6 +64,10 @@ ATTESTER_CMD=(attester
     --mnemonic="$MNEMONIC"
     --api-addr="$GM_API"
     --node="$GM_NODE"
+    --bech32-account-prefix="$BECH32_ACCOUNT_PREFIX"
+    --bech32-account-pubkey="$BECH32_ACCOUNT_PUBKEY"
+    --bech32-validator-prefix="$BECH32_VALIDATOR_PREFIX"
+    --bech32-validator-pubkey="$BECH32_VALIDATOR_PUBKEY"
 )
 
 if [[ "$VERBOSE" == "true" ]]; then
