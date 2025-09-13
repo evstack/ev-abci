@@ -61,7 +61,6 @@ import (
 
 const (
 	flagTraceStore = "trace-store"
-	flagTransport  = "transport"
 	flagGRPCOnly   = "grpc-only"
 )
 
