@@ -8,6 +8,7 @@ import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "evabci/network/v1/types.proto";
+import "evabci/network/v1/attester.proto";
 
 // Query defines the gRPC querier service for the network module.
 service Query {
@@ -34,6 +35,21 @@ service Query {
   // SoftConfirmationStatus queries if a height is soft-confirmed
   rpc SoftConfirmationStatus(QuerySoftConfirmationStatusRequest) returns (QuerySoftConfirmationStatusResponse) {
     option (google.api.http).get = "/evabci/network/v1/soft-confirmation/{height}";
+  }
+
+  // AttesterSignatures queries all attester signatures for a specific height
+  rpc AttesterSignatures(QueryAttesterSignaturesRequest) returns (QueryAttesterSignaturesResponse) {
+    option (google.api.http).get = "/evabci/network/v1/signatures/{height}";
+  }
+
+  // LastAttestedHeight queries the last height that reached quorum
+  rpc LastAttestedHeight(QueryLastAttestedHeightRequest) returns (QueryLastAttestedHeightResponse) {
+    option (google.api.http).get = "/evabci/network/v1/last-attested-height";
+  }
+
+  // AttesterInfo queries the attester information including public key
+  rpc AttesterInfo(QueryAttesterInfoRequest) returns (QueryAttesterInfoResponse) {
+    option (google.api.http).get = "/evabci/network/v1/attester/{validator_address}";
   }
 }
 
@@ -92,4 +108,38 @@ message QuerySoftConfirmationStatusResponse {
   uint64 voted_power = 2;
   uint64 total_power = 3;
   string quorum_fraction = 4;
+}
+
+// QueryAttesterSignaturesRequest is the request type for the Query/AttesterSignatures RPC method.
+message QueryAttesterSignaturesRequest {
+  int64 height = 1;
+}
+
+// AttesterSignature represents a single attester's signature for a block
+message AttesterSignature {
+  string validator_address = 1;
+  bytes signature = 2;
+}
+
+// QueryAttesterSignaturesResponse is the response type for the Query/AttesterSignatures RPC method.
+message QueryAttesterSignaturesResponse {
+  repeated AttesterSignature signatures = 1;
+}
+
+// QueryLastAttestedHeightRequest is the request type for the Query/LastAttestedHeight RPC method.
+message QueryLastAttestedHeightRequest {}
+
+// QueryLastAttestedHeightResponse is the response type for the Query/LastAttestedHeight RPC method.
+message QueryLastAttestedHeightResponse {
+  int64 height = 1;
+}
+
+// QueryAttesterInfoRequest is the request type for the Query/AttesterInfo RPC method.
+message QueryAttesterInfoRequest {
+  string validator_address = 1;
+}
+
+// QueryAttesterInfoResponse is the response type for the Query/AttesterInfo RPC method.
+message QueryAttesterInfoResponse {
+  AttesterInfo attester_info = 1;
 }

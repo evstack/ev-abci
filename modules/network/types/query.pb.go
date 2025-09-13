@@ -537,6 +537,321 @@ func (m *QuerySoftConfirmationStatusResponse) GetQuorumFraction() string {
 	return ""
 }
 
+// QueryAttesterSignaturesRequest is the request type for the Query/AttesterSignatures RPC method.
+type QueryAttesterSignaturesRequest struct {
+	Height int64 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
+}
+
+func (m *QueryAttesterSignaturesRequest) Reset()         { *m = QueryAttesterSignaturesRequest{} }
+func (m *QueryAttesterSignaturesRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryAttesterSignaturesRequest) ProtoMessage()    {}
+func (*QueryAttesterSignaturesRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_faab6bfc228a74e1, []int{10}
+}
+func (m *QueryAttesterSignaturesRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryAttesterSignaturesRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryAttesterSignaturesRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryAttesterSignaturesRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryAttesterSignaturesRequest.Merge(m, src)
+}
+func (m *QueryAttesterSignaturesRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryAttesterSignaturesRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryAttesterSignaturesRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryAttesterSignaturesRequest proto.InternalMessageInfo
+
+func (m *QueryAttesterSignaturesRequest) GetHeight() int64 {
+	if m != nil {
+		return m.Height
+	}
+	return 0
+}
+
+// AttesterSignature represents a single attester's signature for a block
+type AttesterSignature struct {
+	ValidatorAddress string `protobuf:"bytes,1,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+	Signature        []byte `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+}
+
+func (m *AttesterSignature) Reset()         { *m = AttesterSignature{} }
+func (m *AttesterSignature) String() string { return proto.CompactTextString(m) }
+func (*AttesterSignature) ProtoMessage()    {}
+func (*AttesterSignature) Descriptor() ([]byte, []int) {
+	return fileDescriptor_faab6bfc228a74e1, []int{11}
+}
+func (m *AttesterSignature) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AttesterSignature) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AttesterSignature.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AttesterSignature) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AttesterSignature.Merge(m, src)
+}
+func (m *AttesterSignature) XXX_Size() int {
+	return m.Size()
+}
+func (m *AttesterSignature) XXX_DiscardUnknown() {
+	xxx_messageInfo_AttesterSignature.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AttesterSignature proto.InternalMessageInfo
+
+func (m *AttesterSignature) GetValidatorAddress() string {
+	if m != nil {
+		return m.ValidatorAddress
+	}
+	return ""
+}
+
+func (m *AttesterSignature) GetSignature() []byte {
+	if m != nil {
+		return m.Signature
+	}
+	return nil
+}
+
+// QueryAttesterSignaturesResponse is the response type for the Query/AttesterSignatures RPC method.
+type QueryAttesterSignaturesResponse struct {
+	Signatures []*AttesterSignature `protobuf:"bytes,1,rep,name=signatures,proto3" json:"signatures,omitempty"`
+}
+
+func (m *QueryAttesterSignaturesResponse) Reset()         { *m = QueryAttesterSignaturesResponse{} }
+func (m *QueryAttesterSignaturesResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryAttesterSignaturesResponse) ProtoMessage()    {}
+func (*QueryAttesterSignaturesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_faab6bfc228a74e1, []int{12}
+}
+func (m *QueryAttesterSignaturesResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryAttesterSignaturesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryAttesterSignaturesResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryAttesterSignaturesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryAttesterSignaturesResponse.Merge(m, src)
+}
+func (m *QueryAttesterSignaturesResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryAttesterSignaturesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryAttesterSignaturesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryAttesterSignaturesResponse proto.InternalMessageInfo
+
+func (m *QueryAttesterSignaturesResponse) GetSignatures() []*AttesterSignature {
+	if m != nil {
+		return m.Signatures
+	}
+	return nil
+}
+
+// QueryLastAttestedHeightRequest is the request type for the Query/LastAttestedHeight RPC method.
+type QueryLastAttestedHeightRequest struct {
+}
+
+func (m *QueryLastAttestedHeightRequest) Reset()         { *m = QueryLastAttestedHeightRequest{} }
+func (m *QueryLastAttestedHeightRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryLastAttestedHeightRequest) ProtoMessage()    {}
+func (*QueryLastAttestedHeightRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_faab6bfc228a74e1, []int{13}
+}
+func (m *QueryLastAttestedHeightRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryLastAttestedHeightRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryLastAttestedHeightRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryLastAttestedHeightRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryLastAttestedHeightRequest.Merge(m, src)
+}
+func (m *QueryLastAttestedHeightRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryLastAttestedHeightRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryLastAttestedHeightRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryLastAttestedHeightRequest proto.InternalMessageInfo
+
+// QueryLastAttestedHeightResponse is the response type for the Query/LastAttestedHeight RPC method.
+type QueryLastAttestedHeightResponse struct {
+	Height int64 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
+}
+
+func (m *QueryLastAttestedHeightResponse) Reset()         { *m = QueryLastAttestedHeightResponse{} }
+func (m *QueryLastAttestedHeightResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryLastAttestedHeightResponse) ProtoMessage()    {}
+func (*QueryLastAttestedHeightResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_faab6bfc228a74e1, []int{14}
+}
+func (m *QueryLastAttestedHeightResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryLastAttestedHeightResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryLastAttestedHeightResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryLastAttestedHeightResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryLastAttestedHeightResponse.Merge(m, src)
+}
+func (m *QueryLastAttestedHeightResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryLastAttestedHeightResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryLastAttestedHeightResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryLastAttestedHeightResponse proto.InternalMessageInfo
+
+func (m *QueryLastAttestedHeightResponse) GetHeight() int64 {
+	if m != nil {
+		return m.Height
+	}
+	return 0
+}
+
+// QueryAttesterInfoRequest is the request type for the Query/AttesterInfo RPC method.
+type QueryAttesterInfoRequest struct {
+	ValidatorAddress string `protobuf:"bytes,1,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+}
+
+func (m *QueryAttesterInfoRequest) Reset()         { *m = QueryAttesterInfoRequest{} }
+func (m *QueryAttesterInfoRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryAttesterInfoRequest) ProtoMessage()    {}
+func (*QueryAttesterInfoRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_faab6bfc228a74e1, []int{15}
+}
+func (m *QueryAttesterInfoRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryAttesterInfoRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryAttesterInfoRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryAttesterInfoRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryAttesterInfoRequest.Merge(m, src)
+}
+func (m *QueryAttesterInfoRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryAttesterInfoRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryAttesterInfoRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryAttesterInfoRequest proto.InternalMessageInfo
+
+func (m *QueryAttesterInfoRequest) GetValidatorAddress() string {
+	if m != nil {
+		return m.ValidatorAddress
+	}
+	return ""
+}
+
+// QueryAttesterInfoResponse is the response type for the Query/AttesterInfo RPC method.
+type QueryAttesterInfoResponse struct {
+	AttesterInfo *AttesterInfo `protobuf:"bytes,1,opt,name=attester_info,json=attesterInfo,proto3" json:"attester_info,omitempty"`
+}
+
+func (m *QueryAttesterInfoResponse) Reset()         { *m = QueryAttesterInfoResponse{} }
+func (m *QueryAttesterInfoResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryAttesterInfoResponse) ProtoMessage()    {}
+func (*QueryAttesterInfoResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_faab6bfc228a74e1, []int{16}
+}
+func (m *QueryAttesterInfoResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryAttesterInfoResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryAttesterInfoResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryAttesterInfoResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryAttesterInfoResponse.Merge(m, src)
+}
+func (m *QueryAttesterInfoResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryAttesterInfoResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryAttesterInfoResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryAttesterInfoResponse proto.InternalMessageInfo
+
+func (m *QueryAttesterInfoResponse) GetAttesterInfo() *AttesterInfo {
+	if m != nil {
+		return m.AttesterInfo
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*QueryParamsRequest)(nil), "evabci.network.v1.QueryParamsRequest")
 	proto.RegisterType((*QueryParamsResponse)(nil), "evabci.network.v1.QueryParamsResponse")
@@ -548,64 +863,84 @@ func init() {
 	proto.RegisterType((*QueryValidatorIndexResponse)(nil), "evabci.network.v1.QueryValidatorIndexResponse")
 	proto.RegisterType((*QuerySoftConfirmationStatusRequest)(nil), "evabci.network.v1.QuerySoftConfirmationStatusRequest")
 	proto.RegisterType((*QuerySoftConfirmationStatusResponse)(nil), "evabci.network.v1.QuerySoftConfirmationStatusResponse")
+	proto.RegisterType((*QueryAttesterSignaturesRequest)(nil), "evabci.network.v1.QueryAttesterSignaturesRequest")
+	proto.RegisterType((*AttesterSignature)(nil), "evabci.network.v1.AttesterSignature")
+	proto.RegisterType((*QueryAttesterSignaturesResponse)(nil), "evabci.network.v1.QueryAttesterSignaturesResponse")
+	proto.RegisterType((*QueryLastAttestedHeightRequest)(nil), "evabci.network.v1.QueryLastAttestedHeightRequest")
+	proto.RegisterType((*QueryLastAttestedHeightResponse)(nil), "evabci.network.v1.QueryLastAttestedHeightResponse")
+	proto.RegisterType((*QueryAttesterInfoRequest)(nil), "evabci.network.v1.QueryAttesterInfoRequest")
+	proto.RegisterType((*QueryAttesterInfoResponse)(nil), "evabci.network.v1.QueryAttesterInfoResponse")
 }
 
 func init() { proto.RegisterFile("evabci/network/v1/query.proto", fileDescriptor_faab6bfc228a74e1) }
 
 var fileDescriptor_faab6bfc228a74e1 = []byte{
-	// 820 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x55, 0xcf, 0x6f, 0x1b, 0x45,
-	0x14, 0xf6, 0x26, 0xb6, 0xc1, 0x2f, 0x55, 0x8b, 0xa7, 0x26, 0xb8, 0x5b, 0xe2, 0x26, 0x0b, 0xb4,
-	0x6e, 0x91, 0x77, 0xea, 0xa2, 0xb6, 0x42, 0xea, 0x85, 0x20, 0x10, 0xe5, 0x80, 0xca, 0x56, 0xea,
-	0x81, 0x03, 0xd6, 0x78, 0x77, 0xbc, 0x5e, 0xd5, 0xde, 0xd9, 0xec, 0x8c, 0xb7, 0x94, 0x28, 0x17,
-	0x8e, 0x70, 0x41, 0xe2, 0x0f, 0xe8, 0x99, 0xff, 0x01, 0x71, 0xee, 0xb1, 0x12, 0x17, 0x4e, 0x08,
-	0x25, 0xfc, 0x21, 0x68, 0xdf, 0x8c, 0x1d, 0x3b, 0x5e, 0xe7, 0xc7, 0xc9, 0x9e, 0xef, 0x7d, 0xdf,
-	0x9b, 0xef, 0xcd, 0x9b, 0x37, 0x0b, 0x5b, 0x3c, 0x63, 0x7d, 0x3f, 0xa2, 0x31, 0x57, 0x2f, 0x44,
-	0xfa, 0x9c, 0x66, 0x5d, 0xba, 0x37, 0xe1, 0xe9, 0x4b, 0x37, 0x49, 0x85, 0x12, 0xa4, 0xae, 0xc3,
-	0xae, 0x09, 0xbb, 0x59, 0xd7, 0x6e, 0x84, 0x22, 0x14, 0x18, 0xa5, 0xf9, 0x3f, 0x4d, 0xb4, 0xdf,
-	0x0f, 0x85, 0x08, 0x47, 0x9c, 0xb2, 0x24, 0xa2, 0x2c, 0x8e, 0x85, 0x62, 0x2a, 0x12, 0xb1, 0x34,
-	0xd1, 0x3b, 0xbe, 0x90, 0x63, 0x21, 0x69, 0x9f, 0x49, 0xae, 0xf3, 0xd3, 0xac, 0xdb, 0xe7, 0x8a,
-	0x75, 0x69, 0xc2, 0xc2, 0x28, 0x46, 0xb2, 0xe1, 0x16, 0x38, 0x52, 0x2f, 0x13, 0x6e, 0x52, 0x39,
-	0x0d, 0x20, 0xdf, 0xe6, 0x09, 0x9e, 0xb0, 0x94, 0x8d, 0xa5, 0xc7, 0xf7, 0x26, 0x5c, 0x2a, 0xe7,
-	0x1b, 0xb8, 0xba, 0x80, 0xca, 0x44, 0xc4, 0x92, 0x93, 0x87, 0x50, 0x4d, 0x10, 0x69, 0x5a, 0xdb,
-	0x56, 0x7b, 0xe3, 0xde, 0x35, 0x77, 0xa9, 0x1e, 0x57, 0x4b, 0x76, 0xcb, 0xaf, 0xff, 0xb9, 0x51,
-	0xf2, 0x0c, 0xdd, 0x79, 0x08, 0x5b, 0x98, 0xef, 0x33, 0xa5, 0xb8, 0xd4, 0xb5, 0xec, 0x46, 0x6a,
-	0xcc, 0x12, 0xb3, 0x21, 0xd9, 0x84, 0xea, 0x90, 0x47, 0xe1, 0x50, 0x61, 0xe6, 0x75, 0xcf, 0xac,
-	0x9c, 0xef, 0xa1, 0xb5, 0x4a, 0x68, 0x3c, 0x3d, 0x82, 0x6a, 0x1f, 0x11, 0xe3, 0xe9, 0xc3, 0x02,
-	0x4f, 0xcb, 0x6a, 0xa3, 0x71, 0x3a, 0xf0, 0x2e, 0xe6, 0xff, 0x22, 0x11, 0xfe, 0xf0, 0x71, 0x3c,
-	0x10, 0x53, 0x43, 0x0d, 0xa8, 0xf0, 0x1c, 0xc3, 0xac, 0x65, 0x4f, 0x2f, 0x9c, 0x5f, 0xd6, 0x60,
-	0xf3, 0x24, 0xdf, 0xf8, 0x28, 0x14, 0x90, 0x1d, 0xb8, 0x24, 0x15, 0x4b, 0x55, 0xcf, 0x54, 0xb7,
-	0x86, 0xd5, 0x6d, 0x20, 0xf6, 0x15, 0x42, 0x64, 0x0b, 0x80, 0xc7, 0xc1, 0x94, 0xb0, 0x8e, 0x84,
-	0x1a, 0x8f, 0x03, 0x13, 0xee, 0x42, 0x23, 0x61, 0xa9, 0x8a, 0xfc, 0x28, 0xc1, 0x02, 0x7a, 0xa6,
-	0xda, 0xf2, 0xb6, 0xd5, 0xbe, 0xe4, 0x5d, 0x5d, 0x88, 0xe9, 0xe2, 0xc8, 0xc7, 0x50, 0x67, 0xbe,
-	0x8a, 0x32, 0xde, 0xcb, 0xd8, 0x28, 0x0a, 0x98, 0x12, 0xa9, 0x6c, 0x56, 0xd0, 0xd6, 0x3b, 0x3a,
-	0xf0, 0x6c, 0x86, 0x93, 0x4f, 0xa1, 0x39, 0x97, 0x23, 0x0e, 0xe7, 0x35, 0x55, 0xd4, 0xbc, 0xb7,
-	0x10, 0x3f, 0x96, 0x3a, 0x0f, 0xc0, 0xc6, 0xc3, 0x98, 0x41, 0x8f, 0xe3, 0x80, 0xff, 0x30, 0x3d,
-	0xc1, 0x26, 0xbc, 0xc5, 0x82, 0x20, 0xe5, 0x52, 0xdf, 0x96, 0x9a, 0x37, 0x5d, 0x3a, 0xcf, 0xe0,
-	0x7a, 0xa1, 0x6e, 0x76, 0xcb, 0x2a, 0x51, 0x0e, 0x98, 0x86, 0xee, 0x14, 0x34, 0xf4, 0x84, 0x52,
-	0xf3, 0x9d, 0x47, 0xe0, 0x60, 0xde, 0xa7, 0x62, 0xa0, 0x3e, 0x17, 0xf1, 0x20, 0x4a, 0xc7, 0x78,
-	0x2c, 0x4f, 0x15, 0x53, 0x13, 0x79, 0xd6, 0x55, 0xfb, 0xc3, 0x82, 0x0f, 0x4e, 0x95, 0x1b, 0x7b,
-	0x77, 0xa0, 0x1e, 0xc9, 0x9e, 0x14, 0x03, 0xd5, 0xf3, 0x35, 0x8b, 0x07, 0x98, 0xea, 0x6d, 0xef,
-	0x4a, 0x24, 0xe7, 0xc4, 0x3c, 0x20, 0x37, 0x60, 0x23, 0x13, 0x8a, 0x07, 0xbd, 0x44, 0xbc, 0xe0,
-	0x29, 0x76, 0xbf, 0xec, 0x01, 0x42, 0x4f, 0x72, 0x24, 0x27, 0x28, 0xa1, 0xd8, 0xc8, 0x10, 0xd6,
-	0x35, 0x01, 0x21, 0x4d, 0xb8, 0x05, 0x57, 0xf6, 0x26, 0x22, 0x9d, 0x8c, 0x7b, 0x83, 0x34, 0xef,
-	0x9d, 0x88, 0xb1, 0xf3, 0x35, 0xef, 0xb2, 0x86, 0xbf, 0x34, 0xe8, 0xbd, 0x57, 0x55, 0xa8, 0xa0,
-	0x7d, 0xf2, 0x23, 0x54, 0xf5, 0x10, 0x92, 0x8f, 0x0a, 0x8e, 0x6e, 0x79, 0xda, 0xed, 0x9b, 0x67,
-	0xd1, 0x74, 0xe5, 0xce, 0xce, 0x4f, 0x7f, 0xfd, 0xf7, 0xdb, 0xda, 0x75, 0x72, 0x8d, 0x2e, 0xbf,
-	0x29, 0x7a, 0xd0, 0xc9, 0xef, 0x16, 0xd4, 0x97, 0xa6, 0x8d, 0xdc, 0x5d, 0xb5, 0xc1, 0xaa, 0xf7,
-	0xc0, 0xee, 0x5e, 0x40, 0x61, 0xdc, 0x51, 0x74, 0x77, 0x9b, 0xdc, 0x2a, 0x70, 0xc7, 0x8e, 0x55,
-	0x74, 0x5f, 0xf7, 0xfb, 0x80, 0xfc, 0x6c, 0x41, 0x6d, 0x36, 0xc7, 0xa4, 0xbd, 0x6a, 0xc7, 0x93,
-	0x4f, 0x83, 0x7d, 0xfb, 0x1c, 0x4c, 0xe3, 0xa9, 0x8d, 0x9e, 0x1c, 0xb2, 0x5d, 0xe0, 0x09, 0x1f,
-	0x08, 0xba, 0x8f, 0x3f, 0x07, 0xe4, 0x95, 0x05, 0x97, 0x17, 0x6f, 0x35, 0xe9, 0xac, 0xda, 0xa7,
-	0x70, 0xde, 0x6c, 0xf7, 0xbc, 0x74, 0xe3, 0xcd, 0x45, 0x6f, 0x6d, 0x72, 0xb3, 0xc0, 0xdb, 0xec,
-	0x0d, 0xa0, 0xfb, 0x66, 0x68, 0x0f, 0xc8, 0x9f, 0x16, 0x6c, 0x16, 0x8f, 0x06, 0xb9, 0xbf, 0x6a,
-	0xeb, 0x53, 0x27, 0xd1, 0x7e, 0x70, 0x51, 0x99, 0x71, 0x7e, 0x1f, 0x9d, 0x53, 0xd2, 0x29, 0x70,
-	0x9e, 0xcf, 0x65, 0xc7, 0x9f, 0xd3, 0xce, 0xfa, 0xbd, 0xfb, 0xf5, 0xeb, 0xc3, 0x96, 0xf5, 0xe6,
-	0xb0, 0x65, 0xfd, 0x7b, 0xd8, 0xb2, 0x7e, 0x3d, 0x6a, 0x95, 0xde, 0x1c, 0xb5, 0x4a, 0x7f, 0x1f,
-	0xb5, 0x4a, 0xdf, 0xdd, 0x0d, 0x23, 0x35, 0x9c, 0xf4, 0x5d, 0x5f, 0x8c, 0x29, 0xcf, 0xa4, 0x62,
-	0xfe, 0x73, 0xca, 0xb3, 0x0e, 0xe6, 0x1e, 0x8b, 0x60, 0x32, 0xe2, 0x72, 0xb6, 0x07, 0x7e, 0x3c,
-	0xfb, 0x55, 0xfc, 0x7a, 0x7e, 0xf2, 0x7f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x87, 0x95, 0xec, 0xa8,
-	0xf0, 0x07, 0x00, 0x00,
+	// 1040 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x56, 0xcf, 0x6f, 0x1b, 0x45,
+	0x14, 0xce, 0x36, 0x89, 0x21, 0x2f, 0xa1, 0x6d, 0xa6, 0x21, 0x24, 0x6e, 0xe3, 0x38, 0x0b, 0xb4,
+	0x6e, 0x8b, 0x3d, 0x75, 0x50, 0x1b, 0x2a, 0xf5, 0xd2, 0xf0, 0xb3, 0x08, 0xa1, 0xb2, 0x91, 0x7a,
+	0xe0, 0x80, 0x35, 0xf6, 0x8e, 0x37, 0xab, 0xda, 0x3b, 0x9b, 0x9d, 0xb1, 0x4b, 0x89, 0x72, 0xe1,
+	0x08, 0x17, 0x24, 0xfe, 0x00, 0x04, 0x37, 0x04, 0x7f, 0x02, 0xe2, 0xdc, 0x63, 0x25, 0x2e, 0x9c,
+	0x10, 0x4a, 0xf8, 0x43, 0xd0, 0xbe, 0x19, 0xaf, 0xd7, 0xf1, 0xae, 0x9d, 0x9c, 0x92, 0x7d, 0xef,
+	0xfb, 0xde, 0xfb, 0xe6, 0xcd, 0xcc, 0x37, 0x86, 0x0d, 0xde, 0x67, 0xcd, 0x96, 0x4f, 0x03, 0xae,
+	0x9e, 0x89, 0xe8, 0x29, 0xed, 0xd7, 0xe9, 0x41, 0x8f, 0x47, 0xcf, 0x6b, 0x61, 0x24, 0x94, 0x20,
+	0xcb, 0x3a, 0x5d, 0x33, 0xe9, 0x5a, 0xbf, 0x5e, 0x5c, 0xf1, 0x84, 0x27, 0x30, 0x4b, 0xe3, 0xff,
+	0x34, 0xb0, 0x78, 0xcd, 0x13, 0xc2, 0xeb, 0x70, 0xca, 0x42, 0x9f, 0xb2, 0x20, 0x10, 0x8a, 0x29,
+	0x5f, 0x04, 0xd2, 0x64, 0x6f, 0xb5, 0x84, 0xec, 0x0a, 0x49, 0x9b, 0x4c, 0x72, 0x5d, 0x9f, 0xf6,
+	0xeb, 0x4d, 0xae, 0x58, 0x9d, 0x86, 0xcc, 0xf3, 0x03, 0x04, 0x1b, 0x6c, 0x86, 0x22, 0xf5, 0x3c,
+	0xe4, 0x83, 0x52, 0xe5, 0xf1, 0x34, 0x53, 0x8a, 0x4b, 0xc5, 0x23, 0x8d, 0xb0, 0x57, 0x80, 0x7c,
+	0x11, 0xb7, 0x78, 0xcc, 0x22, 0xd6, 0x95, 0x0e, 0x3f, 0xe8, 0x71, 0xa9, 0xec, 0xcf, 0xe1, 0xca,
+	0x48, 0x54, 0x86, 0x22, 0x90, 0x9c, 0xec, 0x40, 0x21, 0xc4, 0xc8, 0x9a, 0x55, 0xb6, 0x2a, 0x8b,
+	0xdb, 0xeb, 0xb5, 0xb1, 0x15, 0xd7, 0x34, 0x65, 0x77, 0xee, 0xc5, 0x3f, 0x9b, 0x33, 0x8e, 0x81,
+	0xdb, 0x3b, 0xb0, 0x81, 0xf5, 0x1e, 0x62, 0x73, 0x5c, 0xc0, 0xae, 0xaf, 0xba, 0x2c, 0x34, 0x0d,
+	0xc9, 0x2a, 0x14, 0xf6, 0xb9, 0xef, 0xed, 0x2b, 0xac, 0x3c, 0xeb, 0x98, 0x2f, 0xfb, 0x2b, 0x28,
+	0xe5, 0x11, 0x8d, 0xa6, 0x07, 0x50, 0x68, 0x62, 0xc4, 0x68, 0x7a, 0x2b, 0x43, 0xd3, 0x38, 0xdb,
+	0x70, 0xec, 0x2a, 0xbc, 0x8e, 0xf5, 0x3f, 0x0c, 0x45, 0x6b, 0xff, 0x51, 0xd0, 0x16, 0x03, 0x41,
+	0x2b, 0x30, 0xcf, 0xe3, 0x18, 0x56, 0x9d, 0x73, 0xf4, 0x87, 0xfd, 0xfd, 0x05, 0x58, 0x3d, 0x8d,
+	0x37, 0x3a, 0x32, 0x09, 0x64, 0x0b, 0x96, 0xa4, 0x62, 0x91, 0x6a, 0x98, 0xd5, 0x5d, 0xc0, 0xd5,
+	0x2d, 0x62, 0xec, 0x13, 0x0c, 0x91, 0x0d, 0x00, 0x1e, 0xb8, 0x03, 0xc0, 0x2c, 0x02, 0x16, 0x78,
+	0xe0, 0x9a, 0x74, 0x1d, 0x56, 0x42, 0x16, 0x29, 0xbf, 0xe5, 0x87, 0xb8, 0x80, 0x86, 0x59, 0xed,
+	0x5c, 0xd9, 0xaa, 0x2c, 0x39, 0x57, 0x46, 0x72, 0x7a, 0x71, 0xe4, 0x36, 0x2c, 0xb3, 0x96, 0xf2,
+	0xfb, 0xbc, 0xd1, 0x67, 0x1d, 0xdf, 0x65, 0x4a, 0x44, 0x72, 0x6d, 0x1e, 0x65, 0x5d, 0xd6, 0x89,
+	0x27, 0x49, 0x9c, 0xdc, 0x87, 0xb5, 0x54, 0x8d, 0xc0, 0x4b, 0x73, 0x0a, 0xc8, 0x79, 0x63, 0x24,
+	0x3f, 0xa4, 0xda, 0xf7, 0xa0, 0x88, 0xc3, 0x48, 0x42, 0x8f, 0x02, 0x97, 0x7f, 0x3d, 0x98, 0xe0,
+	0x1a, 0xbc, 0xc2, 0x5c, 0x37, 0xe2, 0x52, 0x9f, 0x96, 0x05, 0x67, 0xf0, 0x69, 0x3f, 0x81, 0xab,
+	0x99, 0xbc, 0xe4, 0x94, 0xcd, 0xfb, 0x71, 0xc0, 0x6c, 0xe8, 0x56, 0xc6, 0x86, 0x9e, 0x62, 0x6a,
+	0xbc, 0xfd, 0x00, 0x6c, 0xac, 0xbb, 0x27, 0xda, 0xea, 0x7d, 0x11, 0xb4, 0xfd, 0xa8, 0x8b, 0x63,
+	0xd9, 0x53, 0x4c, 0xf5, 0xe4, 0xb4, 0xa3, 0xf6, 0x87, 0x05, 0x6f, 0x4e, 0xa4, 0x1b, 0x79, 0xb7,
+	0x60, 0xd9, 0x97, 0x0d, 0x29, 0xda, 0xaa, 0xd1, 0xd2, 0x28, 0xee, 0x62, 0xa9, 0x57, 0x9d, 0x4b,
+	0xbe, 0x4c, 0x91, 0xb9, 0x4b, 0x36, 0x61, 0xb1, 0x2f, 0x14, 0x77, 0x1b, 0xa1, 0x78, 0xc6, 0x23,
+	0xdc, 0xfd, 0x39, 0x07, 0x30, 0xf4, 0x38, 0x8e, 0xc4, 0x00, 0x25, 0x14, 0xeb, 0x18, 0xc0, 0xac,
+	0x06, 0x60, 0x48, 0x03, 0x6e, 0xc0, 0xa5, 0x83, 0x9e, 0x88, 0x7a, 0xdd, 0x46, 0x3b, 0x8a, 0xf7,
+	0x4e, 0x04, 0xb8, 0xf3, 0x0b, 0xce, 0x45, 0x1d, 0xfe, 0xc8, 0x44, 0xed, 0xf7, 0x46, 0x6e, 0x0a,
+	0x8f, 0xf6, 0x7c, 0x2f, 0x60, 0xaa, 0x17, 0x71, 0x39, 0xfd, 0x8e, 0x2d, 0x8f, 0x91, 0xe2, 0x33,
+	0x94, 0x1c, 0x84, 0xc6, 0xe8, 0x3e, 0x5e, 0x4e, 0x12, 0x0f, 0x75, 0x9c, 0x5c, 0x83, 0x05, 0x39,
+	0x60, 0xe2, 0x22, 0x97, 0x9c, 0x61, 0xc0, 0xf6, 0x60, 0x33, 0x57, 0x99, 0x99, 0xe9, 0x07, 0x00,
+	0x09, 0x3e, 0x6e, 0x33, 0x3b, 0xf1, 0x22, 0xa7, 0x4a, 0x38, 0x29, 0x9e, 0x5d, 0x36, 0x23, 0xf8,
+	0x8c, 0x49, 0x65, 0x90, 0xe6, 0x16, 0x0d, 0x7c, 0xed, 0xbe, 0x91, 0x92, 0x85, 0x30, 0x52, 0xf2,
+	0xa6, 0xf4, 0x31, 0xac, 0x8d, 0xac, 0x22, 0x6d, 0x16, 0xe7, 0x19, 0x96, 0xcd, 0x60, 0x3d, 0xa3,
+	0x50, 0x32, 0x88, 0xd7, 0x06, 0x06, 0xdd, 0xf0, 0x83, 0xb6, 0x30, 0x77, 0x60, 0x73, 0xc2, 0x2c,
+	0x90, 0xbf, 0xc4, 0x52, 0x5f, 0xdb, 0x3f, 0x03, 0xcc, 0x63, 0x0f, 0xf2, 0x0d, 0x14, 0xb4, 0x21,
+	0x93, 0xb7, 0x33, 0x4a, 0x8c, 0x3b, 0x7f, 0xf1, 0xfa, 0x34, 0x98, 0x16, 0x6a, 0x6f, 0x7d, 0xfb,
+	0xd7, 0x7f, 0x3f, 0x5e, 0xb8, 0x4a, 0xd6, 0xe9, 0xf8, 0x13, 0xa3, 0x4d, 0x9f, 0xfc, 0x6a, 0x0d,
+	0x0e, 0x56, 0xda, 0x9c, 0xee, 0xe4, 0x35, 0xc8, 0x7b, 0x1b, 0x8a, 0xf5, 0x73, 0x30, 0x8c, 0x3a,
+	0x8a, 0xea, 0x6e, 0x92, 0x1b, 0x34, 0xef, 0x01, 0x44, 0x16, 0x3d, 0xd4, 0x9b, 0x7b, 0x44, 0xbe,
+	0xb3, 0x60, 0x21, 0xf1, 0x74, 0x52, 0xc9, 0xeb, 0x78, 0xfa, 0x99, 0x28, 0xde, 0x3c, 0x03, 0xd2,
+	0x68, 0xaa, 0xa0, 0x26, 0x9b, 0x94, 0x33, 0x34, 0xe1, 0x63, 0x41, 0x0f, 0xf1, 0xcf, 0x11, 0xf9,
+	0xc9, 0x82, 0x8b, 0xa3, 0x0e, 0x47, 0xaa, 0x79, 0x7d, 0x32, 0xbd, 0xb7, 0x58, 0x3b, 0x2b, 0xdc,
+	0x68, 0xab, 0xa1, 0xb6, 0x0a, 0xb9, 0x9e, 0xa1, 0x2d, 0x39, 0xc0, 0xf4, 0xd0, 0x1c, 0xed, 0x23,
+	0xf2, 0xa7, 0x05, 0xab, 0xd9, 0x36, 0x49, 0xee, 0xe6, 0xb5, 0x9e, 0xe8, 0xca, 0xc5, 0x7b, 0xe7,
+	0xa5, 0x19, 0xe5, 0x77, 0x51, 0x39, 0x25, 0xd5, 0x0c, 0xe5, 0xb1, 0x47, 0x57, 0x5b, 0x29, 0xee,
+	0x70, 0xbf, 0x7f, 0xb3, 0x80, 0x8c, 0xfb, 0x11, 0x99, 0x72, 0xd4, 0x32, 0x5c, 0xb5, 0xb8, 0x7d,
+	0x1e, 0xca, 0x19, 0xc6, 0x3d, 0xf4, 0xb3, 0xa1, 0xda, 0xdf, 0x2d, 0x20, 0xe3, 0x96, 0x95, 0xaf,
+	0x36, 0xd7, 0x00, 0xf3, 0xd5, 0xe6, 0x3b, 0xe2, 0xc4, 0xcb, 0xd4, 0x61, 0x52, 0x55, 0x8d, 0xf7,
+	0xb8, 0x55, 0xad, 0x97, 0xfc, 0x62, 0xc1, 0x52, 0xda, 0x9d, 0xc8, 0xed, 0x69, 0x33, 0x4a, 0x5f,
+	0xa9, 0x77, 0xce, 0x06, 0x36, 0xe2, 0x76, 0x50, 0x5c, 0x9d, 0x50, 0x9a, 0xff, 0x53, 0x97, 0x1e,
+	0x8e, 0xb9, 0xf3, 0xd1, 0xee, 0xa7, 0x2f, 0x8e, 0x4b, 0xd6, 0xcb, 0xe3, 0x92, 0xf5, 0xef, 0x71,
+	0xc9, 0xfa, 0xe1, 0xa4, 0x34, 0xf3, 0xf2, 0xa4, 0x34, 0xf3, 0xf7, 0x49, 0x69, 0xe6, 0xcb, 0x3b,
+	0x9e, 0xaf, 0xf6, 0x7b, 0xcd, 0x5a, 0x4b, 0x74, 0x29, 0xef, 0x4b, 0xc5, 0x5a, 0x4f, 0x29, 0xef,
+	0x57, 0xb1, 0x7a, 0x57, 0xb8, 0xbd, 0x0e, 0x97, 0x49, 0x17, 0xfc, 0xb1, 0xdd, 0x2c, 0xe0, 0x6f,
+	0xe9, 0x77, 0xff, 0x0f, 0x00, 0x00, 0xff, 0xff, 0x3d, 0xe0, 0x17, 0xeb, 0x20, 0x0c, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -630,6 +965,12 @@ type QueryClient interface {
 	ValidatorIndex(ctx context.Context, in *QueryValidatorIndexRequest, opts ...grpc.CallOption) (*QueryValidatorIndexResponse, error)
 	// SoftConfirmationStatus queries if a height is soft-confirmed
 	SoftConfirmationStatus(ctx context.Context, in *QuerySoftConfirmationStatusRequest, opts ...grpc.CallOption) (*QuerySoftConfirmationStatusResponse, error)
+	// AttesterSignatures queries all attester signatures for a specific height
+	AttesterSignatures(ctx context.Context, in *QueryAttesterSignaturesRequest, opts ...grpc.CallOption) (*QueryAttesterSignaturesResponse, error)
+	// LastAttestedHeight queries the last height that reached quorum
+	LastAttestedHeight(ctx context.Context, in *QueryLastAttestedHeightRequest, opts ...grpc.CallOption) (*QueryLastAttestedHeightResponse, error)
+	// AttesterInfo queries the attester information including public key
+	AttesterInfo(ctx context.Context, in *QueryAttesterInfoRequest, opts ...grpc.CallOption) (*QueryAttesterInfoResponse, error)
 }
 
 type queryClient struct {
@@ -685,6 +1026,33 @@ func (c *queryClient) SoftConfirmationStatus(ctx context.Context, in *QuerySoftC
 	return out, nil
 }
 
+func (c *queryClient) AttesterSignatures(ctx context.Context, in *QueryAttesterSignaturesRequest, opts ...grpc.CallOption) (*QueryAttesterSignaturesResponse, error) {
+	out := new(QueryAttesterSignaturesResponse)
+	err := c.cc.Invoke(ctx, "/evabci.network.v1.Query/AttesterSignatures", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) LastAttestedHeight(ctx context.Context, in *QueryLastAttestedHeightRequest, opts ...grpc.CallOption) (*QueryLastAttestedHeightResponse, error) {
+	out := new(QueryLastAttestedHeightResponse)
+	err := c.cc.Invoke(ctx, "/evabci.network.v1.Query/LastAttestedHeight", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) AttesterInfo(ctx context.Context, in *QueryAttesterInfoRequest, opts ...grpc.CallOption) (*QueryAttesterInfoResponse, error) {
+	out := new(QueryAttesterInfoResponse)
+	err := c.cc.Invoke(ctx, "/evabci.network.v1.Query/AttesterInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 type QueryServer interface {
 	// Params queries the module parameters
@@ -697,6 +1065,12 @@ type QueryServer interface {
 	ValidatorIndex(context.Context, *QueryValidatorIndexRequest) (*QueryValidatorIndexResponse, error)
 	// SoftConfirmationStatus queries if a height is soft-confirmed
 	SoftConfirmationStatus(context.Context, *QuerySoftConfirmationStatusRequest) (*QuerySoftConfirmationStatusResponse, error)
+	// AttesterSignatures queries all attester signatures for a specific height
+	AttesterSignatures(context.Context, *QueryAttesterSignaturesRequest) (*QueryAttesterSignaturesResponse, error)
+	// LastAttestedHeight queries the last height that reached quorum
+	LastAttestedHeight(context.Context, *QueryLastAttestedHeightRequest) (*QueryLastAttestedHeightResponse, error)
+	// AttesterInfo queries the attester information including public key
+	AttesterInfo(context.Context, *QueryAttesterInfoRequest) (*QueryAttesterInfoResponse, error)
 }
 
 // UnimplementedQueryServer can be embedded to have forward compatible implementations.
@@ -717,6 +1091,15 @@ func (*UnimplementedQueryServer) ValidatorIndex(ctx context.Context, req *QueryV
 }
 func (*UnimplementedQueryServer) SoftConfirmationStatus(ctx context.Context, req *QuerySoftConfirmationStatusRequest) (*QuerySoftConfirmationStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SoftConfirmationStatus not implemented")
+}
+func (*UnimplementedQueryServer) AttesterSignatures(ctx context.Context, req *QueryAttesterSignaturesRequest) (*QueryAttesterSignaturesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AttesterSignatures not implemented")
+}
+func (*UnimplementedQueryServer) LastAttestedHeight(ctx context.Context, req *QueryLastAttestedHeightRequest) (*QueryLastAttestedHeightResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LastAttestedHeight not implemented")
+}
+func (*UnimplementedQueryServer) AttesterInfo(ctx context.Context, req *QueryAttesterInfoRequest) (*QueryAttesterInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AttesterInfo not implemented")
 }
 
 func RegisterQueryServer(s grpc1.Server, srv QueryServer) {
@@ -813,6 +1196,60 @@ func _Query_SoftConfirmationStatus_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_AttesterSignatures_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryAttesterSignaturesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).AttesterSignatures(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/evabci.network.v1.Query/AttesterSignatures",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).AttesterSignatures(ctx, req.(*QueryAttesterSignaturesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_LastAttestedHeight_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryLastAttestedHeightRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).LastAttestedHeight(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/evabci.network.v1.Query/LastAttestedHeight",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).LastAttestedHeight(ctx, req.(*QueryLastAttestedHeightRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_AttesterInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryAttesterInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).AttesterInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/evabci.network.v1.Query/AttesterInfo",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).AttesterInfo(ctx, req.(*QueryAttesterInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var Query_serviceDesc = _Query_serviceDesc
 var _Query_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "evabci.network.v1.Query",
@@ -837,6 +1274,18 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SoftConfirmationStatus",
 			Handler:    _Query_SoftConfirmationStatus_Handler,
+		},
+		{
+			MethodName: "AttesterSignatures",
+			Handler:    _Query_AttesterSignatures_Handler,
+		},
+		{
+			MethodName: "LastAttestedHeight",
+			Handler:    _Query_LastAttestedHeight_Handler,
+		},
+		{
+			MethodName: "AttesterInfo",
+			Handler:    _Query_AttesterInfo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1188,6 +1637,224 @@ func (m *QuerySoftConfirmationStatusResponse) MarshalToSizedBuffer(dAtA []byte) 
 	return len(dAtA) - i, nil
 }
 
+func (m *QueryAttesterSignaturesRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryAttesterSignaturesRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryAttesterSignaturesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Height != 0 {
+		i = encodeVarintQuery(dAtA, i, uint64(m.Height))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AttesterSignature) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AttesterSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AttesterSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Signature) > 0 {
+		i -= len(m.Signature)
+		copy(dAtA[i:], m.Signature)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Signature)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.ValidatorAddress) > 0 {
+		i -= len(m.ValidatorAddress)
+		copy(dAtA[i:], m.ValidatorAddress)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.ValidatorAddress)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryAttesterSignaturesResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryAttesterSignaturesResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryAttesterSignaturesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Signatures) > 0 {
+		for iNdEx := len(m.Signatures) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Signatures[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQuery(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryLastAttestedHeightRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryLastAttestedHeightRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryLastAttestedHeightRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryLastAttestedHeightResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryLastAttestedHeightResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryLastAttestedHeightResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Height != 0 {
+		i = encodeVarintQuery(dAtA, i, uint64(m.Height))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryAttesterInfoRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryAttesterInfoRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryAttesterInfoRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.ValidatorAddress) > 0 {
+		i -= len(m.ValidatorAddress)
+		copy(dAtA[i:], m.ValidatorAddress)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.ValidatorAddress)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryAttesterInfoResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryAttesterInfoResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryAttesterInfoResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.AttesterInfo != nil {
+		{
+			size, err := m.AttesterInfo.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintQuery(dAtA []byte, offset int, v uint64) int {
 	offset -= sovQuery(v)
 	base := offset
@@ -1339,6 +2006,97 @@ func (m *QuerySoftConfirmationStatusResponse) Size() (n int) {
 	}
 	l = len(m.QuorumFraction)
 	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryAttesterSignaturesRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Height != 0 {
+		n += 1 + sovQuery(uint64(m.Height))
+	}
+	return n
+}
+
+func (m *AttesterSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.ValidatorAddress)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	l = len(m.Signature)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryAttesterSignaturesResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Signatures) > 0 {
+		for _, e := range m.Signatures {
+			l = e.Size()
+			n += 1 + l + sovQuery(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *QueryLastAttestedHeightRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *QueryLastAttestedHeightResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Height != 0 {
+		n += 1 + sovQuery(uint64(m.Height))
+	}
+	return n
+}
+
+func (m *QueryAttesterInfoRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.ValidatorAddress)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryAttesterInfoResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.AttesterInfo != nil {
+		l = m.AttesterInfo.Size()
 		n += 1 + l + sovQuery(uint64(l))
 	}
 	return n
@@ -2241,6 +2999,562 @@ func (m *QuerySoftConfirmationStatusResponse) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.QuorumFraction = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryAttesterSignaturesRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryAttesterSignaturesRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryAttesterSignaturesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			m.Height = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Height |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AttesterSignature) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AttesterSignature: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AttesterSignature: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ValidatorAddress", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ValidatorAddress = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signature", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signature = append(m.Signature[:0], dAtA[iNdEx:postIndex]...)
+			if m.Signature == nil {
+				m.Signature = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryAttesterSignaturesResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryAttesterSignaturesResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryAttesterSignaturesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signatures", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signatures = append(m.Signatures, &AttesterSignature{})
+			if err := m.Signatures[len(m.Signatures)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryLastAttestedHeightRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryLastAttestedHeightRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryLastAttestedHeightRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryLastAttestedHeightResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryLastAttestedHeightResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryLastAttestedHeightResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			m.Height = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Height |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryAttesterInfoRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryAttesterInfoRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryAttesterInfoRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ValidatorAddress", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ValidatorAddress = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryAttesterInfoResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryAttesterInfoResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryAttesterInfoResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AttesterInfo", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.AttesterInfo == nil {
+				m.AttesterInfo = &AttesterInfo{}
+			}
+			if err := m.AttesterInfo.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

@@ -156,8 +156,8 @@ func NewMockStakingKeeper() MockStakingKeeper {
 func (m *MockStakingKeeper) SetValidator(ctx context.Context, validator stakingtypes.Validator) error {
 	m.activeSet[validator.GetOperator()] = validator
 	return nil
-}
 
+}
 func (m MockStakingKeeper) GetAllValidators(ctx context.Context) (validators []stakingtypes.Validator, err error) {
 	return slices.SortedFunc(maps.Values(m.activeSet), func(v1 stakingtypes.Validator, v2 stakingtypes.Validator) int {
 		return strings.Compare(v1.OperatorAddress, v2.OperatorAddress)

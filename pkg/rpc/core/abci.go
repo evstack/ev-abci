@@ -37,6 +37,23 @@ func ABCIInfo(ctx *rpctypes.Context) (*ctypes.ResultABCIInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// In attester mode, override last_block_height with last attested height
+	if env.AttesterMode {
+		lastAttestedHeight, err := getLastAttestedHeight(ctx)
+		if err != nil {
+			// Log warning but don't fail the request - fall back to original height
+			env.Logger.Error("Failed to get last attested height for ABCIInfo", "error", err)
+		} else {
+			// Override the last block height with the last attested height
+			originalHeight := info.LastBlockHeight
+			info.LastBlockHeight = int64(lastAttestedHeight)
+			env.Logger.Debug("ABCIInfo using last attested height",
+				"lastAttestedHeight", lastAttestedHeight,
+				"originalHeight", originalHeight)
+		}
+	}
+
 	return &ctypes.ResultABCIInfo{
 		Response: *info,
 	}, nil

@@ -49,11 +49,14 @@ import (
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
 	"github.com/evstack/ev-node/sequencers/single"
+	rollkittypes "github.com/evstack/ev-node/types"
+	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
 	"github.com/evstack/ev-abci/pkg/rpc"
 	"github.com/evstack/ev-abci/pkg/rpc/core"
 	execsigner "github.com/evstack/ev-abci/pkg/signer"
+	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 const (
@@ -411,8 +414,9 @@ func setupNodeAndExecutor(
 		opts = append(opts, adapter.WithMetrics(m))
 	}
 
-	if srvCtx.Viper.GetBool(FlagNetworkSoftConfirmation) {
-		opts = append(opts, adapter.WithNetworkSoftConfirmationBlockFilter())
+	if srvCtx.Viper.GetBool(FlagAttesterMode) {
+		// TODO enable soft confirmation block filter when clarified
+		// opts = append(opts, adapter.WithNetworkSoftConfirmationBlockFilter())
 	}
 
 	executor = adapter.NewABCIExecutor(
@@ -480,6 +484,19 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, err
 	}
 
+	// Choose ValidatorHasherProvider based on attester mode (network soft confirmation)
+	var validatorHasherProvider func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error)
+	if srvCtx.Viper.GetBool(FlagAttesterMode) {
+		// Attester mode: use validators from ABCI store
+		abciStore := execstore.NewExecABCIStore(database)
+		validatorHasherProvider = adapter.ValidatorHasherFromStoreProvider(abciStore)
+		sdkLogger.Info("using attester mode: validators will be read from ABCI store")
+	} else {
+		// Sequencer mode: single validator
+		validatorHasherProvider = adapter.ValidatorHasherProvider()
+		sdkLogger.Info("using sequencer mode: single validator")
+	}
+
 	rolllkitNode, err = node.NewNode(
 		ctx,
 		rollkitcfg,
@@ -496,7 +513,7 @@ func setupNodeAndExecutor(
 			ManagerOptions: rollkitblock.ManagerOptions{
 				AggregatorNodeSignatureBytesProvider: adapter.AggregatorNodeSignatureBytesProvider(executor),
 				SyncNodeSignatureBytesProvider:       adapter.SyncNodeSignatureBytesProvider(executor),
-				ValidatorHasherProvider:              adapter.ValidatorHasherProvider(),
+				ValidatorHasherProvider:              validatorHasherProvider,
 			},
 		},
 	)
@@ -521,6 +538,7 @@ func setupNodeAndExecutor(
 		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
 		RPCConfig:    *cfg.RPC,
 		EVNodeConfig: rollkitcfg,
+		AttesterMode: srvCtx.Viper.GetBool(FlagAttesterMode),
 	})
 
 	// Pass the created handler to the RPC server constructor
