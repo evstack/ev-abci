@@ -562,14 +562,15 @@ func (a *Adapter) GetLastCommit(ctx context.Context, blockHeight uint64) (*cmtty
 			return nil, fmt.Errorf("get previous block ID: %w", err)
 		}
 
-		// Use the node's consensus validator address from AppGenesis instead of header.ProposerAddress
-		// header.ProposerAddress comes from Rollkit and may not match the CometBFT validator set
+		// Use the node's consensus validator address from AppGenesis instead of header.ProposerAddress.
+		// header.ProposerAddress comes from Rollkit and may not match the CometBFT validator set.
+		// Tests may skip wiring AppGenesis, so guard against nil before dereferencing.
 		var validatorAddress cmttypes.Address
-		if len(a.AppGenesis.Consensus.Validators) > 0 {
+		if a.AppGenesis != nil && len(a.AppGenesis.Consensus.Validators) > 0 {
 			// Use the first validator's address (should be the node's consensus key)
 			validatorAddress = cmttypes.Address(a.AppGenesis.Consensus.Validators[0].Address)
 		} else {
-			// Fallback to header.ProposerAddress if no validators in genesis
+			// Fallback to header.ProposerAddress if no validators in genesis or AppGenesis is unset
 			validatorAddress = cmttypes.Address(header.ProposerAddress)
 		}
 
