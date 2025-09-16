@@ -37,7 +37,7 @@ import (
 	"github.com/spf13/cobra"
 
 	networktypes "github.com/evstack/ev-abci/modules/network/types"
-	rlktypes "github.com/evstack/ev-node/types"
+	evolvetypes "github.com/evstack/ev-node/types"
 )
 
 const (
@@ -70,8 +70,8 @@ type Config struct {
 func main() {
 	rootCmd := &cobra.Command{
 		Use:                        "attester",
-		Short:                      "Attester client for Rollkit",
-		Long:                       `Attester client for Rollkit that joins the attester set and attests to blocks`,
+		Short:                      "Attester client for Evolve",
+		Long:                       `Attester client for Evolve that joins the attester set and attests to blocks`,
 		DisableFlagParsing:         false,
 		SuggestionsMinimumDistance: 2,
 		RunE:                       runAttester,
@@ -778,9 +778,9 @@ func submitAttestation(
 	pv *pvm.FilePV,
 	clientCtx client.Context,
 ) error {
-	header, err := getRollkitHeader(ctx, config.Node, height)
+	header, err := getEvolveHeader(config.Node, height)
 	if err != nil {
-		return fmt.Errorf("getting rollkit header: %w", err)
+		return fmt.Errorf("getting Evolve header: %w", err)
 	}
 
 	// Get BlockID from store like the sequencer does via SignaturePayloadProvider
@@ -863,8 +863,8 @@ func submitAttestation(
 	return nil
 }
 
-// getRollkitHeader gets the rollkit header for a given height
-func getRollkitHeader(ctx context.Context, node string, height int64) (*rlktypes.Header, error) {
+// getEvolveHeader gets the Evolve header for a given height
+func getEvolveHeader(node string, height int64) (*evolvetypes.Header, error) {
 	// Parse node URL
 	parsed, err := url.Parse(node)
 	if err != nil {
@@ -941,14 +941,14 @@ func getRollkitHeader(ctx context.Context, node string, height int64) (*rlktypes
 	// Parse version
 	appVersion, _ := strconv.ParseUint(header.Version.App, 10, 64)
 
-	// Create rollkit header
-	rlkHeader := &rlktypes.Header{
-		BaseHeader: rlktypes.BaseHeader{
+	// Create Evolve header
+	evHeader := &evolvetypes.Header{
+		BaseHeader: evolvetypes.BaseHeader{
 			Height:  heightUint,
 			Time:    uint64(timeStamp.UnixNano()),
 			ChainID: header.ChainID,
 		},
-		Version: rlktypes.Version{
+		Version: evolvetypes.Version{
 			Block: 1, // Default block version
 			App:   appVersion,
 		},
@@ -962,7 +962,7 @@ func getRollkitHeader(ctx context.Context, node string, height int64) (*rlktypes
 		ValidatorHash:   validatorsHash,
 	}
 
-	return rlkHeader, nil
+	return evHeader, nil
 }
 
 // getOriginalBlockID gets the BlockID from the RPC endpoint
