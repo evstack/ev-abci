@@ -36,7 +36,7 @@ require (
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/ipfs/go-datastore v0.8.3
 	github.com/libp2p/go-libp2p v0.43.0
-	github.com/libp2p/go-libp2p-pubsub v0.14.3
+	github.com/libp2p/go-libp2p-pubsub v0.15.0
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/cors v1.11.1
