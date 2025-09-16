@@ -5,6 +5,7 @@ go 1.24.1
 replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
 	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
+	github.com/ipfs/go-datastore => github.com/celestiaorg/go-datastore v0.0.0-20250801131506-48a63ae531e4
 )
 
 exclude github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2
@@ -18,35 +19,35 @@ require (
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/math v1.5.3
 	cosmossdk.io/store v1.1.2
-	github.com/celestiaorg/go-header v0.6.6
+	github.com/celestiaorg/go-header v0.7.1
 	github.com/cometbft/cometbft v0.38.17
 	github.com/cometbft/cometbft-db v0.14.1
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/gogoproto v1.7.0
-	github.com/evstack/ev-node v1.0.0-beta.2.0.20250901092248-017d6d45a621
-	github.com/evstack/ev-node/core v1.0.0-beta.1.0.20250901092248-017d6d45a621
-	github.com/evstack/ev-node/da v0.0.0-20250901092248-017d6d45a621
-	github.com/evstack/ev-node/sequencers/single v0.0.0-20250901092248-017d6d45a621
+	github.com/evstack/ev-node v1.0.0-beta.2.0.20250908090838-0584153217ed
+	github.com/evstack/ev-node/core v1.0.0-beta.1.0.20250905094535-f79548be1384
+	github.com/evstack/ev-node/da v0.0.0-20250905094535-f79548be1384
+	github.com/evstack/ev-node/sequencers/single v0.0.0-20250905094535-f79548be1384
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/ipfs/go-datastore v0.8.3
 	github.com/libp2p/go-libp2p v0.43.0
-	github.com/libp2p/go-libp2p-pubsub v0.14.2
+	github.com/libp2p/go-libp2p-pubsub v0.14.3
 	github.com/multiformats/go-multiaddr v0.16.1
-	github.com/prometheus/client_golang v1.23.0
+	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/cors v1.11.1
 	github.com/rs/zerolog v1.34.0
-	github.com/spf13/cobra v1.9.1
+	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/net v0.43.0
-	golang.org/x/sync v0.16.0
+	golang.org/x/net v0.44.0
+	golang.org/x/sync v0.17.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250707201910-8d1bb00bc6a7
-	google.golang.org/grpc v1.75.0
-	google.golang.org/protobuf v1.36.8
+	google.golang.org/grpc v1.75.1
+	google.golang.org/protobuf v1.36.9
 )
 
 require (
@@ -265,7 +266,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.65.0 // indirect
+	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
@@ -282,7 +283,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.8.0 // indirect
-	github.com/spf13/pflag v1.0.7 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/spf13/viper v1.20.1 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
@@ -314,13 +315,14 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/arch v0.17.0 // indirect
-	golang.org/x/crypto v0.41.0 // indirect
+	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/exp v0.0.0-20250811191247-51f88131bc50 // indirect
 	golang.org/x/mod v0.27.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/term v0.34.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/term v0.35.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
