@@ -481,7 +481,6 @@ func setupNodeAndExecutor(
 	}
 
 	rolllkitNode, err = node.NewNode(
-		ctx,
 		rollkitcfg,
 		executor,
 		sequencer,
@@ -493,7 +492,7 @@ func setupNodeAndExecutor(
 		metrics,
 		*evLogger,
 		node.NodeOptions{
-			ManagerOptions: rollkitblock.ManagerOptions{
+			BlockOptions: rollkitblock.BlockOptions{
 				AggregatorNodeSignatureBytesProvider: adapter.AggregatorNodeSignatureBytesProvider(executor),
 				SyncNodeSignatureBytesProvider:       adapter.SyncNodeSignatureBytesProvider(executor),
 				ValidatorHasherProvider:              adapter.ValidatorHasherProvider(),
