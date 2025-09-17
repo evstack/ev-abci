@@ -9,8 +9,8 @@ import (
 
 	"cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker"
-	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/container"
+	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/dataavailability"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/types"
@@ -175,7 +175,7 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 					"--evnode.da.gas_price", "0.000001",
 					"--evnode.da.auth_token", authToken,
 					"--evnode.rpc.address", "0.0.0.0:7331",
-					"--evnode.da.header_namespace", "ev-header",
+					"--evnode.da.namespace", "ev-header",
 					"--evnode.da.data_namespace", "ev-data",
 					"--evnode.da.start_height", daStartHeight,
 					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
@@ -209,7 +209,7 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node 
 	// Cast to concrete cosmos.ChainNode to access NodeID method
 	cosmosNode, ok := node.(*cosmos.ChainNode)
 	s.Require().True(ok, "node is not a cosmos.ChainNode")
-	
+
 	// Get the node ID
 	nodeID, err := cosmosNode.NodeID(ctx)
 	s.Require().NoError(err)
@@ -246,7 +246,7 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
 			"--evnode.rpc.address", "0.0.0.0:7331",
-			"--evnode.da.header_namespace", "ev-header",
+			"--evnode.da.namespace", "ev-header",
 			"--evnode.da.data_namespace", "ev-data",
 			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
