@@ -292,8 +292,8 @@ github.com/envoyproxy/go-control-plane v0.9.9-0.20201210154907-fd9021fe5dad/go.m
 github.com/envoyproxy/go-control-plane v0.9.10-0.20210907150352-cf90f659a021/go.mod h1:AFq3mo9L8Lqqiid3OhADV3RfLJnjiw63cSpi+fDTRC0=
 github.com/envoyproxy/go-control-plane v0.10.2-0.20220325020618-49ff273808a1/go.mod h1:KJwIaB5Mv44NWtYuAOFCVOjcI94vtpEz2JU/D2v6IjE=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
-github.com/evstack/ev-node v1.0.0-beta.3 h1:0s3jgawkcBexvazALF10jxzUMxKUVQHy1QjlMFSdbAs=
-github.com/evstack/ev-node v1.0.0-beta.3/go.mod h1:sidmvCeHFnDp8/GcOA2EYcRIGKetyek+RqSeRN7AloY=
+github.com/evstack/ev-node v1.0.0-beta.3.0.20250918205529-b8975f136297 h1:3oTg8+vtsJU++VyZ71K0zOW4OTWiEQLn+OwfpH1sgYA=
+github.com/evstack/ev-node v1.0.0-beta.3.0.20250918205529-b8975f136297/go.mod h1:sidmvCeHFnDp8/GcOA2EYcRIGKetyek+RqSeRN7AloY=
 github.com/evstack/ev-node/core v1.0.0-beta.2 h1:M1QQuG/DoP1jqa49E2REv9267XN8buhsZDdSBfW2l4o=
 github.com/evstack/ev-node/core v1.0.0-beta.2/go.mod h1:n2w/LhYQTPsi48m6lMj16YiIqsaQw6gxwjyJvR+B3sY=
 github.com/evstack/ev-node/da v1.0.0-beta.2 h1:JXLhxcu0Uc9va5J8CFMcTHwtHdowS2JeZNSuPAG0wFw=
