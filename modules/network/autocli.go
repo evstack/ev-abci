@@ -49,6 +49,14 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 						{ProtoField: "height"},
 					},
 				},
+				{
+					RpcMethod: "AttesterSignatures",
+					Use:       "signatures [height]",
+					Short:     "Query all attester signatures for a specific height",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "height"},
+					},
+				},
 			},
 		},
 		Tx: &autocliv1.ServiceCommandDescriptor{
