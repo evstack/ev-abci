@@ -298,8 +298,8 @@ github.com/evstack/ev-node/core v1.0.0-beta.2 h1:M1QQuG/DoP1jqa49E2REv9267XN8buh
 github.com/evstack/ev-node/core v1.0.0-beta.2/go.mod h1:n2w/LhYQTPsi48m6lMj16YiIqsaQw6gxwjyJvR+B3sY=
 github.com/evstack/ev-node/da v1.0.0-beta.2 h1:JXLhxcu0Uc9va5J8CFMcTHwtHdowS2JeZNSuPAG0wFw=
 github.com/evstack/ev-node/da v1.0.0-beta.2/go.mod h1:06Sd5X+6fo83ARHiVj5YLPbGlqbhp1wWzaM5EH2So5c=
-github.com/evstack/ev-node/sequencers/single v0.0.0-20250917144924-05372840f308 h1:Zmrwmbzi/7EIiZgz7dFrjLZws8L45rDGU1hUqZcAhaU=
-github.com/evstack/ev-node/sequencers/single v0.0.0-20250917144924-05372840f308/go.mod h1:Q8nNm/QtiScFSgHPgohPxu/mUKsb1QK3voAAwoulhAw=
+github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2 h1:UlQd3WL2p6bBtGMYYok8PUGxUEQJ74rf2XHlCqJF7Z8=
+github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2/go.mod h1:df5iQYNItmXgJlEJnW+nRlfWzsgwOtRwIEsh2c2wwu4=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
 github.com/fatih/color v1.15.0 h1:kOqh6YHBtK8aywxGerMG2Eq3H6Qgoqeo13Bk2Mv/nBs=
