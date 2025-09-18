@@ -291,6 +291,8 @@ func (a *Adapter) InitChain(ctx context.Context, genesisTime time.Time, initialH
 		return nil, 0, fmt.Errorf("save initial state: %w", err)
 	}
 
+	fmt.Println("Initial state saved", s)
+
 	a.Logger.Info("chain initialized successfully", "appHash", fmt.Sprintf("%X", res.AppHash))
 	return res.AppHash, uint64(s.ConsensusParams.Block.MaxBytes), nil
 }
@@ -310,6 +312,7 @@ func (a *Adapter) ExecuteTxs(
 	a.Logger.Info("Executing block", "height", blockHeight, "num_txs", len(txs), "timestamp", timestamp)
 	a.metrics.TxsExecutedPerBlock.Observe(float64(len(txs)))
 
+	fmt.Println("Executing block", "height", blockHeight, "num_txs", len(txs), "timestamp", timestamp)
 	s, err := a.Store.LoadState(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("load state: %w", err)

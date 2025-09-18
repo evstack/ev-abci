@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -46,7 +45,7 @@ func NewExecABCIStore(store ds.Batching) *Store {
 // When the state does not exist, it returns an empty state.
 func (s *Store) LoadState(ctx context.Context) (*cmtstate.State, error) {
 	data, err := s.prefixedStore.Get(ctx, ds.NewKey(stateKey))
-	if err != nil && !errors.Is(err, ds.ErrNotFound) {
+	if err != nil {
 		return nil, fmt.Errorf("failed to get state metadata: %w", err)
 	}
 
