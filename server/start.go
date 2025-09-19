@@ -327,6 +327,10 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, err
 	}
 
+	if err := rollkitcfg.Validate(); err != nil {
+		return nil, nil, cleanupFn, fmt.Errorf("failed to validate ev-node config: %w", err)
+	}
+
 	// only load signer if rollkit.node.aggregator == true
 	var signer signer.Signer
 	if rollkitcfg.Node.Aggregator {
