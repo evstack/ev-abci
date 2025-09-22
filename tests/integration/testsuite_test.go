@@ -301,16 +301,14 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	time.Sleep(30 * time.Second)
 
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
-	_, _ = broadcaster.BroadcastMessages(ctx, fromWallet, msg)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to broadcast transaction: %w", err)
-	// }
+	resp, err := broadcaster.BroadcastMessages(ctx, fromWallet, msg)
+	if err != nil {
+		return fmt.Errorf("failed to broadcast transaction: %w", err)
+	}
 
-	// if resp.Code != 0 {
-	// 	return fmt.Errorf("transaction failed with code %d: %s", resp.Code, resp.RawLog)
-	// }
-
-	time.Sleep(30 * time.Second)
+	if resp.Code != 0 {
+		return fmt.Errorf("transaction failed with code %d: %s", resp.Code, resp.RawLog)
+	}
 
 	return nil
 }

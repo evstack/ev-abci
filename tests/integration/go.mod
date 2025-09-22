@@ -7,7 +7,7 @@ require (
 	github.com/celestiaorg/tastora v0.3.0
 	github.com/moby/moby v27.5.1+incompatible
 	github.com/stretchr/testify v1.10.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.0 // indirect
 )
 
 require (
