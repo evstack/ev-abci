@@ -143,6 +143,8 @@ github.com/celestiaorg/go-header v0.7.2 h1:Jw01iBKnodfsILzynDCU3C11xurpoBt5SI9lg
 github.com/celestiaorg/go-header v0.7.2/go.mod h1:eX9iTSPthVEAlEDLux40ZT/olXPGhpxHd+mEzJeDhd0=
 github.com/celestiaorg/go-libp2p-messenger v0.2.2 h1:osoUfqjss7vWTIZrrDSy953RjQz+ps/vBFE7bychLEc=
 github.com/celestiaorg/go-libp2p-messenger v0.2.2/go.mod h1:oTCRV5TfdO7V/k6nkx7QjQzGrWuJbupv+0o1cgnY2i4=
+github.com/celestiaorg/go-square/v2 v2.3.3 h1:vhu6Lt39km19Q/Jk4nS3r2cuWJq6jFg+/1+iG8YGftY=
+github.com/celestiaorg/go-square/v2 v2.3.3/go.mod h1:vY5RRv+qRmEVjPF6dAdr0dyLwKmTTDHHffENPQw8pUA=
 github.com/celestiaorg/utils v0.1.0 h1:WsP3O8jF7jKRgLNFmlDCwdThwOFMFxg0MnqhkLFVxPo=
 github.com/celestiaorg/utils v0.1.0/go.mod h1:vQTh7MHnvpIeCQZ2/Ph+w7K1R2UerDheZbgJEJD2hSU=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
@@ -292,10 +294,10 @@ github.com/envoyproxy/go-control-plane v0.9.9-0.20201210154907-fd9021fe5dad/go.m
 github.com/envoyproxy/go-control-plane v0.9.10-0.20210907150352-cf90f659a021/go.mod h1:AFq3mo9L8Lqqiid3OhADV3RfLJnjiw63cSpi+fDTRC0=
 github.com/envoyproxy/go-control-plane v0.10.2-0.20220325020618-49ff273808a1/go.mod h1:KJwIaB5Mv44NWtYuAOFCVOjcI94vtpEz2JU/D2v6IjE=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
-github.com/evstack/ev-node v1.0.0-beta.3 h1:0s3jgawkcBexvazALF10jxzUMxKUVQHy1QjlMFSdbAs=
-github.com/evstack/ev-node v1.0.0-beta.3/go.mod h1:sidmvCeHFnDp8/GcOA2EYcRIGKetyek+RqSeRN7AloY=
-github.com/evstack/ev-node/core v1.0.0-beta.2 h1:M1QQuG/DoP1jqa49E2REv9267XN8buhsZDdSBfW2l4o=
-github.com/evstack/ev-node/core v1.0.0-beta.2/go.mod h1:n2w/LhYQTPsi48m6lMj16YiIqsaQw6gxwjyJvR+B3sY=
+github.com/evstack/ev-node v1.0.0-beta.4 h1:tOW+M7+ZbGnlP+op01OKbFlIuNv1KxrtCQhg+HsLyZc=
+github.com/evstack/ev-node v1.0.0-beta.4/go.mod h1:ooOFcaglIwVsmrL+5Y318F4ZCyTogXA8Fh6L3T+jwNM=
+github.com/evstack/ev-node/core v1.0.0-beta.3 h1:01K2Ygm3puX4m2OBxvg/HDxu+he54jeNv+KDmpgujFc=
+github.com/evstack/ev-node/core v1.0.0-beta.3/go.mod h1:n2w/LhYQTPsi48m6lMj16YiIqsaQw6gxwjyJvR+B3sY=
 github.com/evstack/ev-node/da v1.0.0-beta.2 h1:JXLhxcu0Uc9va5J8CFMcTHwtHdowS2JeZNSuPAG0wFw=
 github.com/evstack/ev-node/da v1.0.0-beta.2/go.mod h1:06Sd5X+6fo83ARHiVj5YLPbGlqbhp1wWzaM5EH2So5c=
 github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2 h1:UlQd3WL2p6bBtGMYYok8PUGxUEQJ74rf2XHlCqJF7Z8=
