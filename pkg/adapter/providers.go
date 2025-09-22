@@ -37,7 +37,6 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureB
 			for i := range data.Txs {
 				cmtTxs[i] = cmttypes.Tx(data.Txs[i])
 			}
-38 8 2 17 1 0 0 0 0 0 0 0 42 12 8 183 200 197 198 6 16 242 247 158 227 2 50 11 101 118 111 108 118 101 45 116 101 115 116
 			lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
 			if err != nil {
 				return nil, fmt.Errorf("get last commit: %w", err)
