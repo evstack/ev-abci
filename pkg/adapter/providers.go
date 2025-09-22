@@ -17,9 +17,35 @@ import (
 
 func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
 	return func(header *evtypes.Header) ([]byte, error) {
-		blockID, err := adapter.Store.GetBlockID(context.Background(), header.Height())
-		if err != nil && header.Height() > 1 {
-			return nil, err
+		blockHeight := header.Height()
+		blockID := &cmttypes.BlockID{}
+
+		if header.Height() > 1 { // first block has an empty block ID
+			// Construct blockID the same way as SyncNodeSignatureBytesProvider
+			ctx := context.Background()
+
+			lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
+			if err != nil {
+				return nil, fmt.Errorf("get last commit: %w", err)
+			}
+
+			abciHeader, err := ToABCIHeader(*header, lastCommit)
+			if err != nil {
+				return nil, fmt.Errorf("compute header hash: %w", err)
+			}
+
+			currentState, err := adapter.Store.LoadState(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("load state: %w", err)
+			}
+
+			// Use empty transactions for aggregator (no data available yet)
+			cmtTxs := make(cmttypes.Txs, 0)
+			_, constructedBlockID, err := MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
+			if err != nil {
+				return nil, fmt.Errorf("make ABCI block: %w", err)
+			}
+			blockID = constructedBlockID
 		}
 
 		fmt.Println("-----------agg node------------")
