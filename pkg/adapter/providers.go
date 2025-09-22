@@ -22,12 +22,6 @@ func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNo
 			return nil, err
 		}
 
-		fmt.Printf("-----------agg node (height %d)------------\n", header.Height())
-		if blockID != nil {
-			fmt.Printf("AGG BlockID: Hash=%x, PartSetHeader=%+v\n", blockID.Hash, blockID.PartSetHeader)
-		} else {
-			fmt.Println("AGG BlockID: nil")
-		}
 		return createVote(header, blockID), nil
 	}
 }
@@ -42,6 +36,7 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureB
 			for i := range data.Txs {
 				cmtTxs[i] = cmttypes.Tx(data.Txs[i])
 			}
+
 			lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
 			if err != nil {
 				return nil, fmt.Errorf("get last commit: %w", err)
@@ -63,13 +58,6 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureB
 			}
 		}
 
-		fmt.Printf("-----------sync node (height %d)------------\n", header.Height())
-		if blockID != nil {
-			fmt.Printf("SYNC BlockID: Hash=%x, PartSetHeader=%+v\n", blockID.Hash, blockID.PartSetHeader)
-		} else {
-			fmt.Println("SYNC BlockID: nil")
-		}
-
 		return createVote(header, blockID), nil
 	}
 }
@@ -88,9 +76,6 @@ func createVote(header *evtypes.Header, blockID *cmttypes.BlockID) []byte {
 
 	chainID := header.ChainID()
 	consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
-
-	fmt.Println(vote)
-	fmt.Println("-----------------------")
 
 	return consensusVoteBytes
 }
