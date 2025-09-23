@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestGaiaGM_Health(t *testing.T) {
 	repoRoot := projectRoot(t)
 	ctx := context.Background()
 
-	evnodeVersion := getenvDefault("EVNODE_VERSION", "v1.0.0-beta.2.0.20250917144924-05372840f308")
+	evnodeVersion := getenvDefault("EVNODE_VERSION", "v1.0.0-beta.4")
 	igniteVersion := getenvDefault("IGNITE_VERSION", "v29.3.1")
 	igniteEvolveApp := getenvDefault("IGNITE_EVOLVE_APP_VERSION", "main")
 	celestiaAppVersion := getenvDefault("CELESTIA_APP_VERSION", "v4.0.10")
@@ -87,8 +88,9 @@ func TestGaiaGM_Health(t *testing.T) {
 		WithImage(gmImg).
 		WithChainID("gm").
 		WithBinaryName("gmd").
-		WithEnv("BLST_PORTABLE=1").
 		WithAdditionalStartArgs(
+			"--rollkit.node.aggregator",
+			"--rollkit.da.address", "http://local-da:7980",
 			"--rpc.laddr", "tcp://0.0.0.0:26757",
 			"--grpc.address", "0.0.0.0:9190",
 			"--api.enable",
@@ -97,10 +99,6 @@ func TestGaiaGM_Health(t *testing.T) {
 		).
 		WithNode(evd.NewNodeBuilder().
 			WithAggregator(true).
-			WithPostInit(func(ctx context.Context, node *evd.Node) error {
-				clientToml := []byte("[client]\nnode = \"tcp://127.0.0.1:26757\"\n")
-				return node.WriteFile(ctx, "config/client.toml", clientToml)
-			}).
 			Build()).
 		Build(ctx)
 	require.NoError(t, err)
@@ -108,7 +106,98 @@ func TestGaiaGM_Health(t *testing.T) {
 	require.NoError(t, chainA.Start(ctx))
 
 	gmNode := evChain.GetNodes()[0]
+
+	// Execute ignite evolve init (uses default home directory)
+	gmNode.WithInitOverride(
+		[]string{
+			"ignite", "evolve", "init",
+		},
+	)
 	require.NoError(t, gmNode.Init(ctx))
+
+	// Get the default gmd home directory
+	gmHomeOut, _, err := gmNode.Exec(ctx, gmNode.Logger, []string{"gmd", "config", "home"}, nil)
+	require.NoError(t, err)
+	gmHome := strings.TrimSpace(string(gmHomeOut))
+
+	// Ensure client.toml has the correct RPC node (like init-gm.sh does)
+	clientTomlPath := fmt.Sprintf("%s/config/client.toml", gmHome)
+	clientTomlCmd := []string{"sh", "-c", fmt.Sprintf(`
+if [ -f "%s" ]; then
+  sed -i 's|^node *=.*|node = "tcp://127.0.0.1:26757"|' "%s"
+else
+  mkdir -p %s/config
+  cat > "%s" <<'EOF'
+[client]
+node = "tcp://127.0.0.1:26757"
+EOF
+fi`, clientTomlPath, clientTomlPath, gmHome, clientTomlPath)}
+	_, _, err = gmNode.Exec(ctx, gmNode.Logger, clientTomlCmd, nil)
+	require.NoError(t, err)
+
+	// Add validator key using standard mnemonic
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
+	// Debug: Check what files exist before key creation
+	t.Log("=== DEBUG: Checking files before key creation ===")
+	lsBeforeCmd := []string{"sh", "-c", fmt.Sprintf("ls -la %s/ || echo 'directory does not exist'", gmHome)}
+	lsBeforeOutput, _, _ := gmNode.Exec(ctx, gmNode.Logger, lsBeforeCmd, nil)
+	t.Logf("Files in %s before key creation:\n%s", gmHome, string(lsBeforeOutput))
+
+	// Use exactly the same command format as init-gm.sh script
+	// Echo mnemonic and pipe to gmd keys add with same parameter order as working script
+	cmd := []string{"sh", "-c", fmt.Sprintf(`echo "%s" | gmd keys add validator --keyring-backend test --home %s --recover --hd-path "m/44'/118'/0'/0/0"`, mnemonic, gmHome)}
+	keysAddOutput, keysAddStderr, err := gmNode.Exec(ctx, gmNode.Logger, cmd, nil)
+	t.Logf("Keys add output:\nSTDOUT: %s\nSTDERR: %s", string(keysAddOutput), string(keysAddStderr))
+	require.NoError(t, err)
+
+	// Debug: Check what files exist after key creation
+	t.Log("=== DEBUG: Checking files after key creation ===")
+	lsAfterCmd := []string{"sh", "-c", fmt.Sprintf("ls -la %s/ && echo '--- keyring files ---' && ls -la %s/keyring-test-* 2>/dev/null || echo 'no keyring files found'", gmHome, gmHome)}
+	lsAfterOutput, _, _ := gmNode.Exec(ctx, gmNode.Logger, lsAfterCmd, nil)
+	t.Logf("Files in %s after key creation:\n%s", gmHome, string(lsAfterOutput))
+
+	// Debug: Try to list keys first
+	t.Log("=== DEBUG: Trying to list keys ===")
+	listKeysCmd := []string{"gmd", "keys", "list", "--keyring-backend", "test", "--home", gmHome}
+	listOutput, listStderr, listErr := gmNode.Exec(ctx, gmNode.Logger, listKeysCmd, nil)
+	t.Logf("Keys list output:\nSTDOUT: %s\nSTDERR: %s\nError: %v", string(listOutput), string(listStderr), listErr)
+
+	// Extract validator address directly from keys add output since keys show might not work
+	var validatorAddr string
+	lines := strings.Split(string(keysAddOutput), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "address:") {
+			// Extract address from "- address: gm19rl4cm2hmr8afy4kldpxz3fka4jguq0aj3w9ku"
+			parts := strings.Split(strings.TrimSpace(line), " ")
+			if len(parts) >= 2 {
+				validatorAddr = parts[1]
+				break
+			}
+		}
+	}
+	require.NotEmpty(t, validatorAddr, "Could not extract validator address from keys add output")
+	t.Logf("Extracted validator address from keys add output: %s", validatorAddr)
+
+	// Try keys show anyway to see what happens
+	t.Log("=== DEBUG: Trying keys show anyway ===")
+	getAddrCmd := []string{"gmd", "keys", "show", "validator", "-a", "--keyring-backend", "test", "--home", gmHome}
+	validatorAddrBytes, getAddrStderr, getAddrErr := gmNode.Exec(ctx, gmNode.Logger, getAddrCmd, nil)
+	t.Logf("Keys show output:\nSTDOUT: %s\nSTDERR: %s\nError: %v", string(validatorAddrBytes), string(getAddrStderr), getAddrErr)
+
+	if getAddrErr == nil {
+		showAddr := strings.TrimSpace(string(validatorAddrBytes))
+		t.Logf("Keys show address: %s", showAddr)
+		if showAddr != validatorAddr {
+			t.Logf("WARNING: Address mismatch! keys add: %s, keys show: %s", validatorAddr, showAddr)
+		}
+	}
+
+	// Add genesis account
+	addGenesisCmd := []string{"gmd", "--home", gmHome, "genesis", "add-genesis-account", validatorAddr, "100000000stake,10000token"}
+	_, _, err = gmNode.Exec(ctx, gmNode.Logger, addGenesisCmd, nil)
+	require.NoError(t, err)
+
 	require.NoError(t, gmNode.Start(ctx))
 
 	t.Log("Esperando celestia-app altura >= 1...")
@@ -139,15 +228,27 @@ func waitForHeight(t *testing.T, ctx context.Context, chain types.Chain, minHeig
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	var last int64
+	var lastErr error
 	for time.Now().Before(deadline) {
 		h, err := chain.Height(ctx)
 		if err == nil && h >= minHeight {
+			t.Logf("Successfully reached height %d", h)
 			return
+		}
+		if err != nil {
+			lastErr = err
+			t.Logf("Error getting height: %v", err)
+		} else {
+			t.Logf("Current height: %d, waiting for: %d", h, minHeight)
 		}
 		last = h
 		time.Sleep(3 * time.Second)
 	}
-	require.FailNowf(t, "height timeout", "chain did not reach height %d (last=%d) within %s", minHeight, last, timeout)
+	if lastErr != nil {
+		require.FailNowf(t, "height timeout", "chain did not reach height %d (last=%d) within %s, last error: %v", minHeight, last, timeout, lastErr)
+	} else {
+		require.FailNowf(t, "height timeout", "chain did not reach height %d (last=%d) within %s", minHeight, last, timeout)
+	}
 }
 
 func projectRoot(t *testing.T) string {
