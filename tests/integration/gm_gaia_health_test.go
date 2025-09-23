@@ -2,20 +2,17 @@ package integration_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
-	evd "github.com/celestiaorg/tastora/framework/docker/evstack"
 	cfgutil "github.com/celestiaorg/tastora/framework/testutil/config"
-	"github.com/celestiaorg/tastora/framework/types"
 	servercfg "github.com/cosmos/cosmos-sdk/server/config"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
@@ -37,7 +34,7 @@ func TestGaiaGM_Health(t *testing.T) {
 	celestiaAppVersion := getenvDefault("CELESTIA_APP_VERSION", "v4.0.10")
 
 	dockerBuild(t, repoRoot,
-		filepath.Join(repoRoot, ".github/integration-tests/docker/Dockerfile.gm"),
+		filepath.Join(repoRoot, "./tests/integration/docker/Dockerfile.gm"),
 		"evabci/gm:local",
 		map[string]string{
 			"IGNITE_VERSION":            igniteVersion,
@@ -81,8 +78,11 @@ func TestGaiaGM_Health(t *testing.T) {
 		Build(ctx)
 	require.NoError(t, err)
 
+	err = chainA.Start(ctx)
+	require.NoError(t, err)
+
 	gmImg := container.NewImage("evabci/gm", "local", "10001:10001")
-	evChain, err := evd.NewChainBuilder(t).
+	gmChain, err := cosmos.NewChainBuilder(t).
 		WithDockerClient(dockerClient).
 		WithDockerNetworkID(networkID).
 		WithImage(gmImg).
@@ -97,111 +97,134 @@ func TestGaiaGM_Health(t *testing.T) {
 			"--api.address", "tcp://0.0.0.0:1417",
 			"--minimum-gas-prices", "0.001stake",
 		).
-		WithNode(evd.NewNodeBuilder().
-			WithAggregator(true).
+		WithNode(cosmos.NewChainNodeConfigBuilder().
+			WithPostInit(AddSingleSequencer).
 			Build()).
 		Build(ctx)
 	require.NoError(t, err)
 
-	require.NoError(t, chainA.Start(ctx))
-
-	gmNode := evChain.GetNodes()[0]
-
-	// Execute ignite evolve init (uses default home directory)
-	gmNode.WithInitOverride(
-		[]string{
-			"ignite", "evolve", "init",
-		},
-	)
-	require.NoError(t, gmNode.Init(ctx))
-
-	// Get the default gmd home directory
-	gmHomeOut, _, err := gmNode.Exec(ctx, gmNode.Logger, []string{"gmd", "config", "home"}, nil)
-	require.NoError(t, err)
-	gmHome := strings.TrimSpace(string(gmHomeOut))
-
-	// Ensure client.toml has the correct RPC node (like init-gm.sh does)
-	clientTomlPath := fmt.Sprintf("%s/config/client.toml", gmHome)
-	clientTomlCmd := []string{"sh", "-c", fmt.Sprintf(`
-if [ -f "%s" ]; then
-  sed -i 's|^node *=.*|node = "tcp://127.0.0.1:26757"|' "%s"
-else
-  mkdir -p %s/config
-  cat > "%s" <<'EOF'
-[client]
-node = "tcp://127.0.0.1:26757"
-EOF
-fi`, clientTomlPath, clientTomlPath, gmHome, clientTomlPath)}
-	_, _, err = gmNode.Exec(ctx, gmNode.Logger, clientTomlCmd, nil)
+	err = gmChain.Start(ctx)
 	require.NoError(t, err)
 
-	// Add validator key using standard mnemonic
-	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-
-	// Debug: Check what files exist before key creation
-	t.Log("=== DEBUG: Checking files before key creation ===")
-	lsBeforeCmd := []string{"sh", "-c", fmt.Sprintf("ls -la %s/ || echo 'directory does not exist'", gmHome)}
-	lsBeforeOutput, _, _ := gmNode.Exec(ctx, gmNode.Logger, lsBeforeCmd, nil)
-	t.Logf("Files in %s before key creation:\n%s", gmHome, string(lsBeforeOutput))
-
-	// Use exactly the same command format as init-gm.sh script
-	// Echo mnemonic and pipe to gmd keys add with same parameter order as working script
-	cmd := []string{"sh", "-c", fmt.Sprintf(`echo "%s" | gmd keys add validator --keyring-backend test --home %s --recover --hd-path "m/44'/118'/0'/0/0"`, mnemonic, gmHome)}
-	keysAddOutput, keysAddStderr, err := gmNode.Exec(ctx, gmNode.Logger, cmd, nil)
-	t.Logf("Keys add output:\nSTDOUT: %s\nSTDERR: %s", string(keysAddOutput), string(keysAddStderr))
-	require.NoError(t, err)
-
-	// Debug: Check what files exist after key creation
-	t.Log("=== DEBUG: Checking files after key creation ===")
-	lsAfterCmd := []string{"sh", "-c", fmt.Sprintf("ls -la %s/ && echo '--- keyring files ---' && ls -la %s/keyring-test-* 2>/dev/null || echo 'no keyring files found'", gmHome, gmHome)}
-	lsAfterOutput, _, _ := gmNode.Exec(ctx, gmNode.Logger, lsAfterCmd, nil)
-	t.Logf("Files in %s after key creation:\n%s", gmHome, string(lsAfterOutput))
-
-	// Debug: Try to list keys first
-	t.Log("=== DEBUG: Trying to list keys ===")
-	listKeysCmd := []string{"gmd", "keys", "list", "--keyring-backend", "test", "--home", gmHome}
-	listOutput, listStderr, listErr := gmNode.Exec(ctx, gmNode.Logger, listKeysCmd, nil)
-	t.Logf("Keys list output:\nSTDOUT: %s\nSTDERR: %s\nError: %v", string(listOutput), string(listStderr), listErr)
-
-	// Extract validator address directly from keys add output since keys show might not work
-	var validatorAddr string
-	lines := strings.Split(string(keysAddOutput), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "address:") {
-			// Extract address from "- address: gm19rl4cm2hmr8afy4kldpxz3fka4jguq0aj3w9ku"
-			parts := strings.Split(strings.TrimSpace(line), " ")
-			if len(parts) >= 2 {
-				validatorAddr = parts[1]
-				break
-			}
-		}
-	}
-	require.NotEmpty(t, validatorAddr, "Could not extract validator address from keys add output")
-	t.Logf("Extracted validator address from keys add output: %s", validatorAddr)
-
-	// Try keys show anyway to see what happens
-	t.Log("=== DEBUG: Trying keys show anyway ===")
-	getAddrCmd := []string{"gmd", "keys", "show", "validator", "-a", "--keyring-backend", "test", "--home", gmHome}
-	validatorAddrBytes, getAddrStderr, getAddrErr := gmNode.Exec(ctx, gmNode.Logger, getAddrCmd, nil)
-	t.Logf("Keys show output:\nSTDOUT: %s\nSTDERR: %s\nError: %v", string(validatorAddrBytes), string(getAddrStderr), getAddrErr)
-
-	if getAddrErr == nil {
-		showAddr := strings.TrimSpace(string(validatorAddrBytes))
-		t.Logf("Keys show address: %s", showAddr)
-		if showAddr != validatorAddr {
-			t.Logf("WARNING: Address mismatch! keys add: %s, keys show: %s", validatorAddr, showAddr)
-		}
-	}
-
-	// Add genesis account
-	addGenesisCmd := []string{"gmd", "--home", gmHome, "genesis", "add-genesis-account", validatorAddr, "100000000stake,10000token"}
-	_, _, err = gmNode.Exec(ctx, gmNode.Logger, addGenesisCmd, nil)
-	require.NoError(t, err)
-
-	require.NoError(t, gmNode.Start(ctx))
-
-	t.Log("Esperando celestia-app altura >= 1...")
-	waitForHeight(t, ctx, chainA, 1, 120*time.Second)
+	//	evChain, err := evd.NewChainBuilder(t).
+	//		WithDockerClient(dockerClient).
+	//		WithDockerNetworkID(networkID).
+	//		WithImage(gmImg).
+	//		WithChainID("gm").
+	//		WithBinaryName("gmd").
+	//		WithAdditionalStartArgs(
+	//			"--rollkit.node.aggregator",
+	//			"--rollkit.da.address", "http://local-da:7980",
+	//			"--rpc.laddr", "tcp://0.0.0.0:26757",
+	//			"--grpc.address", "0.0.0.0:9190",
+	//			"--api.enable",
+	//			"--api.address", "tcp://0.0.0.0:1417",
+	//			"--minimum-gas-prices", "0.001stake",
+	//		).
+	//		WithNode(evd.NewNodeBuilder().
+	//			WithAggregator(true).
+	//			Build()).
+	//		Build(ctx)
+	//	require.NoError(t, err)
+	//
+	//	require.NoError(t, chainA.Start(ctx))
+	//
+	//	gmNode := evChain.GetNodes()[0]
+	//
+	//	// Execute ignite evolve init (uses default home directory)
+	//	gmNode.WithInitOverride(
+	//		[]string{
+	//			"ignite", "evolve", "init",
+	//		},
+	//	)
+	//	require.NoError(t, gmNode.Init(ctx))
+	//
+	//	// Get the actual home directory from the node
+	//	gmHome := gmNode.HomeDir()
+	//	t.Logf("Using node home directory: %s", gmHome)
+	//
+	//	// Ensure client.toml has the correct RPC node (like init-gm.sh does)
+	//	clientTomlPath := fmt.Sprintf("%s/config/client.toml", gmHome)
+	//	clientTomlCmd := []string{"sh", "-c", fmt.Sprintf(`
+	//if [ -f "%s" ]; then
+	//  sed -i 's|^node *=.*|node = "tcp://127.0.0.1:26757"|' "%s"
+	//else
+	//  mkdir -p %s/config
+	//  cat > "%s" <<'EOF'
+	//[client]
+	//node = "tcp://127.0.0.1:26757"
+	//EOF
+	//fi`, clientTomlPath, clientTomlPath, gmHome, clientTomlPath)}
+	//	_, _, err = gmNode.Exec(ctx, gmNode.Logger, clientTomlCmd, nil)
+	//	require.NoError(t, err)
+	//
+	//	// Add validator key using standard mnemonic
+	//	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+	//
+	//	// Debug: Check what files exist before key creation
+	//	t.Log("=== DEBUG: Checking files before key creation ===")
+	//	lsBeforeCmd := []string{"sh", "-c", fmt.Sprintf("ls -la %s/ || echo 'directory does not exist'", gmHome)}
+	//	lsBeforeOutput, _, _ := gmNode.Exec(ctx, gmNode.Logger, lsBeforeCmd, nil)
+	//	t.Logf("Files in %s before key creation:\n%s", gmHome, string(lsBeforeOutput))
+	//
+	//	// Use exactly the same command format as init-gm.sh script
+	//	// Echo mnemonic and pipe to gmd keys add with same parameter order as working script
+	//	cmd := []string{"sh", "-c", fmt.Sprintf(`echo "%s" | gmd keys add validator --keyring-backend test --home %s --recover --hd-path "m/44'/118'/0'/0/0"`, mnemonic, gmHome)}
+	//	keysAddOutput, keysAddStderr, err := gmNode.Exec(ctx, gmNode.Logger, cmd, nil)
+	//	t.Logf("Keys add output:\nSTDOUT: %s\nSTDERR: %s", string(keysAddOutput), string(keysAddStderr))
+	//	require.NoError(t, err)
+	//
+	//	// Debug: Check what files exist after key creation
+	//	t.Log("=== DEBUG: Checking files after key creation ===")
+	//	lsAfterCmd := []string{"sh", "-c", fmt.Sprintf("ls -la %s/ && echo '--- keyring files ---' && ls -la %s/keyring-test-* 2>/dev/null || echo 'no keyring files found'", gmHome, gmHome)}
+	//	lsAfterOutput, _, _ := gmNode.Exec(ctx, gmNode.Logger, lsAfterCmd, nil)
+	//	t.Logf("Files in %s after key creation:\n%s", gmHome, string(lsAfterOutput))
+	//
+	//	// Debug: Try to list keys first
+	//	t.Log("=== DEBUG: Trying to list keys ===")
+	//	listKeysCmd := []string{"gmd", "keys", "list", "--keyring-backend", "test", "--home", gmHome}
+	//	listOutput, listStderr, listErr := gmNode.Exec(ctx, gmNode.Logger, listKeysCmd, nil)
+	//	t.Logf("Keys list output:\nSTDOUT: %s\nSTDERR: %s\nError: %v", string(listOutput), string(listStderr), listErr)
+	//
+	//	// Extract validator address directly from keys add output since keys show might not work
+	//	var validatorAddr string
+	//	lines := strings.Split(string(keysAddOutput), "\n")
+	//	for _, line := range lines {
+	//		if strings.Contains(line, "address:") {
+	//			// Extract address from "- address: gm19rl4cm2hmr8afy4kldpxz3fka4jguq0aj3w9ku"
+	//			parts := strings.Split(strings.TrimSpace(line), " ")
+	//			if len(parts) >= 2 {
+	//				validatorAddr = parts[1]
+	//				break
+	//			}
+	//		}
+	//	}
+	//	require.NotEmpty(t, validatorAddr, "Could not extract validator address from keys add output")
+	//	t.Logf("Extracted validator address from keys add output: %s", validatorAddr)
+	//
+	//	// Try keys show anyway to see what happens
+	//	t.Log("=== DEBUG: Trying keys show anyway ===")
+	//	getAddrCmd := []string{"gmd", "keys", "show", "validator", "-a", "--keyring-backend", "test", "--home", gmHome}
+	//	validatorAddrBytes, getAddrStderr, getAddrErr := gmNode.Exec(ctx, gmNode.Logger, getAddrCmd, nil)
+	//	t.Logf("Keys show output:\nSTDOUT: %s\nSTDERR: %s\nError: %v", string(validatorAddrBytes), string(getAddrStderr), getAddrErr)
+	//
+	//	if getAddrErr == nil {
+	//		showAddr := strings.TrimSpace(string(validatorAddrBytes))
+	//		t.Logf("Keys show address: %s", showAddr)
+	//		if showAddr != validatorAddr {
+	//			t.Logf("WARNING: Address mismatch! keys add: %s, keys show: %s", validatorAddr, showAddr)
+	//		}
+	//	}
+	//
+	//	// Add genesis account
+	//	addGenesisCmd := []string{"gmd", "--home", gmHome, "genesis", "add-genesis-account", validatorAddr, "100000000stake,10000token"}
+	//	_, _, err = gmNode.Exec(ctx, gmNode.Logger, addGenesisCmd, nil)
+	//	require.NoError(t, err)
+	//
+	//	require.NoError(t, gmNode.Start(ctx))
+	//
+	//	t.Log("Esperando celestia-app altura >= 1...")
+	//	waitForHeight(t, ctx, chainA, 1, 120*time.Second)
 }
 
 func getenvDefault(key, def string) string {
@@ -224,37 +247,51 @@ func dockerBuild(t *testing.T, contextDir, dockerfile, tag string, args map[stri
 	require.NoError(t, cmd.Run(), "docker build failed: %s", tag)
 }
 
-func waitForHeight(t *testing.T, ctx context.Context, chain types.Chain, minHeight int64, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	var last int64
-	var lastErr error
-	for time.Now().Before(deadline) {
-		h, err := chain.Height(ctx)
-		if err == nil && h >= minHeight {
-			t.Logf("Successfully reached height %d", h)
-			return
-		}
-		if err != nil {
-			lastErr = err
-			t.Logf("Error getting height: %v", err)
-		} else {
-			t.Logf("Current height: %d, waiting for: %d", h, minHeight)
-		}
-		last = h
-		time.Sleep(3 * time.Second)
-	}
-	if lastErr != nil {
-		require.FailNowf(t, "height timeout", "chain did not reach height %d (last=%d) within %s, last error: %v", minHeight, last, timeout, lastErr)
-	} else {
-		require.FailNowf(t, "height timeout", "chain did not reach height %d (last=%d) within %s", minHeight, last, timeout)
-	}
-}
-
 func projectRoot(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 
 	return filepath.Clean(filepath.Join(wd, "..", ".."))
+}
+
+// AddSingleSequencer modifies the genesis file to add a single sequencer with specified power and public key.
+// Reads the genesis file from the node, updates the validators with the sequencer info, and writes the updated file back.
+func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
+	genesisBz, err := node.ReadFile(ctx, "config/genesis.json")
+	if err != nil {
+		return fmt.Errorf("failed to read genesis.json: %w", err)
+	}
+
+	pubKey, err := getPubKey(ctx, node)
+	if err != nil {
+		return fmt.Errorf("failed to get pubkey: %w", err)
+	}
+
+	var genDoc map[string]interface{}
+	if err := json.Unmarshal(genesisBz, &genDoc); err != nil {
+		return fmt.Errorf("failed to parse genesis.json: %w", err)
+	}
+
+	consensus, ok := genDoc["consensus"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("genesis.json does not contain a valid 'consensus' object")
+	}
+	consensus["validators"] = []map[string]interface{}{
+		{
+			"name":    "Ev Node Sequencer",
+			"address": pubKey.Address(),
+			"pub_key": map[string]interface{}{
+				"type":  "tendermint/PubKeyEd25519",
+				"value": pubKey.Bytes(),
+			},
+			"power": "5", // NOTE: because of default validator wallet amount in tastora the power will be computed as 5.
+		},
+	}
+
+	updatedGenesis, err := json.MarshalIndent(genDoc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal genesis: %w", err)
+	}
+	return node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
 }
