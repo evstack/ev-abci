@@ -18,7 +18,7 @@ import (
 func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
 	return func(header *evtypes.Header) ([]byte, error) {
 		blockID, err := adapter.Store.GetBlockID(context.Background(), header.Height())
-		if err != nil && header.Height() > 1 {
+		if err != nil {
 			return nil, err
 		}
 
@@ -35,32 +35,29 @@ func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNo
 func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureBytesProvider {
 	return func(ctx context.Context, header *evtypes.Header, data *evtypes.Data) ([]byte, error) {
 		blockHeight := header.Height()
-		blockID := &cmttypes.BlockID{}
+		cmtTxs := make(cmttypes.Txs, len(data.Txs))
+		for i := range data.Txs {
+			cmtTxs[i] = cmttypes.Tx(data.Txs[i])
+		}
 
-		if header.Height() > 1 { // first block has an empty block ID
-			cmtTxs := make(cmttypes.Txs, len(data.Txs))
-			for i := range data.Txs {
-				cmtTxs[i] = cmttypes.Tx(data.Txs[i])
-			}
-			lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
-			if err != nil {
-				return nil, fmt.Errorf("get last commit: %w", err)
-			}
+		lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
+		if err != nil {
+			return nil, fmt.Errorf("get last commit: %w", err)
+		}
 
-			abciHeader, err := ToABCIHeader(*header, lastCommit)
-			if err != nil {
-				return nil, fmt.Errorf("compute header hash: %w", err)
-			}
+		abciHeader, err := ToABCIHeader(*header, lastCommit)
+		if err != nil {
+			return nil, fmt.Errorf("compute header hash: %w", err)
+		}
 
-			currentState, err := adapter.Store.LoadState(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("load state: %w", err)
-			}
+		currentState, err := adapter.Store.LoadState(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load state: %w", err)
+		}
 
-			_, blockID, err = MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
-			if err != nil {
-				return nil, fmt.Errorf("make ABCI block: %w", err)
-			}
+		_, blockID, err := MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
+		if err != nil {
+			return nil, fmt.Errorf("make ABCI block: %w", err)
 		}
 
 		fmt.Printf("-----------sync node (height %d)------------\n", header.Height())
