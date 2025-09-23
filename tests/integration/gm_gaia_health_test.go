@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,11 +82,13 @@ func TestGaiaGM_Health(t *testing.T) {
 	err = chainA.Start(ctx)
 	require.NoError(t, err)
 
-	gmImg := container.NewImage("evabci/gm", "local", "10001:10001")
+	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
+	gmImg := container.NewImage("evabci/gm", "local", "1000:1000")
 	gmChain, err := cosmos.NewChainBuilder(t).
 		WithDockerClient(dockerClient).
 		WithDockerNetworkID(networkID).
 		WithImage(gmImg).
+		WithBech32Prefix("gm").
 		WithChainID("gm").
 		WithBinaryName("gmd").
 		WithAdditionalStartArgs(
