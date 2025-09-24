@@ -1,6 +1,6 @@
 module github.com/evstack/ev-abci
 
-go 1.24.2
+go 1.24.6
 
 replace github.com/celestiaorg/go-header => github.com/julienrbrt/go-header v0.0.0-20250909151551-cb11b091bf58 // TODO: to remove after https://github.com/celestiaorg/go-header/pull/347
 
@@ -28,7 +28,7 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/gogoproto v1.7.0
-	github.com/evstack/ev-node v1.0.0-beta.4
+	github.com/evstack/ev-node v1.0.0-beta.4.0.20250924134225-aa4badab616f
 	github.com/evstack/ev-node/core v1.0.0-beta.3
 	github.com/evstack/ev-node/da v1.0.0-beta.3
 	github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2
@@ -88,7 +88,7 @@ require (
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/celestiaorg/go-libp2p-messenger v0.2.2 // indirect
-	github.com/celestiaorg/go-square/v2 v2.3.3 // indirect
+	github.com/celestiaorg/go-square/v3 v3.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
