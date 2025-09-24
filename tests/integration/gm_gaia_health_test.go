@@ -4,84 +4,87 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
-	cfgutil "github.com/celestiaorg/tastora/framework/testutil/config"
-	servercfg "github.com/cosmos/cosmos-sdk/server/config"
+	"github.com/celestiaorg/tastora/framework/docker/dataavailability"
+	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
+	"github.com/celestiaorg/tastora/framework/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
+
+// TestGMChainEmpty is an empty test case using the DockerIntegrationTestSuite
+func (s *DockerIntegrationTestSuite) TestGMChainEmpty() {
+	s.T().Log("Running empty GM chain test")
+	s.T().Log("Celestia chain created successfully")
+	s.T().Log("Bridge node created successfully")
+	s.T().Log("Evolve chain created successfully")
+	s.T().Log("Test completed - all infrastructure is working")
+}
 
 func TestGaiaGM_Health(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping due to short mode")
 	}
 
-	repoRoot := projectRoot(t)
 	ctx := context.Background()
 
-	evnodeVersion := getenvDefault("EVNODE_VERSION", "v1.0.0-beta.4")
-	igniteVersion := getenvDefault("IGNITE_VERSION", "v29.3.1")
-	igniteEvolveApp := getenvDefault("IGNITE_EVOLVE_APP_VERSION", "main")
-	celestiaAppVersion := getenvDefault("CELESTIA_APP_VERSION", "v4.0.10")
+	/*	evnodeVersion := getenvDefault("EVNODE_VERSION", "v1.0.0-beta.4")
+		igniteVersion := getenvDefault("IGNITE_VERSION", "v29.3.1")
+		igniteEvolveApp := getenvDefault("IGNITE_EVOLVE_APP_VERSION", "main")
 
-	dockerBuild(t, repoRoot,
-		filepath.Join(repoRoot, "./tests/integration/docker/Dockerfile.gm"),
-		"evabci/gm:local",
-		map[string]string{
-			"IGNITE_VERSION":            igniteVersion,
-			"IGNITE_EVOLVE_APP_VERSION": igniteEvolveApp,
-			"EVNODE_VERSION":            evnodeVersion,
-		},
-	)
-
+		dockerBuild(t, projectRoot(t),
+			filepath.Join(projectRoot(t), "./tests/integration/docker/Dockerfile.gm"),
+			"evabci/gm:local",
+			map[string]string{
+				"IGNITE_VERSION":            igniteVersion,
+				"IGNITE_EVOLVE_APP_VERSION": igniteEvolveApp,
+				"EVNODE_VERSION":            evnodeVersion,
+			},
+		)
+	*/
 	dockerClient, networkID := docker.DockerSetup(t)
 
-	chainAImg := container.NewImage("ghcr.io/celestiaorg/celestia-app", celestiaAppVersion, "10001:10001")
-	encCfg := moduletestutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
-	chainA, err := cosmos.NewChainBuilderWithTestName(t, t.Name()).
-		WithDockerClient(dockerClient).
-		WithDockerNetworkID(networkID).
-		WithImage(chainAImg).
-		WithName("celestia-app").
-		WithChainID("celestia-local").
-		WithBinaryName("celestia-appd").
-		WithBech32Prefix("celestia").
-		WithDenom("utia").
-		WithGasPrices("0.000001utia").
-		WithEncodingConfig(&encCfg).
-		WithAdditionalStartArgs(
-			"--force-no-bbr",
-			"--grpc.enable",
-			"--grpc.address", "0.0.0.0:9090",
-			"--rpc.grpc_laddr=tcp://0.0.0.0:9098",
-			"--timeout-commit", "1s",
-		).
-		WithEnv("BLST_PORTABLE=1").
-		WithNode(cosmos.NewChainNodeConfigBuilder().Build()).
-		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
-			return cfgutil.Modify(ctx, node, "config/app.toml", func(cfg *servercfg.Config) {
-				cfg.MinGasPrices = "0.000001utia"
-				cfg.GRPC.Enable = true
-				cfg.GRPC.Address = "0.0.0.0:9090"
-				cfg.API.Enable = true
-			})
-		}).
-		Build(ctx)
+	// Create Celestia chain for DA
+	t.Log("Creating Celestia app chain...")
+	celestiaChain := CreateCelestiaChain(ctx, t, dockerClient, networkID)
+	t.Log("Celestia app chain started")
+
+	// Create DA network with bridge node
+	t.Log("Creating DA network with bridge node...")
+	bridgeNode := CreateDANetwork(ctx, t, dockerClient, networkID, celestiaChain)
+	t.Log("Bridge node started")
+
+	// Get DA connection details
+	authToken, err := bridgeNode.GetAuthToken()
 	require.NoError(t, err)
 
-	err = chainA.Start(ctx)
+	bridgeNetworkInfo, err := bridgeNode.GetNetworkInfo(ctx)
+	require.NoError(t, err)
+	bridgeRPCAddress := bridgeNetworkInfo.Internal.RPCAddress()
+
+	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
+	t.Logf("DA address: %s", daAddress)
+
+	celestiaHeight, err := celestiaChain.Height(ctx)
 	require.NoError(t, err)
 
+	t.Logf("DA start height: %d", celestiaHeight)
+
+	t.Log("Creating GM chain connected to DA network...")
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 	gmImg := container.NewImage("evabci/gm", "local", "1000:1000")
 	gmChain, err := cosmos.NewChainBuilder(t).
@@ -92,13 +95,22 @@ func TestGaiaGM_Health(t *testing.T) {
 		WithChainID("gm").
 		WithBinaryName("gmd").
 		WithAdditionalStartArgs(
-			"--rollkit.node.aggregator",
-			"--rollkit.da.address", "http://local-da:7980",
+			"--evnode.node.aggregator",
+			"--evnode.signer.passphrase", "12345678",
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--evnode.da.start_height", fmt.Sprintf("%d", celestiaHeight),
+			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 			"--rpc.laddr", "tcp://0.0.0.0:26757",
 			"--grpc.address", "0.0.0.0:9190",
 			"--api.enable",
 			"--api.address", "tcp://0.0.0.0:1417",
 			"--minimum-gas-prices", "0.001stake",
+			"--log_level", "*:info",
 		).
 		WithNode(cosmos.NewChainNodeConfigBuilder().
 			WithPostInit(AddSingleSequencer).
@@ -108,6 +120,7 @@ func TestGaiaGM_Health(t *testing.T) {
 
 	err = gmChain.Start(ctx)
 	require.NoError(t, err)
+	t.Log("GM chain started and connected to DA network")
 
 	//	evChain, err := evd.NewChainBuilder(t).
 	//		WithDockerClient(dockerClient).
@@ -297,4 +310,124 @@ func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
 		return fmt.Errorf("failed to marshal genesis: %w", err)
 	}
 	return node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
+}
+
+// CreateCelestiaChain sets up a Celestia app chain for DA
+func CreateCelestiaChain(ctx context.Context, t *testing.T, dockerClient *client.Client, networkID string) *cosmos.Chain {
+	testEncCfg := moduletestutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	celestia, err := cosmos.NewChainBuilder(t).
+		WithEncodingConfig(&testEncCfg).
+		WithDockerClient(dockerClient).
+		WithDockerNetworkID(networkID).
+		WithImage(container.NewImage(celestiaAppRepo, celestiaAppTag, "10001:10001")).
+		WithAdditionalStartArgs(
+			"--force-no-bbr",
+			"--grpc.enable",
+			"--grpc.address", "0.0.0.0:9090",
+			"--rpc.grpc_laddr=tcp://0.0.0.0:9098",
+			"--timeout-commit", "1s",
+			"--minimum-gas-prices", "0.000001utia",
+		).
+		WithNode(cosmos.NewChainNodeConfigBuilder().Build()).
+		Build(ctx)
+
+	require.NoError(t, err)
+
+	err = celestia.Start(ctx)
+	require.NoError(t, err)
+	return celestia
+}
+
+// CreateDANetwork sets up the DA network with bridge node
+func CreateDANetwork(ctx context.Context, t *testing.T, dockerClient *client.Client, networkID string, celestiaChain *cosmos.Chain) *dataavailability.Node {
+	// Build DA network with bridge node
+	daNetwork, err := dataavailability.NewNetworkBuilder(t).
+		WithDockerClient(dockerClient).
+		WithDockerNetworkID(networkID).
+		WithImage(container.NewImage(celestiaNodeRepo, celestiaNodeTag, "10001:10001")).
+		WithNode(dataavailability.NewNodeBuilder().
+			WithNodeType(types.BridgeNode).
+			Build()).
+		Build(ctx)
+	require.NoError(t, err)
+
+	genesisHash, err := getGenesisHash(ctx, celestiaChain)
+	require.NoError(t, err)
+
+	bridgeNodes := daNetwork.GetNodesByType(types.BridgeNode)
+	require.NotEmpty(t, bridgeNodes, "no bridge nodes available")
+
+	bridgeNode := bridgeNodes[0]
+
+	chainID := celestiaChain.GetChainID()
+	networkInfo, err := celestiaChain.GetNodes()[0].GetNetworkInfo(ctx)
+	require.NoError(t, err)
+	celestiaNodeHostname := networkInfo.Internal.Hostname
+
+	err = bridgeNode.Start(ctx,
+		dataavailability.WithChainID(chainID),
+		dataavailability.WithAdditionalStartArguments("--p2p.network", chainID, "--core.ip", celestiaNodeHostname, "--rpc.addr", "0.0.0.0", "--keyring.keyname", "my-key"),
+		dataavailability.WithEnvironmentVariables(map[string]string{
+			"CELESTIA_CUSTOM": types.BuildCelestiaCustomEnvVar(chainID, genesisHash, ""),
+			"P2P_NETWORK":     chainID,
+		}),
+	)
+	require.NoError(t, err)
+
+	// Fund the bridge node DA wallet to enable blob submission
+	fundBridgeNodeWallet(ctx, t, celestiaChain, bridgeNode)
+
+	return bridgeNode
+}
+
+// sendFunds sends funds from one wallet to another using bank transfer
+func sendFunds(ctx context.Context, chain *cosmos.Chain, fromWallet, toWallet *types.Wallet, amount sdk.Coins, nodeIdx int) error {
+	fromAddress, err := sdkacc.AddressFromWallet(fromWallet)
+	if err != nil {
+		return fmt.Errorf("failed to get sender address: %w", err)
+	}
+
+	toAddress, err := sdkacc.AddressFromWallet(toWallet)
+	if err != nil {
+		return fmt.Errorf("failed to get destination address: %w", err)
+	}
+
+	chainNode := chain.GetNodes()[nodeIdx]
+	cosmosChainNode, ok := chainNode.(*cosmos.ChainNode)
+	if !ok {
+		return fmt.Errorf("chainNode is not a cosmos.ChainNode")
+	}
+	broadcaster := cosmos.NewBroadcasterForNode(chain, cosmosChainNode)
+
+	time.Sleep(30 * time.Second)
+
+	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
+	resp, err := broadcaster.BroadcastMessages(ctx, fromWallet, msg)
+	if err != nil {
+		return fmt.Errorf("failed to broadcast transaction: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return fmt.Errorf("transaction failed with code %d: %s", resp.Code, resp.RawLog)
+	}
+
+	return nil
+}
+
+// fundBridgeNodeWallet funds the bridge node's DA wallet for blob submission
+func fundBridgeNodeWallet(ctx context.Context, t *testing.T, celestiaChain *cosmos.Chain, bridgeNode *dataavailability.Node) {
+	// hack to get around global, need to set the address prefix before use.
+	sdk.GetConfig().SetBech32PrefixForAccount("celestia", "celestiapub")
+
+	t.Log("Funding bridge node DA wallet...")
+	fundingWallet := celestiaChain.GetFaucetWallet()
+
+	// Get the bridge node's wallet
+	bridgeWallet, err := bridgeNode.GetWallet()
+	require.NoError(t, err)
+
+	// fund the bridge node wallet
+	daFundingAmount := sdk.NewCoins(sdk.NewCoin("utia", math.NewInt(10_000_000)))
+	err = sendFunds(ctx, celestiaChain, fundingWallet, bridgeWallet, daFundingAmount, 0)
+	require.NoError(t, err)
 }

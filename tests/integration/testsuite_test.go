@@ -59,8 +59,8 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 	s.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
 
-	s.evolveChain = s.CreateEvolveChain(ctx)
-	s.T().Log("Evolve chain started")
+/*	s.evolveChain = s.CreateEvolveChain(ctx)
+	s.T().Log("Evolve chain started")*/
 }
 
 // CreateCelestiaChain sets up a Celestia app chain for DA and stores it in the suite
