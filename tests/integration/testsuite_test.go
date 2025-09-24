@@ -250,7 +250,7 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 			"--evnode.da.data_namespace", "ev-data",
 			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
+			"--evnode.p2p.peers", aggregatorPeer,
 			"--log_level", "*:debug",
 		).
 		Build())
@@ -298,7 +298,7 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	}
 	broadcaster := cosmos.NewBroadcasterForNode(chain, cosmosChainNode)
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(30 * time.Second) // wait for node to sync. TODO: improve later.
 
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
 	resp, err := broadcaster.BroadcastMessages(ctx, fromWallet, msg)
