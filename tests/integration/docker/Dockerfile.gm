@@ -69,10 +69,6 @@ RUN chown -R gm:gm /home/gm/.ignite && chmod +x /usr/local/bin/ignite
 # Copy gm source (for ignite/evolve operations)
 COPY --from=builder --chown=gm:gm /workspace/gm /home/gm/gm
 
-# Copy scripts
-COPY --chown=gm:gm .github/integration-tests/scripts/init-gm.sh /home/gm/init-gm.sh
-COPY --chown=gm:gm .github/integration-tests/scripts/wait-for-da.sh /home/gm/wait-for-da.sh
-RUN chmod +x /home/gm/init-gm.sh /home/gm/wait-for-da.sh
 
 # Switch to gm user
 USER gm
@@ -92,4 +88,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:26757/status || exit 1
 
 # Default command
-CMD ["./init-gm.sh"]
+CMD ["/usr/local/bin/gmd", "start"]
