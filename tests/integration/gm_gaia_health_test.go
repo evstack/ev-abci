@@ -2,17 +2,19 @@ package integration_test
 
 import (
 	"context"
+	sdkmath "cosmossdk.io/math"
 	"encoding/json"
 	"fmt"
+	"github.com/celestiaorg/tastora/framework/docker/container"
+	"github.com/celestiaorg/tastora/framework/docker/cosmos"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/cosmos/cosmos-sdk/x/auth"
+	"github.com/cosmos/cosmos-sdk/x/bank"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	sdkmath "cosmossdk.io/math"
-	"github.com/celestiaorg/tastora/framework/docker/container"
-	"github.com/celestiaorg/tastora/framework/docker/cosmos"
-	"github.com/celestiaorg/tastora/framework/docker/file"
+	//"github.com/celestiaorg/tastora/framework/docker/file"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -26,8 +28,8 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	s.buildGMImage()
-	s.buildAttesterImage()
+	//s.buildGMImage()
+	//s.buildAttesterImage()
 
 	daAddress, authToken, daStartHeight, err := s.getDANetworkParams(ctx)
 	require.NoError(s.T(), err)
@@ -35,13 +37,17 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	s.T().Log("Creating GM chain connected to DA network...")
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 	gmImg := container.NewImage("evabci/gm", "local", "1000:1000")
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 	gmChain, err := cosmos.NewChainBuilder(s.T()).
+		WithEncodingConfig(&testEncCfg).
 		WithDockerClient(s.dockerClient).
 		WithDockerNetworkID(s.networkID).
 		WithImage(gmImg).
+		WithDenom("stake").
 		WithBech32Prefix("gm").
 		WithChainID("gm").
 		WithBinaryName("gmd").
+		WithGasPrices(fmt.Sprintf("0.001%s", "stake")).
 		WithAdditionalStartArgs(
 			"--evnode.node.aggregator",
 			"--evnode.signer.passphrase", "12345678",
@@ -54,9 +60,8 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 			"--rpc.laddr", "tcp://0.0.0.0:26657",
-			"--grpc.address", "0.0.0.0:9190",
+			"--grpc.address", "0.0.0.0:9090",
 			"--api.enable",
-			"--api.address", "tcp://0.0.0.0:1417",
 			"--minimum-gas-prices", "0.001stake",
 			"--log_level", "*:info",
 		).
@@ -81,17 +86,17 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 
 	privValidatorKeyJSON, err := gmNode.ReadFile(ctx, "config/priv_validator_key.json")
 	require.NoError(s.T(), err, "unable to read priv_validator_key.json from GM node")
-	s.T().Logf("retrieved priv_validator_key.json (%d bytes)", len(privValidatorKeyJSON))
-	validatorKeyPath := filepath.Join(s.T().TempDir(), "priv_validator_key.json")
-	require.NoError(s.T(), os.WriteFile(validatorKeyPath, privValidatorKeyJSON, 0o600))
-	attesterConfig.ValidatorKeyPath = validatorKeyPath
+	//s.T().Logf("retrieved priv_validator_key.json (%d bytes)", len(privValidatorKeyJSON))
+	//validatorKeyPath := filepath.Join(s.T().TempDir(), "priv_validator_key.json")
+	//require.NoError(s.T(), os.WriteFile(validatorKeyPath, privValidatorKeyJSON, 0o600))
+	//attesterConfig.ValidatorKeyPath = validatorKeyPath
 
 	privValidatorStateJSON, err := gmNode.ReadFile(ctx, "data/priv_validator_state.json")
 	require.NoError(s.T(), err, "unable to read priv_validator_state.json from GM node")
-	s.T().Logf("retrieved priv_validator_state.json (%d bytes)", len(privValidatorStateJSON))
-	validatorStatePath := filepath.Join(s.T().TempDir(), "priv_validator_state.json")
-	require.NoError(s.T(), os.WriteFile(validatorStatePath, privValidatorStateJSON, 0o600))
-	attesterConfig.ValidatorStatePath = validatorStatePath
+	//s.T().Logf("retrieved priv_validator_state.json (%d bytes)", len(privValidatorStateJSON))
+	//validatorStatePath := filepath.Join(s.T().TempDir(), "priv_validator_state.json")
+	//require.NoError(s.T(), os.WriteFile(validatorStatePath, privValidatorStateJSON, 0o600))
+	//attesterConfig.ValidatorStatePath = validatorStatePath
 
 	attesterAccAddr, err := deriveAttesterAccount(attesterConfig.Mnemonic)
 	require.NoError(s.T(), err, "failed to derive attester account address")
@@ -112,19 +117,19 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	// Create and start the attester
 	attesterNode, err := NewAttester(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
 	require.NoError(s.T(), err)
-	require.NoError(s.T(), attesterNode.WriteFileWithOptions(
+	require.NoError(s.T(), attesterNode.WriteFile(
 		ctx,
 		"config/priv_validator_key.json",
 		privValidatorKeyJSON,
-		file.WithOwner(attesterNode.Image.UIDGID),
-		file.WithFileMode(0o600),
+		//file.WithOwner(attesterNode.Image.UIDGID),
+		//file.WithFileMode(0o600),
 	))
-	require.NoError(s.T(), attesterNode.WriteFileWithOptions(
+	require.NoError(s.T(), attesterNode.WriteFile(
 		ctx,
 		"data/priv_validator_state.json",
 		privValidatorStateJSON,
-		file.WithOwner(attesterNode.Image.UIDGID),
-		file.WithFileMode(0o600),
+		//file.WithOwner(attesterNode.Image.UIDGID),
+		//file.WithFileMode(0o600),
 	))
 
 	s.T().Logf("Starting attester node %s", attesterNode.Name())
