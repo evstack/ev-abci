@@ -9,9 +9,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
+	"github.com/celestiaorg/tastora/framework/docker/file"
+	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,21 +27,10 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	defer cancel()
 
 	s.buildGMImage()
+	s.buildAttesterImage()
 
-	authToken, err := s.bridgeNode.GetAuthToken()
+	daAddress, authToken, daStartHeight, err := s.getDANetworkParams(ctx)
 	require.NoError(s.T(), err)
-
-	bridgeNetworkInfo, err := s.bridgeNode.GetNetworkInfo(ctx)
-	require.NoError(s.T(), err)
-	bridgeRPCAddress := bridgeNetworkInfo.Internal.RPCAddress()
-
-	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
-	s.T().Logf("DA address: %s", daAddress)
-
-	celestiaHeight, err := s.celestiaChain.Height(ctx)
-	require.NoError(s.T(), err)
-
-	s.T().Logf("DA start height: %d", celestiaHeight)
 
 	s.T().Log("Creating GM chain connected to DA network...")
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
@@ -56,9 +51,9 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",
 			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", fmt.Sprintf("%d", celestiaHeight),
+			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			"--rpc.laddr", "tcp://0.0.0.0:26757",
+			"--rpc.laddr", "tcp://0.0.0.0:26657",
 			"--grpc.address", "0.0.0.0:9190",
 			"--api.enable",
 			"--api.address", "tcp://0.0.0.0:1417",
@@ -73,6 +68,79 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 
 	err = gmChain.Start(ctx)
 	require.NoError(s.T(), err)
+
+	// Create attester configuration
+	attesterConfig := DefaultAttesterConfig()
+	// Get the internal network addresses for the GM chain
+	gmNodes := gmChain.GetNodes()
+	require.NotEmpty(s.T(), gmNodes, "no GM chain nodes available")
+
+	gmNode := gmNodes[0]
+	gmNodeInfo, err := gmNode.GetNetworkInfo(ctx)
+	require.NoError(s.T(), err)
+
+	privValidatorKeyJSON, err := gmNode.ReadFile(ctx, "config/priv_validator_key.json")
+	require.NoError(s.T(), err, "unable to read priv_validator_key.json from GM node")
+	s.T().Logf("retrieved priv_validator_key.json (%d bytes)", len(privValidatorKeyJSON))
+	validatorKeyPath := filepath.Join(s.T().TempDir(), "priv_validator_key.json")
+	require.NoError(s.T(), os.WriteFile(validatorKeyPath, privValidatorKeyJSON, 0o600))
+	attesterConfig.ValidatorKeyPath = validatorKeyPath
+
+	privValidatorStateJSON, err := gmNode.ReadFile(ctx, "data/priv_validator_state.json")
+	require.NoError(s.T(), err, "unable to read priv_validator_state.json from GM node")
+	s.T().Logf("retrieved priv_validator_state.json (%d bytes)", len(privValidatorStateJSON))
+	validatorStatePath := filepath.Join(s.T().TempDir(), "priv_validator_state.json")
+	require.NoError(s.T(), os.WriteFile(validatorStatePath, privValidatorStateJSON, 0o600))
+	attesterConfig.ValidatorStatePath = validatorStatePath
+
+	attesterAccAddr, err := deriveAttesterAccount(attesterConfig.Mnemonic)
+	require.NoError(s.T(), err, "failed to derive attester account address")
+
+	fromAddr, err := sdkacc.AddressFromWallet(gmChain.GetFaucetWallet())
+	require.NoError(s.T(), err, "failed to retrieve faucet address")
+	coins := sdk.NewCoins(sdk.NewCoin(gmChain.Config.Denom, sdkmath.NewInt(5_000_000_000)))
+	fundingMsg := banktypes.NewMsgSend(fromAddr, attesterAccAddr, coins)
+	resp, err := gmChain.BroadcastMessages(ctx, gmChain.GetFaucetWallet(), fundingMsg)
+	require.NoError(s.T(), err, "failed to fund attester account")
+	require.Zero(s.T(), resp.Code, "funding tx failed: %s", resp.RawLog)
+	s.T().Logf("funded attester account %s with %s", attesterAccAddr.String(), coins)
+
+	// Use internal addresses for communication within docker network
+	attesterConfig.GMNodeURL = fmt.Sprintf("http://%s:26657", gmNodeInfo.Internal.Hostname)
+	attesterConfig.GMAPIUrl = fmt.Sprintf("http://%s:1417", gmNodeInfo.Internal.Hostname)
+
+	// Create and start the attester
+	attesterNode, err := NewAttester(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
+	require.NoError(s.T(), err)
+	require.NoError(s.T(), attesterNode.WriteFileWithOptions(
+		ctx,
+		"config/priv_validator_key.json",
+		privValidatorKeyJSON,
+		file.WithOwner(attesterNode.Image.UIDGID),
+		file.WithFileMode(0o600),
+	))
+	require.NoError(s.T(), attesterNode.WriteFileWithOptions(
+		ctx,
+		"data/priv_validator_state.json",
+		privValidatorStateJSON,
+		file.WithOwner(attesterNode.Image.UIDGID),
+		file.WithFileMode(0o600),
+	))
+
+	s.T().Logf("Starting attester node %s", attesterNode.Name())
+	err = attesterNode.Start(ctx, attesterConfig)
+	require.NoError(s.T(), err)
+
+	s.T().Log("Attester node started successfully")
+}
+
+func deriveAttesterAccount(mnemonic string) (sdk.AccAddress, error) {
+	derivedPriv, err := hd.Secp256k1.Derive()(mnemonic, "", hd.CreateHDPath(118, 0, 0).String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive private key: %w", err)
+	}
+	privKey := &secp256k1.PrivKey{Key: derivedPriv}
+	return sdk.AccAddress(privKey.PubKey().Address()), nil
 }
 
 func (s *DockerIntegrationTestSuite) buildGMImage() {
@@ -89,7 +157,14 @@ func (s *DockerIntegrationTestSuite) buildGMImage() {
 			"EVNODE_VERSION":            evnodeVersion,
 		},
 	)
+}
 
+func (s *DockerIntegrationTestSuite) buildAttesterImage() {
+	dockerBuild(s.T(), projectRoot(s.T()),
+		filepath.Join(projectRoot(s.T()), "./tests/integration/docker/Dockerfile.attester"),
+		"evabci/attester:local",
+		map[string]string{},
+	)
 }
 
 func getenvDefault(key, def string) string {

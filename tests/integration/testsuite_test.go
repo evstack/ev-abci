@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"cosmossdk.io/math"
@@ -26,6 +27,8 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 )
 
 const (
@@ -45,12 +48,17 @@ type DockerIntegrationTestSuite struct {
 	daNetwork     *dataavailability.Network
 	evolveChain   *cosmos.Chain
 	bridgeNode    *dataavailability.Node
+	logger        *zap.Logger
 }
 
 // SetupTest initializes the Docker environment for each test
 // celestia is deployed, a single bridge node and the rollkit chain.
 func (s *DockerIntegrationTestSuite) SetupTest() {
 	ctx := context.Background()
+	s.logger = zaptest.NewLogger(s.T())
+	s.T().Cleanup(func() {
+		_ = s.logger.Sync()
+	})
 	s.dockerClient, s.networkID = docker.DockerSetup(s.T())
 
 	s.celestiaChain = s.CreateCelestiaChain(ctx)
@@ -59,8 +67,8 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 	s.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
 
-/*	s.evolveChain = s.CreateEvolveChain(ctx)
-	s.T().Log("Evolve chain started")*/
+	/*	s.evolveChain = s.CreateEvolveChain(ctx)
+		s.T().Log("Evolve chain started")*/
 }
 
 // CreateCelestiaChain sets up a Celestia app chain for DA and stores it in the suite
@@ -389,4 +397,35 @@ func (s *DockerIntegrationTestSuite) fundBridgeNodeWallet(ctx context.Context, b
 	daFundingAmount := sdk.NewCoins(sdk.NewCoin("utia", math.NewInt(10_000_000)))
 	err = s.sendFunds(ctx, s.celestiaChain, fundingWallet, bridgeWallet, daFundingAmount, 0)
 	s.Require().NoError(err)
+}
+
+// getDANetworkParams returns the DA network parameters useful for creating an evolve chain
+func (s *DockerIntegrationTestSuite) getDANetworkParams(ctx context.Context) (daAddress, authToken, daStartHeight string, err error) {
+	authToken, err = s.bridgeNode.GetAuthToken()
+	if err != nil {
+		return
+	}
+
+	bridgeNetworkInfo, err := s.bridgeNode.GetNetworkInfo(ctx)
+	if err != nil {
+		return
+	}
+	daAddress = fmt.Sprintf("http://%s", bridgeNetworkInfo.Internal.RPCAddress())
+
+	celestiaHeight, err := s.celestiaChain.Height(ctx)
+	if err != nil {
+		return
+	}
+	daStartHeight = fmt.Sprintf("%d", celestiaHeight)
+	return
+}
+
+var validContainerCharsRE = regexp.MustCompile(`[^a-zA-Z0-9_.-]`)
+
+// SanitizeContainerName returns name with any
+// invalid characters replaced with underscores.
+// Subtests will include slashes, and there may be other
+// invalid characters too.
+func SanitizeContainerName(name string) string {
+	return validContainerCharsRE.ReplaceAllLiteralString(name, "_")
 }

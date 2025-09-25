@@ -61,14 +61,7 @@ RUN useradd -m -s /bin/bash gm && echo "gm ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoe
 COPY --from=builder /workspace/bin/gmd /usr/local/bin/gmd
 RUN chmod +x /usr/local/bin/gmd
 
-# Copy Ignite CLI and plugin cache from builder
-COPY --from=builder /usr/local/bin/ignite /usr/local/bin/ignite
-COPY --from=builder /root/.ignite /home/gm/.ignite
-RUN chown -R gm:gm /home/gm/.ignite && chmod +x /usr/local/bin/ignite
-
-# Copy gm source (for ignite/evolve operations)
-COPY --from=builder --chown=gm:gm /workspace/gm /home/gm/gm
-
+# COPY --from=builder --chown=gm:gm /workspace/gm /home/gm/gm
 
 # Switch to gm user
 USER gm
