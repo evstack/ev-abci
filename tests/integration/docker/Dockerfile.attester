@@ -1,0 +1,49 @@
+FROM golang:1.24-alpine as builder
+
+# Install dependencies
+RUN apk add --no-cache git make gcc musl-dev
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy ev-abci (repo root) and the scaffolded gm chain
+COPY . /workspace/ev-abci
+# Ensure attester sources are present (attester/main.go, etc.)
+COPY attester /workspace/ev-abci/attester
+# Build the attester binary (it has its own go.mod)
+WORKDIR /workspace/ev-abci/attester
+## Align module replacements and fetch deps
+# attester lives at /workspace/ev-abci/attester, so the ev-abci root is one level up
+RUN go mod edit -dropreplace github.com/evstack/ev-abci || true \
+    && go mod edit -replace github.com/evstack/ev-abci=.. \
+    && go mod edit -dropreplace github.com/evstack/ev-node || true \
+    && go mod tidy
+RUN go build -o /workspace/attester .
+
+# Runtime stage
+FROM alpine:3.18
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates curl jq bash
+
+# Create attester user with stable UID/GID expected by integration tests
+RUN addgroup -g 2000 attester \
+    && adduser -D -G attester -u 2000 -h /home/attester -s /bin/bash attester
+
+# Copy attester binary
+COPY --from=builder /workspace/attester /usr/local/bin/attester
+
+# Switch to attester user
+USER attester
+WORKDIR /home/attester
+
+# Environment variables
+ENV CHAIN_ID=gm
+ENV GM_HOME=/home/attester/.gm
+ENV GM_NODE=http://gm-chain:26757
+ENV GM_API=http://gm-chain:1417
+ENV MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD pgrep -f attester || exit 1

@@ -6,7 +6,6 @@ toolchain go1.24.6
 
 replace (
 	github.com/evstack/ev-abci => ../../../ev-abci
-	// use local ev-node
 	github.com/evstack/ev-node => ../../../ev-node
 )
 

@@ -1,0 +1,122 @@
+package integration_test
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/celestiaorg/tastora/framework/docker/container"
+	dockerclient "github.com/moby/moby/client"
+	"go.uber.org/zap"
+)
+
+const (
+	attesterDefaultImage   = "evabci/attester"
+	attesterDefaultVersion = "local"
+	attesterDefaultUIDGID  = "2000:2000"
+	attesterHomeDir        = "/home/attester"
+)
+
+var AttesterNode = AttesterNodeType{}
+
+type AttesterNodeType struct{}
+
+func (attesterNodeType AttesterNodeType) String() string {
+	return "attester"
+}
+
+type Attester struct {
+	*container.Node
+}
+
+func NewAttester(ctx context.Context, dockerClient *dockerclient.Client, testName, networkID string, index int, logger *zap.Logger) (*Attester, error) {
+	image := container.Image{
+		Repository: attesterDefaultImage,
+		Version:    attesterDefaultVersion,
+		UIDGID:     attesterDefaultUIDGID,
+	}
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	node := container.NewNode(
+		networkID,
+		dockerClient,
+		testName,
+		image,
+		attesterHomeDir,
+		index,
+		AttesterNode,
+		logger,
+	)
+
+	attester := &Attester{
+		Node: node,
+	}
+
+	lifecycle := container.NewLifecycle(logger, dockerClient, attester.Name())
+	attester.SetContainerLifecycle(lifecycle)
+
+	err := attester.CreateAndSetupVolume(ctx, attester.Name())
+	if err != nil {
+		return nil, err
+	}
+
+	return attester, nil
+}
+
+// Name returns the hostname of the docker container.
+func (h *Attester) Name() string {
+	return fmt.Sprintf("%s-%d-attester", SanitizeContainerName(h.TestName), h.Index)
+}
+
+// AttesterConfig holds configuration for the attester
+type AttesterConfig struct {
+	ChainID            string
+	GMNodeURL          string
+	GMAPIUrl           string
+	PrivKeyArmor       string
+	ValidatorKeyPath   string
+	ValidatorStatePath string
+}
+
+// DefaultAttesterConfig returns a default configuration
+func DefaultAttesterConfig() AttesterConfig {
+	return AttesterConfig{
+		ChainID: "gm",
+	}
+}
+
+func (h *Attester) Start(ctx context.Context, config AttesterConfig) error {
+	cmd := []string{
+		"attester",
+		"--chain-id", config.ChainID,
+		"--home", attesterHomeDir,
+	}
+
+	// Use armored key
+	cmd = append(cmd, "--priv-key-armor", config.PrivKeyArmor)
+
+	cmd = append(cmd,
+		"--api-addr", config.GMAPIUrl,
+		"--node", config.GMNodeURL,
+		"--bech32-account-prefix", "celestia",
+		"--bech32-account-pubkey", "celestiapub",
+		"--bech32-validator-prefix", "celestiavaloper",
+		"--bech32-validator-pubkey", "celestiavaloperpub",
+		"--verbose",
+	)
+
+	err := h.CreateContainer(ctx, h.TestName, h.NetworkID, h.Image, nil, "", h.Bind(), nil, h.Name(), cmd, nil, []string{})
+	if err != nil {
+		return fmt.Errorf("failed to create attester container: %w", err)
+	}
+
+	if err := h.StartContainer(ctx); err != nil {
+		return fmt.Errorf("failed to start attester container: %w", err)
+	}
+
+	return nil
+}
+
+// Attester inherits WriteFileWithOptions from embedded container.Node.

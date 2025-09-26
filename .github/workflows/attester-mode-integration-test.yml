@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250917144924-05372840f308"
+      EVNODE_VERSION: "v1.0.0-beta.4"
       EVNODE_DA_VERSION: "v1.0.0-beta.1"
       IGNITE_VERSION: "v29.3.1"
       IGNITE_EVOLVE_APP_VERSION: "main"
