@@ -2,23 +2,26 @@ package integration_test
 
 import (
 	"context"
-	sdkmath "cosmossdk.io/math"
 	"encoding/json"
 	"fmt"
-	"github.com/celestiaorg/tastora/framework/docker/container"
-	"github.com/celestiaorg/tastora/framework/docker/cosmos"
-	"github.com/cosmos/cosmos-sdk/types/module/testutil"
-	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/bank"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
-	//"github.com/celestiaorg/tastora/framework/docker/file"
+	"time"
+
+	sdkmath "cosmossdk.io/math"
+	"github.com/celestiaorg/tastora/framework/docker/container"
+	"github.com/celestiaorg/tastora/framework/docker/cosmos"
+	"github.com/celestiaorg/tastora/framework/docker/ibc"
+	"github.com/celestiaorg/tastora/framework/docker/ibc/relayer"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/celestiaorg/tastora/framework/types"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/cosmos/cosmos-sdk/x/auth"
+	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 )
@@ -31,51 +34,84 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	//s.buildGMImage()
 	//s.buildAttesterImage()
 
-	daAddress, authToken, daStartHeight, err := s.getDANetworkParams(ctx)
+	gmChain := s.getGmChain(ctx)
+
+	// Start GM chain in a goroutine
+	go func() {
+		s.T().Log("Starting GM chain...")
+		err := gmChain.Start(ctx)
+		if err != nil {
+			s.T().Errorf("Failed to start GM chain: %v", err)
+		}
+	}()
+
+	// Wait 10 seconds for GM chain to initialize
+	time.Sleep(10 * time.Second)
+
+	kr, err := gmChain.GetNodes()[0].GetKeyring()
 	require.NoError(s.T(), err)
 
-	s.T().Log("Creating GM chain connected to DA network...")
-	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
-	gmImg := container.NewImage("evabci/gm", "local", "1000:1000")
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
-	gmChain, err := cosmos.NewChainBuilder(s.T()).
-		WithEncodingConfig(&testEncCfg).
-		WithDockerClient(s.dockerClient).
-		WithDockerNetworkID(s.networkID).
-		WithImage(gmImg).
-		WithDenom("stake").
-		WithBech32Prefix("gm").
-		WithChainID("gm").
-		WithBinaryName("gmd").
-		WithGasPrices(fmt.Sprintf("0.001%s", "stake")).
-		WithAdditionalStartArgs(
-			"--evnode.node.aggregator",
-			"--evnode.signer.passphrase", "12345678",
-			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
-			"--evnode.da.auth_token", authToken,
-			"--evnode.rpc.address", "0.0.0.0:7331",
-			"--evnode.da.namespace", "ev-header",
-			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", daStartHeight,
-			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			"--rpc.laddr", "tcp://0.0.0.0:26657",
-			"--grpc.address", "0.0.0.0:9090",
-			"--api.enable",
-			"--minimum-gas-prices", "0.001stake",
-			"--log_level", "*:info",
-		).
-		WithNode(cosmos.NewChainNodeConfigBuilder().
-			WithPostInit(AddSingleSequencer).
-			Build()).
-		Build(ctx)
+	// List available keys
+	keys, err := kr.List()
 	require.NoError(s.T(), err)
+	s.T().Logf("Available keys in keyring: %d", len(keys))
 
-	err = gmChain.Start(ctx)
+	// Log all available keys and find validator key
+	var validatorKey *keyring.Record
+	for i, key := range keys {
+		keyAddr, _ := key.GetAddress()
+		s.T().Logf("Key %d: Name=%s, Address=%s", i, key.Name, keyAddr.String())
+
+		if key.Name == "validator" {
+			validatorKey = key
+		}
+	}
+
+	// Extract validator key if found
+	var validatorArmoredKey string
+	if validatorKey != nil {
+		s.T().Logf("Extracting validator key...")
+
+		// Export private key in armor format (no passphrase for test keyring)
+		armoredPrivKey, err := kr.ExportPrivKeyArmor("validator", "")
+		require.NoError(s.T(), err, "failed to export validator private key")
+
+		s.T().Logf("Validator private key exported successfully (armor format)")
+		previewLen := 100
+		if len(armoredPrivKey) < previewLen {
+			previewLen = len(armoredPrivKey)
+		}
+		s.T().Logf("Armored key preview: %s...", armoredPrivKey[:previewLen])
+		validatorArmoredKey = armoredPrivKey
+	} else {
+		s.T().Log("No validator key found in keyring")
+	}
+
+	attesterConfig, attesterNode := s.getAttester(ctx, gmChain, validatorArmoredKey)
+
+	s.T().Logf("Starting attester node %s", attesterNode.Name())
+	err = attesterNode.Start(ctx, attesterConfig)
 	require.NoError(s.T(), err)
+	s.T().Log("Attester node started successfully")
 
+	hermes, err := relayer.NewHermes(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
+	require.NoError(s.T(), err, "failed to create hermes relayer")
+
+	err = hermes.Init(ctx, s.celestiaChain, gmChain)
+	require.NoError(s.T(), err, "failed to initialize relayer")
+
+	connection, channel := setupIBCConnection(s.T(), ctx, s.celestiaChain, gmChain, hermes)
+	s.T().Logf("Established IBC connection %s and channel %s between Celestia and GM chain", connection.ConnectionID, channel.ChannelID)
+}
+
+func (s *DockerIntegrationTestSuite) getAttester(ctx context.Context, gmChain *cosmos.Chain, validatorArmoredKey string) (AttesterConfig, *Attester) {
 	// Create attester configuration
 	attesterConfig := DefaultAttesterConfig()
+
+	// Set armored key (required)
+	require.NotEmpty(s.T(), validatorArmoredKey, "validator armored key is required")
+	attesterConfig.PrivKeyArmor = validatorArmoredKey
+
 	// Get the internal network addresses for the GM chain
 	gmNodes := gmChain.GetNodes()
 	require.NotEmpty(s.T(), gmNodes, "no GM chain nodes available")
@@ -86,20 +122,13 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 
 	privValidatorKeyJSON, err := gmNode.ReadFile(ctx, "config/priv_validator_key.json")
 	require.NoError(s.T(), err, "unable to read priv_validator_key.json from GM node")
-	//s.T().Logf("retrieved priv_validator_key.json (%d bytes)", len(privValidatorKeyJSON))
-	//validatorKeyPath := filepath.Join(s.T().TempDir(), "priv_validator_key.json")
-	//require.NoError(s.T(), os.WriteFile(validatorKeyPath, privValidatorKeyJSON, 0o600))
-	//attesterConfig.ValidatorKeyPath = validatorKeyPath
 
 	privValidatorStateJSON, err := gmNode.ReadFile(ctx, "data/priv_validator_state.json")
 	require.NoError(s.T(), err, "unable to read priv_validator_state.json from GM node")
-	//s.T().Logf("retrieved priv_validator_state.json (%d bytes)", len(privValidatorStateJSON))
-	//validatorStatePath := filepath.Join(s.T().TempDir(), "priv_validator_state.json")
-	//require.NoError(s.T(), os.WriteFile(validatorStatePath, privValidatorStateJSON, 0o600))
-	//attesterConfig.ValidatorStatePath = validatorStatePath
 
-	attesterAccAddr, err := deriveAttesterAccount(attesterConfig.Mnemonic)
-	require.NoError(s.T(), err, "failed to derive attester account address")
+	// Derive attester account address from armored key
+	attesterAccAddr, err := deriveAttesterAccountFromArmor(attesterConfig.PrivKeyArmor)
+	require.NoError(s.T(), err, "failed to derive attester account address from armored key")
 
 	fromAddr, err := sdkacc.AddressFromWallet(gmChain.GetFaucetWallet())
 	require.NoError(s.T(), err, "failed to retrieve faucet address")
@@ -121,31 +150,63 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 		ctx,
 		"config/priv_validator_key.json",
 		privValidatorKeyJSON,
-		//file.WithOwner(attesterNode.Image.UIDGID),
-		//file.WithFileMode(0o600),
 	))
 	require.NoError(s.T(), attesterNode.WriteFile(
 		ctx,
 		"data/priv_validator_state.json",
 		privValidatorStateJSON,
-		//file.WithOwner(attesterNode.Image.UIDGID),
-		//file.WithFileMode(0o600),
 	))
 
-	s.T().Logf("Starting attester node %s", attesterNode.Name())
-	err = attesterNode.Start(ctx, attesterConfig)
-	require.NoError(s.T(), err)
+	// Verify validator key can be imported (demonstration)
+	s.T().Log("Setting up attester keyring with validator key...")
 
-	s.T().Log("Attester node started successfully")
+	// Create an in-memory keyring for the attester
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	attesterKeyring := keyring.NewInMemory(testEncCfg.Codec)
+
+	// Import the validator key into the attester keyring
+	err = attesterKeyring.ImportPrivKey("validator", validatorArmoredKey, "")
+	require.NoError(s.T(), err, "failed to import validator key into attester keyring")
+
+	s.T().Log("Validator key imported successfully into attester keyring")
+
+	// List keys in attester keyring to verify
+	attesterKeys, err := attesterKeyring.List()
+	require.NoError(s.T(), err)
+	s.T().Logf("Attester keyring now has %d keys", len(attesterKeys))
+
+	for i, key := range attesterKeys {
+		keyAddr, _ := key.GetAddress()
+		s.T().Logf("Attester Key %d: Name=%s, Address=%s", i, key.Name, keyAddr.String())
+	}
+
+	return attesterConfig, attesterNode
 }
 
-func deriveAttesterAccount(mnemonic string) (sdk.AccAddress, error) {
-	derivedPriv, err := hd.Secp256k1.Derive()(mnemonic, "", hd.CreateHDPath(118, 0, 0).String())
+func deriveAttesterAccountFromArmor(armoredKey string) (sdk.AccAddress, error) {
+	// Create a temporary in-memory keyring for importing
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	kr := keyring.NewInMemory(testEncCfg.Codec)
+
+	// Import the armored key into the temporary keyring
+	err := kr.ImportPrivKey("temp", armoredKey, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to derive private key: %w", err)
+		return nil, fmt.Errorf("failed to import armored private key: %w", err)
 	}
-	privKey := &secp256k1.PrivKey{Key: derivedPriv}
-	return sdk.AccAddress(privKey.PubKey().Address()), nil
+
+	// Get the key record
+	keyRecord, err := kr.Key("temp")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get imported key: %w", err)
+	}
+
+	// Get the address from the key record
+	keyAddr, err := keyRecord.GetAddress()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get address from key: %w", err)
+	}
+
+	return keyAddr, nil
 }
 
 func (s *DockerIntegrationTestSuite) buildGMImage() {
@@ -170,6 +231,51 @@ func (s *DockerIntegrationTestSuite) buildAttesterImage() {
 		"evabci/attester:local",
 		map[string]string{},
 	)
+}
+
+func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Chain {
+	daAddress, authToken, daStartHeight, err := s.getDANetworkParams(ctx)
+	require.NoError(s.T(), err)
+
+	s.T().Log("Creating GM chain connected to DA network...")
+	sdk.GetConfig().SetBech32PrefixForAccount("celestia", "celestiapub")
+	gmImg := container.NewImage("evabci/gm", "local", "1000:1000")
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	gmChain, err := cosmos.NewChainBuilder(s.T()).
+		WithEncodingConfig(&testEncCfg).
+		WithDockerClient(s.dockerClient).
+		WithDockerNetworkID(s.networkID).
+		WithImage(gmImg).
+		WithDenom("stake").
+		WithBech32Prefix("celestia").
+		WithChainID("gm").
+		WithBinaryName("gmd").
+		WithGasPrices(fmt.Sprintf("0.001%s", "stake")).
+		WithAdditionalStartArgs(
+			"--evnode.node.aggregator",
+			"--evnode.signer.passphrase", "12345678",
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--evnode.da.start_height", daStartHeight,
+			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			"--rpc.laddr", "tcp://0.0.0.0:26657",
+			"--evnode.attester-mode", "true",
+			"--grpc.address", "0.0.0.0:9090",
+			"--api.enable",
+			"--minimum-gas-prices", "0.001stake",
+			"--log_level", "*:info",
+		).
+		WithNode(cosmos.NewChainNodeConfigBuilder().
+			WithPostInit(AddSingleSequencer).
+			Build()).
+		Build(ctx)
+	require.NoError(s.T(), err)
+
+	return gmChain
 }
 
 func getenvDefault(key, def string) string {
@@ -239,4 +345,34 @@ func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
 		return fmt.Errorf("failed to marshal genesis: %w", err)
 	}
 	return node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
+}
+
+// setupIBCConnection establishes a complete IBC connection and channel
+func setupIBCConnection(t *testing.T, ctx context.Context, chainA, chainB types.Chain, hermes *relayer.Hermes) (ibc.Connection, ibc.Channel) {
+	// create clients
+	err := hermes.CreateClients(ctx, chainA, chainB)
+	require.NoError(t, err)
+
+	// create connections
+	connection, err := hermes.CreateConnections(ctx, chainA, chainB)
+	require.NoError(t, err)
+	require.NotEmpty(t, connection.ConnectionID, "Connection ID should not be empty")
+
+	// Create an ICS20 channel for token transfers
+	channelOpts := ibc.CreateChannelOptions{
+		SourcePortName: "transfer",
+		DestPortName:   "transfer",
+		Order:          ibc.OrderUnordered,
+		Version:        "ics20-1",
+	}
+
+	channel, err := hermes.CreateChannel(ctx, chainA, connection, channelOpts)
+	require.NoError(t, err)
+	require.NotNil(t, channel)
+	require.NotEmpty(t, channel.ChannelID, "Channel ID should not be empty")
+
+	t.Logf("Created IBC connection: %s <-> %s", connection.ConnectionID, connection.CounterpartyID)
+	t.Logf("Created IBC channel: %s <-> %s", channel.ChannelID, channel.CounterpartyID)
+
+	return connection, channel
 }

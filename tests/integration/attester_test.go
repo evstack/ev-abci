@@ -75,7 +75,7 @@ type AttesterConfig struct {
 	ChainID            string
 	GMNodeURL          string
 	GMAPIUrl           string
-	Mnemonic           string
+	PrivKeyArmor       string
 	ValidatorKeyPath   string
 	ValidatorStatePath string
 }
@@ -83,8 +83,7 @@ type AttesterConfig struct {
 // DefaultAttesterConfig returns a default configuration
 func DefaultAttesterConfig() AttesterConfig {
 	return AttesterConfig{
-		ChainID:  "gm",
-		Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+		ChainID: "gm",
 	}
 }
 
@@ -93,15 +92,20 @@ func (h *Attester) Start(ctx context.Context, config AttesterConfig) error {
 		"attester",
 		"--chain-id", config.ChainID,
 		"--home", attesterHomeDir,
-		"--mnemonic", config.Mnemonic,
+	}
+
+	// Use armored key
+	cmd = append(cmd, "--priv-key-armor", config.PrivKeyArmor)
+
+	cmd = append(cmd,
 		"--api-addr", config.GMAPIUrl,
 		"--node", config.GMNodeURL,
-		"--bech32-account-prefix", "gm",
-		"--bech32-account-pubkey", "gmpub",
-		"--bech32-validator-prefix", "gmvaloper",
-		"--bech32-validator-pubkey", "gmvaloperpub",
+		"--bech32-account-prefix", "celestia",
+		"--bech32-account-pubkey", "celestiapub",
+		"--bech32-validator-prefix", "celestiavaloper",
+		"--bech32-validator-pubkey", "celestiavaloperpub",
 		"--verbose",
-	}
+	)
 
 	err := h.CreateContainer(ctx, h.TestName, h.NetworkID, h.Image, nil, "", h.Bind(), nil, h.Name(), cmd, nil, []string{})
 	if err != nil {

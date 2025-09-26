@@ -20,7 +20,7 @@ WORKDIR /workspace
 COPY . /workspace/ev-abci
 
 # Scaffold GM app and apply evolve plugin
-RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix celestia
 WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
 RUN ignite evolve add
