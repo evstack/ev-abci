@@ -298,7 +298,7 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	}
 	broadcaster := cosmos.NewBroadcasterForNode(chain, cosmosChainNode)
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(30 * time.Second) // wait for node to sync. TODO: improve later.
 
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
 	resp, err := broadcaster.BroadcastMessages(ctx, fromWallet, msg)
