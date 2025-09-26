@@ -15,7 +15,9 @@ import (
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/ibc"
 	"github.com/celestiaorg/tastora/framework/docker/ibc/relayer"
+	"github.com/celestiaorg/tastora/framework/testutil/query"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
+	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -23,6 +25,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,7 +50,7 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	}()
 
 	// Wait 10 seconds for GM chain to initialize
-	time.Sleep(10 * time.Second)
+	time.Sleep(8 * time.Second)
 
 	kr, err := gmChain.GetNodes()[0].GetKeyring()
 	require.NoError(s.T(), err)
@@ -102,6 +106,9 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 
 	connection, channel := setupIBCConnection(s.T(), ctx, s.celestiaChain, gmChain, hermes)
 	s.T().Logf("Established IBC connection %s and channel %s between Celestia and GM chain", connection.ConnectionID, channel.ChannelID)
+
+	// Test IBC transfers
+	s.testIBCTransfers(ctx, s.celestiaChain, gmChain, channel, hermes)
 }
 
 func (s *DockerIntegrationTestSuite) getAttester(ctx context.Context, gmChain *cosmos.Chain, validatorArmoredKey string) (AttesterConfig, *Attester) {
@@ -375,4 +382,134 @@ func setupIBCConnection(t *testing.T, ctx context.Context, chainA, chainB types.
 	t.Logf("Created IBC channel: %s <-> %s", channel.ChannelID, channel.CounterpartyID)
 
 	return connection, channel
+}
+
+// testIBCTransfers performs bidirectional IBC transfers and validates they succeed
+func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celestiaChain, gmChain *cosmos.Chain, channel ibc.Channel, hermes *relayer.Hermes) {
+	// Transfer amount
+	transferAmount := sdkmath.NewInt(1_000_000)
+
+	// Get wallets for both chains
+	celestiaWallet := celestiaChain.GetFaucetWallet()
+	gmWallet := gmChain.GetFaucetWallet()
+
+	celestiaAddr, err := sdkacc.AddressFromWallet(celestiaWallet)
+	require.NoError(s.T(), err)
+	gmAddr, err := sdkacc.AddressFromWallet(gmWallet)
+	require.NoError(s.T(), err)
+
+	s.T().Logf("Celestia wallet address: %s", celestiaAddr.String())
+	s.T().Logf("GM wallet address: %s", gmAddr.String())
+
+	// Calculate IBC denom for GM chain receiving Celestia tokens
+	celestiaToGMIBCDenom := s.calculateIBCDenom(channel.CounterpartyPort, channel.CounterpartyID, "utia")
+
+	// Start Hermes relayer
+	s.T().Log("Starting Hermes relayer...")
+	err = hermes.Start(ctx)
+	require.NoError(s.T(), err)
+
+	// Test 1: Transfer from Celestia to GM chain
+	s.T().Log("=== Testing transfer from Celestia to GM chain ===")
+
+	// Get initial balance
+	initialGMBalance := s.getBalance(ctx, gmChain, gmAddr, celestiaToGMIBCDenom)
+	s.T().Logf("Initial GM IBC balance: %s %s", initialGMBalance.String(), celestiaToGMIBCDenom)
+
+	// Perform transfer
+	transferMsg := transfertypes.NewMsgTransfer(
+		channel.PortID,
+		channel.ChannelID,
+		sdk.NewCoin("utia", transferAmount),
+		celestiaWallet.GetFormattedAddress(),
+		gmAddr.String(),
+		clienttypes.ZeroHeight(),
+		uint64(time.Now().Add(time.Hour).UnixNano()),
+		"",
+	)
+
+	resp, err := celestiaChain.BroadcastMessages(ctx, celestiaWallet, transferMsg)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), uint32(0), resp.Code, "IBC transfer failed: %s", resp.RawLog)
+
+	s.T().Logf("IBC transfer broadcast successful. TX hash: %s", resp.TxHash)
+
+	// Wait for transfer to be relayed
+	s.T().Log("Waiting for transfer to be relayed...")
+	err = wait.ForBlocks(ctx, 10, celestiaChain, gmChain)
+	require.NoError(s.T(), err)
+
+	// Check final balance
+	finalGMBalance := s.getBalance(ctx, gmChain, gmAddr, celestiaToGMIBCDenom)
+	s.T().Logf("Final GM IBC balance: %s %s", finalGMBalance.String(), celestiaToGMIBCDenom)
+
+	// Verify transfer succeeded
+	expectedBalance := initialGMBalance.Add(transferAmount)
+	require.True(s.T(), finalGMBalance.Equal(expectedBalance),
+		"GM balance mismatch: expected %s, got %s", expectedBalance.String(), finalGMBalance.String())
+
+	// Test 2: Transfer from GM to Celestia chain
+	s.T().Log("=== Testing transfer from GM to Celestia chain ===")
+
+	// Calculate IBC denom for Celestia chain receiving GM tokens
+	gmToCelestiaIBCDenom := s.calculateIBCDenom(channel.PortID, channel.ChannelID, "stake")
+
+	// Get initial balance
+	initialCelestiaBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
+	s.T().Logf("Initial Celestia IBC balance: %s %s", initialCelestiaBalance.String(), gmToCelestiaIBCDenom)
+
+	// Perform reverse transfer
+	reverseTransferMsg := transfertypes.NewMsgTransfer(
+		channel.CounterpartyPort,
+		channel.CounterpartyID,
+		sdk.NewCoin("stake", transferAmount),
+		gmWallet.GetFormattedAddress(),
+		celestiaAddr.String(),
+		clienttypes.ZeroHeight(),
+		uint64(time.Now().Add(time.Hour).UnixNano()),
+		"",
+	)
+
+	resp, err = gmChain.BroadcastMessages(ctx, gmWallet, reverseTransferMsg)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), uint32(0), resp.Code, "Reverse IBC transfer failed: %s", resp.RawLog)
+
+	s.T().Logf("Reverse IBC transfer broadcast successful. TX hash: %s", resp.TxHash)
+
+	// Wait for reverse transfer to be relayed
+	s.T().Log("Waiting for reverse transfer to be relayed...")
+	err = wait.ForBlocks(ctx, 10, celestiaChain, gmChain)
+	require.NoError(s.T(), err)
+
+	// Check final balance
+	finalCelestiaBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
+	s.T().Logf("Final Celestia IBC balance: %s %s", finalCelestiaBalance.String(), gmToCelestiaIBCDenom)
+
+	// Verify reverse transfer succeeded
+	expectedCelestiaBalance := initialCelestiaBalance.Add(transferAmount)
+	require.True(s.T(), finalCelestiaBalance.Equal(expectedCelestiaBalance),
+		"Celestia balance mismatch: expected %s, got %s", expectedCelestiaBalance.String(), finalCelestiaBalance.String())
+
+	s.T().Log("=== IBC Transfer Tests Completed Successfully ===")
+}
+
+// getBalance queries the balance of an address for a specific denom
+func (s *DockerIntegrationTestSuite) getBalance(ctx context.Context, chain *cosmos.Chain, address sdk.AccAddress, denom string) sdkmath.Int {
+	node := chain.GetNode()
+	amount, err := query.Balance(ctx, node.GrpcConn, address.String(), denom)
+	if err != nil {
+		s.T().Logf("Failed to query balance for %s denom %s: %v", address.String(), denom, err)
+		return sdkmath.ZeroInt()
+	}
+	return amount
+}
+
+// calculateIBCDenom calculates the IBC denomination for a token transferred over IBC
+func (s *DockerIntegrationTestSuite) calculateIBCDenom(portID, channelID, baseDenom string) string {
+	prefixedDenom := transfertypes.GetPrefixedDenom(
+		portID,
+		channelID,
+		baseDenom,
+	)
+	return transfertypes.ParseDenomTrace(prefixedDenom).IBCDenom()
 }
