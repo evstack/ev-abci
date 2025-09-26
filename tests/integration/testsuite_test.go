@@ -5,6 +5,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/celestiaorg/tastora/framework/testutil/config"
+	cometcfg "github.com/cometbft/cometbft/config"
+	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
+	"github.com/multiformats/go-multihash"
+
+	//multihash "github.com/multiformats/go-multihash/core"
+	"github.com/pelletier/go-toml/v2"
 	"regexp"
 	"time"
 
@@ -25,7 +32,6 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/moby/moby/client"
-	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
@@ -73,7 +79,7 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 
 // CreateCelestiaChain sets up a Celestia app chain for DA and stores it in the suite
 func (s *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *cosmos.Chain {
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, transfer.AppModuleBasic{})
 	celestia, err := cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithDockerClient(s.dockerClient).
@@ -87,6 +93,42 @@ func (s *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *c
 			"--timeout-commit", "1s",
 			"--minimum-gas-prices", "0.000001utia",
 		).
+		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
+			// 1) Ensure ABCI responses and tx events are retained and indexed for Hermes
+			if err := config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
+				cfg.Storage.DiscardABCIResponses = false
+				// Enable key-value tx indexer so Hermes can query IBC packet events
+				cfg.TxIndex.Indexer = "kv"
+				// Increase RPC BroadcastTxCommit timeout to accommodate CI slowness
+				if cfg.RPC != nil {
+					cfg.RPC.TimeoutBroadcastTxCommit = 120000000000 // 120s in nanoseconds for toml marshal
+				}
+			}); err != nil {
+				return err
+			}
+			// 2) Ensure app-level index-events include IBC packet events
+			appToml, err := node.ReadFile(ctx, "config/app.toml")
+			if err != nil {
+				return err
+			}
+			var appCfg map[string]interface{}
+			if err := toml.Unmarshal(appToml, &appCfg); err != nil {
+				return err
+			}
+			appCfg["index-events"] = []string{
+				"message.action",
+				"send_packet",
+				"recv_packet",
+				"write_acknowledgement",
+				"acknowledge_packet",
+				"timeout_packet",
+			}
+			updated, err := toml.Marshal(appCfg)
+			if err != nil {
+				return err
+			}
+			return node.WriteFile(ctx, "config/app.toml", updated)
+		}).
 		WithNode(cosmos.NewChainNodeConfigBuilder().Build()).
 		Build(ctx)
 

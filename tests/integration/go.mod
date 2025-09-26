@@ -4,13 +4,13 @@ go 1.24.6
 
 require (
 	github.com/celestiaorg/tastora v0.3.0
+	github.com/cosmos/ibc-go/v8 v8.7.0
 	github.com/moby/moby v27.5.1+incompatible
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
 )
 
 require (
-	github.com/cosmos/ibc-go/v8 v8.7.0
 	github.com/libp2p/go-libp2p v0.43.0
 	github.com/multiformats/go-multihash v0.2.3
 )
@@ -37,6 +37,7 @@ require (
 	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/celestiaorg/go-square/v2 v2.2.0 // indirect
 	github.com/celestiaorg/nmt v0.24.1 // indirect
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cosmos/ibc-go/modules/capability v1.0.1 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/orderedcode v0.0.1 // indirect
@@ -49,6 +50,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
+	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/minio/highwayhash v1.0.3 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
@@ -78,7 +80,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.1 // indirect
-	github.com/BurntSushi/toml v1.5.0 // indirect
+	github.com/BurntSushi/toml v1.5.0
 	github.com/DataDog/datadog-go v3.2.0+incompatible // indirect
 	github.com/DataDog/zstd v1.5.5 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -231,7 +233,7 @@ require (
 
 replace (
 	cosmossdk.io/x/upgrade => github.com/celestiaorg/cosmos-sdk/x/upgrade v0.1.0
-	github.com/celestiaorg/tastora => ../../../tastora
+	//github.com/celestiaorg/tastora => ../../../tastora
 
 	github.com/cometbft/cometbft => github.com/celestiaorg/celestia-core v1.56.1-tm-v0.38.17
 	github.com/cosmos/cosmos-sdk => github.com/celestiaorg/cosmos-sdk v1.29.4-sdk-v0.50.14

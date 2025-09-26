@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/BurntSushi/toml"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/ibc"
@@ -19,12 +21,15 @@ import (
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
+	cometcfg "github.com/cometbft/cometbft/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
+	ibctransfer "github.com/cosmos/ibc-go/v8/modules/apps/transfer"
 	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
@@ -49,8 +54,24 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 		}
 	}()
 
-	// Wait 10 seconds for GM chain to initialize
-	time.Sleep(8 * time.Second)
+	// Wait for GM chain RPC to be ready
+	s.T().Log("Waiting for GM chain RPC to be ready...")
+	var rpcReady bool
+	for i := 0; i < 30; i++ { // 30 second timeout
+		node := gmChain.GetNodes()[0]
+		rpcClient, _ := node.GetRPCClient()
+		if rpcClient != nil {
+			// Test if RPC client is actually working by making a simple call
+			_, err := rpcClient.Status(ctx)
+			if err == nil {
+				rpcReady = true
+				s.T().Log("GM chain RPC is ready")
+				break
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	require.True(s.T(), rpcReady, "GM chain RPC failed to become ready within 30 seconds")
 
 	kr, err := gmChain.GetNodes()[0].GetKeyring()
 	require.NoError(s.T(), err)
@@ -103,6 +124,10 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 
 	err = hermes.Init(ctx, s.celestiaChain, gmChain)
 	require.NoError(s.T(), err, "failed to initialize relayer")
+
+	// Switch hermes to pull mode to avoid WebSocket connection issues
+	err = s.configureHermesForPullMode(ctx, hermes)
+	require.NoError(s.T(), err, "failed to configure hermes for pull mode")
 
 	connection, channel := setupIBCConnection(s.T(), ctx, s.celestiaChain, gmChain, hermes)
 	s.T().Logf("Established IBC connection %s and channel %s between Celestia and GM chain", connection.ConnectionID, channel.ChannelID)
@@ -168,7 +193,8 @@ func (s *DockerIntegrationTestSuite) getAttester(ctx context.Context, gmChain *c
 	s.T().Log("Setting up attester keyring with validator key...")
 
 	// Create an in-memory keyring for the attester
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	// Include transfer module so MsgTransfer is registered in the interface registry
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, ibctransfer.AppModuleBasic{})
 	attesterKeyring := keyring.NewInMemory(testEncCfg.Codec)
 
 	// Import the validator key into the attester keyring
@@ -216,6 +242,54 @@ func deriveAttesterAccountFromArmor(armoredKey string) (sdk.AccAddress, error) {
 	return keyAddr, nil
 }
 
+func (s *DockerIntegrationTestSuite) configureHermesForPullMode(ctx context.Context, hermes *relayer.Hermes) error {
+	s.T().Log("Configuring hermes to use pull mode and increased clock drift...")
+
+	// Read the current config
+	configBz, err := hermes.ReadFile(ctx, ".hermes/config.toml")
+	if err != nil {
+		return fmt.Errorf("failed to read hermes config: %w", err)
+	}
+
+	// Unmarshal into map
+	var config map[string]interface{}
+	if err := toml.Unmarshal(configBz, &config); err != nil {
+		return fmt.Errorf("failed to unmarshal hermes config: %w", err)
+	}
+
+	// Update chains to use pull mode and increase clock drift
+	chains, ok := config["chains"].([]map[string]interface{})
+	if !ok {
+		return fmt.Errorf("chains not found in config or not in expected format")
+	}
+
+	for i := range chains {
+		// Update event_source to pull mode with tighter interval
+		chains[i]["event_source"] = map[string]interface{}{
+			"mode":     "pull",
+			"interval": "200ms",
+		}
+
+		// Update clock_drift to handle timing differences between chains
+		chains[i]["clock_drift"] = "60s"
+	}
+
+	// Remarshal into bytes
+	updatedConfigBz, err := toml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated hermes config: %w", err)
+	}
+
+	// Write the updated config
+	err = hermes.WriteFile(ctx, ".hermes/config.toml", updatedConfigBz)
+	if err != nil {
+		return fmt.Errorf("failed to write updated hermes config: %w", err)
+	}
+
+	s.T().Log("Successfully configured hermes to use pull mode with 60s clock drift tolerance")
+	return nil
+}
+
 func (s *DockerIntegrationTestSuite) buildGMImage() {
 	evnodeVersion := getenvDefault("EVNODE_VERSION", "v1.0.0-beta.4")
 	igniteVersion := getenvDefault("IGNITE_VERSION", "v29.3.1")
@@ -247,7 +321,7 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 	s.T().Log("Creating GM chain connected to DA network...")
 	sdk.GetConfig().SetBech32PrefixForAccount("celestia", "celestiapub")
 	gmImg := container.NewImage("evabci/gm", "local", "1000:1000")
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, transfer.AppModuleBasic{})
 	gmChain, err := cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithDockerClient(s.dockerClient).
@@ -276,6 +350,42 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--minimum-gas-prices", "0.001stake",
 			"--log_level", "*:info",
 		).
+		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
+			// 1) Ensure ABCI responses and tx events are retained and indexed for Hermes
+			if err := config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
+				cfg.Storage.DiscardABCIResponses = false
+				// Enable key-value tx indexer so Hermes can query IBC packet events
+				cfg.TxIndex.Indexer = "kv"
+				// Increase RPC BroadcastTxCommit timeout to accommodate CI slowness
+				if cfg.RPC != nil {
+					cfg.RPC.TimeoutBroadcastTxCommit = 120000000000 // 120s in nanoseconds
+				}
+			}); err != nil {
+				return err
+			}
+			// 2) Ensure app-level index-events include IBC packet events
+			appToml, err := node.ReadFile(ctx, "config/app.toml")
+			if err != nil {
+				return err
+			}
+			var appCfg map[string]interface{}
+			if err := toml.Unmarshal(appToml, &appCfg); err != nil {
+				return err
+			}
+			appCfg["index-events"] = []string{
+				"message.action",
+				"send_packet",
+				"recv_packet",
+				"write_acknowledgement",
+				"acknowledge_packet",
+				"timeout_packet",
+			}
+			updated, err := toml.Marshal(appCfg)
+			if err != nil {
+				return err
+			}
+			return node.WriteFile(ctx, "config/app.toml", updated)
+		}).
 		WithNode(cosmos.NewChainNodeConfigBuilder().
 			WithPostInit(AddSingleSequencer).
 			Build()).
@@ -365,6 +475,9 @@ func setupIBCConnection(t *testing.T, ctx context.Context, chainA, chainB types.
 	require.NoError(t, err)
 	require.NotEmpty(t, connection.ConnectionID, "Connection ID should not be empty")
 
+	// give chains a moment to persist connection state and client updates
+	_ = wait.ForBlocks(ctx, 2, chainA, chainB)
+
 	// Create an ICS20 channel for token transfers
 	channelOpts := ibc.CreateChannelOptions{
 		SourcePortName: "transfer",
@@ -409,6 +522,9 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 	err = hermes.Start(ctx)
 	require.NoError(s.T(), err)
 
+	// Allow Hermes to sync initial heights before sending packets
+	_ = wait.ForBlocks(ctx, 2, celestiaChain, gmChain)
+
 	// Test 1: Transfer from Celestia to GM chain
 	s.T().Log("=== Testing transfer from Celestia to GM chain ===")
 
@@ -428,16 +544,18 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 		"",
 	)
 
-	resp, err := celestiaChain.BroadcastMessages(ctx, celestiaWallet, transferMsg)
+	// Use a longer per-tx timeout to avoid 60s default aborts on busy or lagging nodes
+	ctxTx, cancelTx := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelTx()
+	resp, err := celestiaChain.BroadcastMessages(ctxTx, celestiaWallet, transferMsg)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), uint32(0), resp.Code, "IBC transfer failed: %s", resp.RawLog)
 
 	s.T().Logf("IBC transfer broadcast successful. TX hash: %s", resp.TxHash)
 
-	// Wait for transfer to be relayed
-	s.T().Log("Waiting for transfer to be relayed...")
-	err = wait.ForBlocks(ctx, 10, celestiaChain, gmChain)
-	require.NoError(s.T(), err)
+    // Wait until GM balance reflects the transfer (poll with timeout)
+    s.T().Log("Waiting for GM balance to update...")
+    require.NoError(s.T(), s.waitForBalanceIncrease(ctx, gmChain, gmAddr, celestiaToGMIBCDenom, initialGMBalance, transferAmount, 2*time.Minute))
 
 	// Check final balance
 	finalGMBalance := s.getBalance(ctx, gmChain, gmAddr, celestiaToGMIBCDenom)
@@ -470,16 +588,18 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 		"",
 	)
 
-	resp, err = gmChain.BroadcastMessages(ctx, gmWallet, reverseTransferMsg)
+	// Use the same extended timeout for the reverse transfer
+	ctxTx2, cancelTx2 := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelTx2()
+	resp, err = gmChain.BroadcastMessages(ctxTx2, gmWallet, reverseTransferMsg)
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), uint32(0), resp.Code, "Reverse IBC transfer failed: %s", resp.RawLog)
 
 	s.T().Logf("Reverse IBC transfer broadcast successful. TX hash: %s", resp.TxHash)
 
-	// Wait for reverse transfer to be relayed
-	s.T().Log("Waiting for reverse transfer to be relayed...")
-	err = wait.ForBlocks(ctx, 10, celestiaChain, gmChain)
-	require.NoError(s.T(), err)
+    // Wait until Celestia balance reflects the transfer (poll with timeout)
+    s.T().Log("Waiting for Celestia balance to update...")
+    require.NoError(s.T(), s.waitForBalanceIncrease(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom, initialCelestiaBalance, transferAmount, 2*time.Minute))
 
 	// Check final balance
 	finalCelestiaBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
@@ -491,6 +611,26 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 		"Celestia balance mismatch: expected %s, got %s", expectedCelestiaBalance.String(), finalCelestiaBalance.String())
 
 	s.T().Log("=== IBC Transfer Tests Completed Successfully ===")
+}
+
+// waitForBalanceIncrease polls the balance until it increases by expectedIncrease or timeout expires.
+func (s *DockerIntegrationTestSuite) waitForBalanceIncrease(ctx context.Context, chain *cosmos.Chain, address sdk.AccAddress, denom string, initial sdkmath.Int, expectedIncrease sdkmath.Int, timeout time.Duration) error {
+    deadline := time.Now().Add(timeout)
+    target := initial.Add(expectedIncrease)
+    for {
+        current := s.getBalance(ctx, chain, address, denom)
+        if current.GTE(target) {
+            return nil
+        }
+        if time.Now().After(deadline) {
+            return fmt.Errorf("balance did not reach target within %s: got %s, want %s (%s)", timeout, current.String(), target.String(), denom)
+        }
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        case <-time.After(1 * time.Second):
+        }
+    }
 }
 
 // getBalance queries the balance of an address for a specific denom
