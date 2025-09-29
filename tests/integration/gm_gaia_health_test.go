@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,9 +36,6 @@ import (
 func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	//s.buildGMImage()
-	//s.buildAttesterImage()
 
 	gmChain := s.getGmChain(ctx)
 
@@ -252,13 +246,13 @@ func (s *DockerIntegrationTestSuite) configureHermesForPullMode(ctx context.Cont
 	}
 
 	// Unmarshal into map
-	var config map[string]interface{}
-	if err := toml.Unmarshal(configBz, &config); err != nil {
+	var c map[string]interface{}
+	if err := toml.Unmarshal(configBz, &c); err != nil {
 		return fmt.Errorf("failed to unmarshal hermes config: %w", err)
 	}
 
 	// Update chains to use pull mode and increase clock drift
-	chains, ok := config["chains"].([]map[string]interface{})
+	chains, ok := c["chains"].([]map[string]interface{})
 	if !ok {
 		return fmt.Errorf("chains not found in config or not in expected format")
 	}
@@ -275,7 +269,7 @@ func (s *DockerIntegrationTestSuite) configureHermesForPullMode(ctx context.Cont
 	}
 
 	// Remarshal into bytes
-	updatedConfigBz, err := toml.Marshal(config)
+	updatedConfigBz, err := toml.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("failed to marshal updated hermes config: %w", err)
 	}
@@ -288,30 +282,6 @@ func (s *DockerIntegrationTestSuite) configureHermesForPullMode(ctx context.Cont
 
 	s.T().Log("Successfully configured hermes to use pull mode with 60s clock drift tolerance")
 	return nil
-}
-
-func (s *DockerIntegrationTestSuite) buildGMImage() {
-	evnodeVersion := getenvDefault("EVNODE_VERSION", "v1.0.0-beta.4")
-	igniteVersion := getenvDefault("IGNITE_VERSION", "v29.3.1")
-	igniteEvolveApp := getenvDefault("IGNITE_EVOLVE_APP_VERSION", "main")
-
-	dockerBuild(s.T(), projectRoot(s.T()),
-		filepath.Join(projectRoot(s.T()), "./tests/integration/docker/Dockerfile.gm"),
-		"evabci/gm:local",
-		map[string]string{
-			"IGNITE_VERSION":            igniteVersion,
-			"IGNITE_EVOLVE_APP_VERSION": igniteEvolveApp,
-			"EVNODE_VERSION":            evnodeVersion,
-		},
-	)
-}
-
-func (s *DockerIntegrationTestSuite) buildAttesterImage() {
-	dockerBuild(s.T(), projectRoot(s.T()),
-		filepath.Join(projectRoot(s.T()), "./tests/integration/docker/Dockerfile.attester"),
-		"evabci/attester:local",
-		map[string]string{},
-	)
 }
 
 func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Chain {
@@ -393,34 +363,6 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 	require.NoError(s.T(), err)
 
 	return gmChain
-}
-
-func getenvDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func dockerBuild(t *testing.T, contextDir, dockerfile, tag string, args map[string]string) {
-	t.Helper()
-	cmdArgs := []string{"build", "-f", dockerfile, "-t", tag}
-	for k, v := range args {
-		cmdArgs = append(cmdArgs, "--build-arg", fmt.Sprintf("%s=%s", k, v))
-	}
-	cmdArgs = append(cmdArgs, contextDir)
-	cmd := exec.Command("docker", cmdArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	require.NoError(t, cmd.Run(), "docker build failed: %s", tag)
-}
-
-func projectRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-
-	return filepath.Clean(filepath.Join(wd, "..", ".."))
 }
 
 // AddSingleSequencer modifies the genesis file to add a single sequencer with specified power and public key.

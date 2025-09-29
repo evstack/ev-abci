@@ -26,7 +26,7 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
 RUN ignite evolve add
 
 # Inject App wiring for ev-abci network module before building
-COPY .github/integration-tests/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
+COPY tests/integration/docker/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
 RUN chmod +x /workspace/patch-app-wiring.sh && \
     echo "===== Running network module patch =====" && \
     bash /workspace/patch-app-wiring.sh
