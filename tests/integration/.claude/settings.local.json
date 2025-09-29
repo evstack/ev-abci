@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//Users/jgimeno/Development/Rollkit/tastora/**)"
-    ],
-    "deny": [],
-    "ask": []
-  }
-}
