@@ -39,5 +39,4 @@ jobs:
           GOTOOLCHAIN: auto
           VERBOSE: "true"
         run: |
-          cd tests/integration
           go test -v -run 'TestDockerIntegrationTestSuite/TestAttesterSystem' -count=1
