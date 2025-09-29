@@ -26,13 +26,17 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
+	"github.com/cosmos/cosmos-sdk/x/auth"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/cosmos/cosmos-sdk/x/bank"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cobra"
 
@@ -47,6 +51,7 @@ const (
 	flagHome                  = "home"
 	flagVerbose               = "verbose"
 	flagMnemonic              = "mnemonic"
+	flagPrivKeyArmor          = "priv-key-armor"
 	flagBech32AccountPrefix   = "bech32-account-prefix"
 	flagBech32AccountPubkey   = "bech32-account-pubkey"
 	flagBech32ValidatorPrefix = "bech32-validator-prefix"
@@ -61,6 +66,7 @@ type Config struct {
 	Home                  string
 	Verbose               bool
 	Mnemonic              string
+	PrivKeyArmor          string
 	Bech32AccountPrefix   string
 	Bech32AccountPubkey   string
 	Bech32ValidatorPrefix string
@@ -84,13 +90,14 @@ func main() {
 	rootCmd.Flags().String(flagHome, "", "Directory for config and data")
 	rootCmd.Flags().Bool(flagVerbose, false, "Enable verbose output")
 	rootCmd.Flags().String(flagMnemonic, "", "Mnemonic for the private key")
+	rootCmd.Flags().String(flagPrivKeyArmor, "", "ASCII armored private key (alternative to mnemonic)")
 	rootCmd.Flags().String(flagBech32AccountPrefix, "gm", "Bech32 prefix for account addresses")
 	rootCmd.Flags().String(flagBech32AccountPubkey, "gmpub", "Bech32 prefix for account public keys")
 	rootCmd.Flags().String(flagBech32ValidatorPrefix, "gmvaloper", "Bech32 prefix for validator addresses")
 	rootCmd.Flags().String(flagBech32ValidatorPubkey, "gmvaloperpub", "Bech32 prefix for validator public keys")
 
 	_ = rootCmd.MarkFlagRequired(flagChainID)
-	_ = rootCmd.MarkFlagRequired(flagMnemonic)
+	// Note: Either mnemonic or priv-key-armor is required, checked at runtime
 
 	// Execute
 	if err := rootCmd.Execute(); err != nil {
@@ -131,6 +138,11 @@ func ParseFlags(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
+	privKeyArmor, err := cmd.Flags().GetString(flagPrivKeyArmor)
+	if err != nil {
+		return nil, err
+	}
+
 	bech32AccountPrefix, err := cmd.Flags().GetString(flagBech32AccountPrefix)
 	if err != nil {
 		return nil, err
@@ -158,6 +170,7 @@ func ParseFlags(cmd *cobra.Command) (*Config, error) {
 		Home:                  home,
 		Verbose:               verbose,
 		Mnemonic:              mnemonic,
+		PrivKeyArmor:          privKeyArmor,
 		Bech32AccountPrefix:   bech32AccountPrefix,
 		Bech32AccountPubkey:   bech32AccountPubkey,
 		Bech32ValidatorPrefix: bech32ValidatorPrefix,
@@ -187,9 +200,20 @@ func runAttester(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("  Validator pubkey: %s\n", config.Bech32ValidatorPubkey)
 	}
 
-	operatorPrivKey, err := privateKeyFromMnemonic(config.Mnemonic)
-	if err != nil {
-		return fmt.Errorf("failed to create private key from mnemonic: %w", err)
+	// Get private key from either mnemonic or armored key
+	var operatorPrivKey *secp256k1.PrivKey
+	if config.PrivKeyArmor != "" {
+		operatorPrivKey, err = privateKeyFromArmor(config.PrivKeyArmor)
+		if err != nil {
+			return fmt.Errorf("failed to create private key from armored key: %w", err)
+		}
+	} else if config.Mnemonic != "" {
+		operatorPrivKey, err = privateKeyFromMnemonic(config.Mnemonic)
+		if err != nil {
+			return fmt.Errorf("failed to create private key from mnemonic: %w", err)
+		}
+	} else {
+		return fmt.Errorf("either --mnemonic or --priv-key-armor must be provided")
 	}
 
 	privKeyPath := filepath.Join(config.Home, "config", "priv_validator_key.json")
@@ -766,6 +790,44 @@ func privateKeyFromMnemonic(mnemonic string) (*secp256k1.PrivKey, error) {
 		return nil, fmt.Errorf("failed to derive private key: %w", err)
 	}
 	return &secp256k1.PrivKey{Key: derivedPriv}, nil
+}
+
+// privateKeyFromArmor imports a private key from ASCII armored format
+func privateKeyFromArmor(armoredKey string) (*secp256k1.PrivKey, error) {
+	// Create a test encoding config with the necessary codec
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	kr := keyring.NewInMemory(testEncCfg.Codec)
+
+	// Import the armored key into the temporary keyring
+	err := kr.ImportPrivKey("temp", armoredKey, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to import armored private key: %w", err)
+	}
+
+	// Get the key record
+	keyRecord, err := kr.Key("temp")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get imported key: %w", err)
+	}
+
+	// Get the local record from the keyring record
+	localRecord := keyRecord.GetLocal()
+	if localRecord == nil {
+		return nil, fmt.Errorf("failed to get local record: record is nil")
+	}
+
+	// Get the private key from the local record
+	if localRecord.PrivKey == nil {
+		return nil, fmt.Errorf("failed to get private key: key is nil")
+	}
+
+	// Get the cached private key
+	privKey, ok := localRecord.PrivKey.GetCachedValue().(*secp256k1.PrivKey)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast private key to secp256k1.PrivKey")
+	}
+
+	return privKey, nil
 }
 
 // submitAttestation creates and submits an attestation for a block using PayloadProvider

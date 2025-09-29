@@ -26,19 +26,12 @@ FROM alpine:3.18
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates curl jq bash
 
-# Create attester user
-RUN adduser -D -s /bin/bash attester
+# Create attester user with stable UID/GID expected by integration tests
+RUN addgroup -g 2000 attester \
+    && adduser -D -G attester -u 2000 -h /home/attester -s /bin/bash attester
 
 # Copy attester binary
 COPY --from=builder /workspace/attester /usr/local/bin/attester
-
-# Copy attester script
-COPY --chown=attester:attester .github/integration-tests/scripts/run-attester.sh /home/attester/run-attester.sh
-RUN chmod +x /home/attester/run-attester.sh
-
-# Copy wait helpers
-COPY --chown=attester:attester .github/integration-tests/scripts/wait-for-chain.sh /home/attester/wait-for-chain.sh
-RUN chmod +x /home/attester/wait-for-chain.sh
 
 # Switch to attester user
 USER attester
@@ -54,6 +47,3 @@ ENV MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon ab
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD pgrep -f attester || exit 1
-
-# Run attester
-CMD ["./run-attester.sh"]

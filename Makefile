@@ -4,6 +4,10 @@ pkgs := $(shell go list ./...)
 run := .
 count := 1
 
+IGNITE_VERSION ?= v29.3.1
+IGNITE_EVOLVE_APP_VERSION ?= main
+EVNODE_VERSION ?= v1.0.0-beta.4
+
 ## help: Show this help message
 help: Makefile
 	@echo " Choose a command run in "$(PROJECTNAME)":"
@@ -77,3 +81,22 @@ proto-gen:
 	@rm -r modules/github.com
 
 .PHONY: proto-gen
+
+
+## build-attester-docker-images: Build Docker images for the GM chain and attester integration tests
+build-attester-docker-images:
+	@echo "--> Building GM integration Docker image"
+	@docker build \
+		-f tests/integration/docker/Dockerfile.gm \
+		--build-arg IGNITE_VERSION=$(IGNITE_VERSION) \
+		--build-arg IGNITE_EVOLVE_APP_VERSION=$(IGNITE_EVOLVE_APP_VERSION) \
+		--build-arg EVNODE_VERSION=$(EVNODE_VERSION) \
+		-t evabci/gm:local \
+		.
+	@echo "--> Building attester integration Docker image"
+	@docker build \
+		-f tests/integration/docker/Dockerfile.attester \
+		-t evabci/attester:local \
+		.
+
+.PHONY: build-attester-docker-images
