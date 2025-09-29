@@ -604,16 +604,10 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 
 	finalCelestiaNativeBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, "utia")
 	s.T().Logf("Final Celestia native balance: %s utia", finalCelestiaNativeBalance.String())
-	feeDelta := initialCelestiaNativeBalance.Sub(finalCelestiaNativeBalance)
-	if feeDelta.IsNegative() {
-		s.T().Logf("Celestia native balance increased unexpectedly by %s utia", feeDelta.Abs().String())
-	}
-	maxFeeAllowance := sdkmath.NewInt(100_000) // tolerate gas fee discrepancies
-	require.True(s.T(), finalCelestiaNativeBalance.LTE(initialCelestiaNativeBalance),
-		"Celestia native balance should not exceed initial balance: initial %s, final %s", initialCelestiaNativeBalance.String(), finalCelestiaNativeBalance.String())
-	require.True(s.T(), feeDelta.Abs().LTE(maxFeeAllowance),
-		"Celestia native balance mismatch after return exceeds fee allowance: expected %s, got %s (delta %s > allowance %s)",
-		initialCelestiaNativeBalance.String(), finalCelestiaNativeBalance.String(), feeDelta.Abs().String(), maxFeeAllowance.String())
+	expectedReturnBalance := postInboundCelestiaNativeBalance.Add(transferAmount)
+	require.True(s.T(), finalCelestiaNativeBalance.Equal(expectedReturnBalance),
+		"Celestia native balance mismatch after return: expected %s, got %s",
+		expectedReturnBalance.String(), finalCelestiaNativeBalance.String())
 
 	s.T().Log("=== IBC Transfer Tests Completed Successfully ===")
 }
