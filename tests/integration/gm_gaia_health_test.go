@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/ibc"
 	"github.com/celestiaorg/tastora/framework/docker/ibc/relayer"
+	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/query"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
@@ -514,6 +514,9 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 	s.T().Logf("Celestia wallet address: %s", celestiaAddr.String())
 	s.T().Logf("GM wallet address: %s", gmAddr.String())
 
+	initialCelestiaNativeBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, "utia")
+	s.T().Logf("Initial Celestia native balance: %s utia", initialCelestiaNativeBalance.String())
+
 	// Calculate IBC denom for GM chain receiving Celestia tokens
 	celestiaToGMIBCDenom := s.calculateIBCDenom(channel.CounterpartyPort, channel.CounterpartyID, "utia")
 
@@ -553,9 +556,9 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 
 	s.T().Logf("IBC transfer broadcast successful. TX hash: %s", resp.TxHash)
 
-    // Wait until GM balance reflects the transfer (poll with timeout)
-    s.T().Log("Waiting for GM balance to update...")
-    require.NoError(s.T(), s.waitForBalanceIncrease(ctx, gmChain, gmAddr, celestiaToGMIBCDenom, initialGMBalance, transferAmount, 2*time.Minute))
+	// Wait until GM balance reflects the transfer (poll with timeout)
+	s.T().Log("Waiting for GM balance to update...")
+	require.NoError(s.T(), s.waitForBalanceIncrease(ctx, gmChain, gmAddr, celestiaToGMIBCDenom, initialGMBalance, transferAmount, 2*time.Minute))
 
 	// Check final balance
 	finalGMBalance := s.getBalance(ctx, gmChain, gmAddr, celestiaToGMIBCDenom)
@@ -566,21 +569,16 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 	require.True(s.T(), finalGMBalance.Equal(expectedBalance),
 		"GM balance mismatch: expected %s, got %s", expectedBalance.String(), finalGMBalance.String())
 
-	// Test 2: Transfer from GM to Celestia chain
-	s.T().Log("=== Testing transfer from GM to Celestia chain ===")
+	postInboundCelestiaNativeBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, "utia")
+	s.T().Logf("Celestia native balance after outbound transfer: %s utia", postInboundCelestiaNativeBalance.String())
 
-	// Calculate IBC denom for Celestia chain receiving GM tokens
-	gmToCelestiaIBCDenom := s.calculateIBCDenom(channel.PortID, channel.ChannelID, "stake")
+	// Test 2: Return Celestia-originated tokens back to Celestia
+	s.T().Log("=== Returning Celestia-originated tokens to Celestia ===")
 
-	// Get initial balance
-	initialCelestiaBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
-	s.T().Logf("Initial Celestia IBC balance: %s %s", initialCelestiaBalance.String(), gmToCelestiaIBCDenom)
-
-	// Perform reverse transfer
-	reverseTransferMsg := transfertypes.NewMsgTransfer(
+	returnTransferMsg := transfertypes.NewMsgTransfer(
 		channel.CounterpartyPort,
 		channel.CounterpartyID,
-		sdk.NewCoin("stake", transferAmount),
+		sdk.NewCoin(celestiaToGMIBCDenom, transferAmount),
 		gmWallet.GetFormattedAddress(),
 		celestiaAddr.String(),
 		clienttypes.ZeroHeight(),
@@ -588,49 +586,56 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 		"",
 	)
 
-	// Use the same extended timeout for the reverse transfer
-	ctxTx2, cancelTx2 := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancelTx2()
-	resp, err = gmChain.BroadcastMessages(ctxTx2, gmWallet, reverseTransferMsg)
+	ctxTxReturn, cancelTxReturn := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelTxReturn()
+	resp, err = gmChain.BroadcastMessages(ctxTxReturn, gmWallet, returnTransferMsg)
 	require.NoError(s.T(), err)
-	require.Equal(s.T(), uint32(0), resp.Code, "Reverse IBC transfer failed: %s", resp.RawLog)
+	require.Equal(s.T(), uint32(0), resp.Code, "Return IBC transfer failed: %s", resp.RawLog)
 
-	s.T().Logf("Reverse IBC transfer broadcast successful. TX hash: %s", resp.TxHash)
+	s.T().Logf("Return IBC transfer broadcast successful. TX hash: %s", resp.TxHash)
 
-    // Wait until Celestia balance reflects the transfer (poll with timeout)
-    s.T().Log("Waiting for Celestia balance to update...")
-    require.NoError(s.T(), s.waitForBalanceIncrease(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom, initialCelestiaBalance, transferAmount, 2*time.Minute))
+	s.T().Log("Waiting for Celestia native balance to restore...")
+	require.NoError(s.T(), s.waitForBalanceIncrease(ctx, celestiaChain, celestiaAddr, "utia", postInboundCelestiaNativeBalance, transferAmount, 2*time.Minute))
 
-	// Check final balance
-	finalCelestiaBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
-	s.T().Logf("Final Celestia IBC balance: %s %s", finalCelestiaBalance.String(), gmToCelestiaIBCDenom)
+	restoredGMBalance := s.getBalance(ctx, gmChain, gmAddr, celestiaToGMIBCDenom)
+	s.T().Logf("GM IBC balance after returning tokens: %s %s", restoredGMBalance.String(), celestiaToGMIBCDenom)
+	require.True(s.T(), restoredGMBalance.Equal(initialGMBalance),
+		"GM balance mismatch after returning tokens: expected %s, got %s", initialGMBalance.String(), restoredGMBalance.String())
 
-	// Verify reverse transfer succeeded
-	expectedCelestiaBalance := initialCelestiaBalance.Add(transferAmount)
-	require.True(s.T(), finalCelestiaBalance.Equal(expectedCelestiaBalance),
-		"Celestia balance mismatch: expected %s, got %s", expectedCelestiaBalance.String(), finalCelestiaBalance.String())
+	finalCelestiaNativeBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, "utia")
+	s.T().Logf("Final Celestia native balance: %s utia", finalCelestiaNativeBalance.String())
+	feeDelta := initialCelestiaNativeBalance.Sub(finalCelestiaNativeBalance)
+	if feeDelta.IsNegative() {
+		s.T().Logf("Celestia native balance increased unexpectedly by %s utia", feeDelta.Abs().String())
+	}
+	maxFeeAllowance := sdkmath.NewInt(100_000) // tolerate gas fee discrepancies
+	require.True(s.T(), finalCelestiaNativeBalance.LTE(initialCelestiaNativeBalance),
+		"Celestia native balance should not exceed initial balance: initial %s, final %s", initialCelestiaNativeBalance.String(), finalCelestiaNativeBalance.String())
+	require.True(s.T(), feeDelta.Abs().LTE(maxFeeAllowance),
+		"Celestia native balance mismatch after return exceeds fee allowance: expected %s, got %s (delta %s > allowance %s)",
+		initialCelestiaNativeBalance.String(), finalCelestiaNativeBalance.String(), feeDelta.Abs().String(), maxFeeAllowance.String())
 
 	s.T().Log("=== IBC Transfer Tests Completed Successfully ===")
 }
 
 // waitForBalanceIncrease polls the balance until it increases by expectedIncrease or timeout expires.
 func (s *DockerIntegrationTestSuite) waitForBalanceIncrease(ctx context.Context, chain *cosmos.Chain, address sdk.AccAddress, denom string, initial sdkmath.Int, expectedIncrease sdkmath.Int, timeout time.Duration) error {
-    deadline := time.Now().Add(timeout)
-    target := initial.Add(expectedIncrease)
-    for {
-        current := s.getBalance(ctx, chain, address, denom)
-        if current.GTE(target) {
-            return nil
-        }
-        if time.Now().After(deadline) {
-            return fmt.Errorf("balance did not reach target within %s: got %s, want %s (%s)", timeout, current.String(), target.String(), denom)
-        }
-        select {
-        case <-ctx.Done():
-            return ctx.Err()
-        case <-time.After(1 * time.Second):
-        }
-    }
+	deadline := time.Now().Add(timeout)
+	target := initial.Add(expectedIncrease)
+	for {
+		current := s.getBalance(ctx, chain, address, denom)
+		if current.GTE(target) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("balance did not reach target within %s: got %s, want %s (%s)", timeout, current.String(), target.String(), denom)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1 * time.Second):
+		}
+	}
 }
 
 // getBalance queries the balance of an address for a specific denom
