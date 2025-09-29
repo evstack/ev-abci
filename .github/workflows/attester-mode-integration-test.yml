@@ -25,17 +25,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run integration tests (compose orchestrator)
-        env:
-          VERBOSE: "true"
-        run: |
-          set -euo pipefail
-          bash .github/integration-tests/run-integration-tests.sh --timeout 900
-
-      - name: Upload integration logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          name: integration-logs
-          path: .github/integration-tests/logs/
-          if-no-files-found: warn
+          go-version-file: go.mod
+
+      - name: Build attester Docker images
+        run: make build-attester-docker-images
+
+      - name: Run attester integration test
+        working-directory: tests/integration
+        env:
+          GOTOOLCHAIN: auto
+          VERBOSE: "true"
+        run: go test -v -run TestAttesterSystem -count=1 ./...
