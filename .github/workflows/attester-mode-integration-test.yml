@@ -38,4 +38,6 @@ jobs:
         env:
           GOTOOLCHAIN: auto
           VERBOSE: "true"
-        run: go test -v -run TestAttesterSystem -count=1 ./...
+        run: |
+          cd tests/integration
+          go test -v -run 'TestDockerIntegrationTestSuite/TestAttesterSystem' -count=1
