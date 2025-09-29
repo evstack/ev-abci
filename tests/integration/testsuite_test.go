@@ -32,6 +32,7 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/moby/moby/client"
+	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
@@ -73,13 +74,13 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 	s.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
 
-	/*	s.evolveChain = s.CreateEvolveChain(ctx)
-		s.T().Log("Evolve chain started")*/
+	s.evolveChain = s.CreateEvolveChain(ctx)
+	s.T().Log("Evolve chain started")
 }
 
 // CreateCelestiaChain sets up a Celestia app chain for DA and stores it in the suite
 func (s *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *cosmos.Chain {
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, transfer.AppModuleBasic{})
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 	celestia, err := cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithDockerClient(s.dockerClient).

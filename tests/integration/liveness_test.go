@@ -86,7 +86,8 @@ func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testin
 	transferAmount := sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100)))
 
 	// send funds broadcasting to a node that is not the aggregator.
-	err = s.sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 1)
+	// TODO: modify this to nodeIdx 1 when testing P2P syncing. 0 is aggregator, 1 will be another full node.
+	err = s.sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 0)
 	require.NoError(t, err, "failed to send funds from Bob to Carol")
 
 	finalBalance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
