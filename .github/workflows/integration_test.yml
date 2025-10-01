@@ -688,6 +688,8 @@ jobs:
       IGNITE_VERSION: "v29.3.1"
       IGNITE_EVOLVE_APP_VERSION: "main"
       GAIA_VERSION: "v25.1.0"
+      EVOLVE_IMAGE_REPO: "evabci/gm"
+      EVOLVE_IMAGE_TAG: "local"
 
     steps:
       - uses: actions/checkout@v5
