@@ -13,7 +13,7 @@ concurrency:
 jobs:
   build-attester-images:
     name: Build Attester Images
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
