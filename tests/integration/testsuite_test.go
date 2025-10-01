@@ -5,13 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/celestiaorg/tastora/framework/testutil/config"
-	cometcfg "github.com/cometbft/cometbft/config"
-	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
-	"github.com/multiformats/go-multihash"
-
-	//multihash "github.com/multiformats/go-multihash/core"
-	"github.com/pelletier/go-toml/v2"
 	"regexp"
 	"time"
 
@@ -20,8 +13,10 @@ import (
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/dataavailability"
+	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/types"
+	cometcfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
 	cmprivval "github.com/cometbft/cometbft/privval"
@@ -33,6 +28,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/moby/moby/client"
 	"github.com/multiformats/go-multihash"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
@@ -290,7 +286,7 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node 
 }
 
 // addFollowerNode adds a follower node to the evolve chain.
-func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, daStartHeight, aggregatorPeer string) {
+func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, daStartHeight, _ string) {
 	err := evolveChain.AddNode(ctx, cosmos.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--evnode.da.address", daAddress,
