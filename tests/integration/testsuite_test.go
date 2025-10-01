@@ -1,10 +1,12 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"cosmossdk.io/math"
@@ -13,6 +15,7 @@ import (
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/dataavailability"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
+	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
 	"github.com/cometbft/cometbft/crypto"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
@@ -22,9 +25,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/moby/moby/client"
-	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -165,6 +166,7 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 		WithBinaryName("gmd").
 		// explicitly set 0 gas so that we can make exact assertions when sending balances.
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
+		WithAdditionalExposedPorts("7331").
 		WithNodes(
 			cosmos.NewChainNodeConfigBuilder().
 				// Create aggregator node with rollkit-specific start arguments
@@ -192,7 +194,18 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 	err = evolveChain.Start(ctx)
 	s.Require().NoError(err)
 
-	aggregatorPeer := s.GetNodeMultiAddr(ctx, evolveChain.GetNode())
+	// wait for aggregator to produce a few blocks before adding followers
+	s.T().Log("Waiting for aggregator to produce blocks...")
+	s.Require().NoError(wait.ForBlocks(ctx, 3, evolveChain))
+
+	// Get aggregator's network info to construct ev-node RPC address
+	// Use External address since we're calling from the test host
+	networkInfo, err := evolveChain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+
+	s.T().Logf("NetworkInfo - External: IP=%s, Hostname=%s", networkInfo.External.IP, networkInfo.External.Hostname)
+
+	aggregatorPeer := s.GetNodeMultiAddr(ctx, networkInfo.External.Hostname+":"+networkInfo.External.Ports.EVNodeRPC)
 	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
 
 	s.T().Logf("Adding first follower node...")
@@ -200,42 +213,75 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 	s.T().Logf("Adding second follower node...")
 	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
 
+	// wait for follower nodes to sync with aggregator
+	s.T().Logf("Waiting for follower nodes to sync...")
+	s.waitForFollowerSync(ctx, evolveChain)
+
 	return evolveChain
 }
 
-// GetNodeMultiAddr extracts the multiaddr from a rollkit chain node
+// GetNodeMultiAddr queries the ev-node RPC to get the actual p2p multiaddr
 // Returns the multiaddr in the format: /ip4/{IP}/tcp/36656/p2p/{PEER_ID}
-func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node types.ChainNode) string {
-	// Cast to concrete cosmos.ChainNode to access NodeID method
-	cosmosNode, ok := node.(*cosmos.ChainNode)
-	s.Require().True(ok, "node is not a cosmos.ChainNode")
+func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, rpcAddress string) string {
+	// The ev-node RPC uses Connect protocol (HTTP/1.1 compatible)
+	// Make HTTP POST to the Connect endpoint
+	rpcURL := fmt.Sprintf("http://%s/evnode.v1.P2PService/GetNetInfo", rpcAddress)
+	s.T().Logf("Calling RPC URL: %s", rpcURL)
 
-	// Get the node ID
-	nodeID, err := cosmosNode.NodeID(ctx)
-	s.Require().NoError(err)
-	s.Require().NotEmpty(nodeID, "node ID is empty")
-
-	// Get the node's internal IP address
-	nodeNetworkInfo, err := node.GetNetworkInfo(ctx)
-	s.Require().NoError(err)
-	nodeIP := nodeNetworkInfo.Internal.IP
-
-	// Convert hex node ID to libp2p peer ID
-	nodeIDBytes, err := hex.DecodeString(nodeID)
+	req, err := http.NewRequestWithContext(ctx, "POST", rpcURL, bytes.NewReader([]byte("{}")))
 	s.Require().NoError(err)
 
-	// Create a multihash from the node ID bytes (using identity hash since it's already hashed)
-	mh, err := multihash.Sum(nodeIDBytes, multihash.IDENTITY, -1)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	s.Require().NoError(err)
+	defer resp.Body.Close()
 
-	// Create peer ID from multihash
-	peerID, err := peer.IDFromBytes(mh)
+	s.T().Logf("Response status: %d", resp.StatusCode)
+
+	// Read response body for logging
+	bodyBytes, err := io.ReadAll(resp.Body)
 	s.Require().NoError(err)
+	s.T().Logf("Response body: %s", string(bodyBytes))
 
-	// Construct the multiaddr with default rollkit P2P port
-	multiAddr := fmt.Sprintf("/ip4/%s/tcp/36656/p2p/%s", nodeIP, peerID.String())
+	s.Require().Equal(200, resp.StatusCode, "unexpected status code from RPC")
 
+	var response struct {
+		NetInfo struct {
+			ID              string   `json:"id"`
+			ListenAddresses []string `json:"listenAddresses"`
+		} `json:"netInfo"`
+	}
+
+	err = json.Unmarshal(bodyBytes, &response)
+	s.Require().NoError(err)
+	s.T().Logf("Parsed response - ID: %s, ListenAddresses: %v", response.NetInfo.ID, response.NetInfo.ListenAddresses)
+	s.Require().NotEmpty(response.NetInfo.ListenAddresses, "no listen addresses returned")
+
+	// Find the non-localhost address
+	var multiAddr string
+	for _, addr := range response.NetInfo.ListenAddresses {
+		if !contains(addr, "127.0.0.1") {
+			multiAddr = addr
+			break
+		}
+	}
+
+	s.Require().NotEmpty(multiAddr, "no non-localhost listen address found")
+	s.T().Logf("Selected multiaddr: %s", multiAddr)
 	return multiAddr
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && func() bool {
+		for i := 0; i <= len(s)-len(substr); i++ {
+			if s[i:i+len(substr)] == substr {
+				return true
+			}
+		}
+		return false
+	}()
 }
 
 // addFollowerNode adds a follower node to the evolve chain.
@@ -250,11 +296,38 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 			"--evnode.da.data_namespace", "ev-data",
 			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
+			"--evnode.p2p.peers", aggregatorPeer,
 			"--log_level", "*:debug",
 		).
 		Build())
 	s.Require().NoError(err)
+}
+
+// waitForFollowerSync waits for all follower nodes to sync with the aggregator
+func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, evolveChain *cosmos.Chain) {
+	nodes := evolveChain.GetNodes()
+	if len(nodes) <= 1 {
+		return
+	}
+
+	syncCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	// use the chain as the heighter (it queries the first node)
+	// convert follower nodes to Heighter interface by casting to concrete type
+	followers := nodes[1:]
+	followerHeighters := make([]wait.Heighter, len(followers))
+	for i, follower := range followers {
+		cosmosNode, ok := follower.(*cosmos.ChainNode)
+		s.Require().True(ok, "follower node is not a cosmos.ChainNode")
+		followerHeighters[i] = cosmosNode
+	}
+
+	// wait for followers to reach chain height (which is the aggregator's height)
+	err := wait.ForInSync(syncCtx, evolveChain, followerHeighters...)
+	s.Require().NoError(err, "follower nodes failed to sync with aggregator")
+
+	s.T().Logf("All %d follower nodes are now in sync with aggregator", len(followers))
 }
 
 // getGenesisHash retrieves the genesis hash from the celestia chain
@@ -297,8 +370,6 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 		return fmt.Errorf("chainNode is not a cosmos.ChainNode")
 	}
 	broadcaster := cosmos.NewBroadcasterForNode(chain, cosmosChainNode)
-
-	time.Sleep(30 * time.Second)
 
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
 	resp, err := broadcaster.BroadcastMessages(ctx, fromWallet, msg)

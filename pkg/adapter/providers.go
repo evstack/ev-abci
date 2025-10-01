@@ -17,9 +17,14 @@ import (
 
 func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
 	return func(header *evtypes.Header) ([]byte, error) {
-		blockID, err := adapter.Store.GetBlockID(context.Background(), header.Height())
-		if err != nil && header.Height() > 1 {
-			return nil, err
+		blockID := &cmttypes.BlockID{}
+
+		if header.Height() > 1 {
+			var err error
+			blockID, err = adapter.Store.GetBlockID(context.Background(), header.Height())
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return createVote(header, blockID), nil

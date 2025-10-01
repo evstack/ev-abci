@@ -86,8 +86,7 @@ func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testin
 	transferAmount := sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100)))
 
 	// send funds broadcasting to a node that is not the aggregator.
-	// TODO: modify this to nodeIdx 1 when testing P2P syncing. 0 is aggregator, 1 will be another full node.
-	err = s.sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 0)
+	err = s.sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 1)
 	require.NoError(t, err, "failed to send funds from Bob to Carol")
 
 	finalBalance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), bobsWallet.GetFormattedAddress(), denom)
@@ -107,7 +106,7 @@ func getEvolveAppContainer() container.Image {
 	// get image repo and tag from environment variables
 	imageRepo := os.Getenv("EVOLVE_IMAGE_REPO")
 	if imageRepo == "" {
-		imageRepo = "ev-node" // fallback default
+		imageRepo = "evolve-gm" // fallback default
 	}
 
 	imageTag := os.Getenv("EVOLVE_IMAGE_TAG")
