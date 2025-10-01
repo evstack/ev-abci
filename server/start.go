@@ -417,11 +417,6 @@ func setupNodeAndExecutor(
 		opts = append(opts, adapter.WithMetrics(m))
 	}
 
-	// TODO enable soft confirmation block filter when clarified
-	// if srvCtx.Viper.GetBool(FlagAttesterMode) {
-	// 	opts = append(opts, adapter.WithNetworkSoftConfirmationBlockFilter())
-	// }
-
 	executor = adapter.NewABCIExecutor(
 		app,
 		database,

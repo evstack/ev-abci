@@ -6,7 +6,7 @@ count := 1
 
 IGNITE_VERSION ?= v29.3.1
 IGNITE_EVOLVE_APP_VERSION ?= main
-EVNODE_VERSION ?= v1.0.0-beta.4
+EVNODE_VERSION ?= v1.0.0-beta.5
 
 ## help: Show this help message
 help: Makefile
