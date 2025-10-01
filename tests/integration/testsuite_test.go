@@ -308,7 +308,7 @@ func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, ev
 	time.Sleep(1 * time.Minute)
 	//nodes := evolveChain.GetNodes()
 	//if len(nodes) <= 1 {
-	//	return
+	//    return
 	//}
 	//
 	//syncCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -319,9 +319,9 @@ func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, ev
 	//followers := nodes[1:]
 	//followerHeighters := make([]wait.Heighter, len(followers))
 	//for i, follower := range followers {
-	//	cosmosNode, ok := follower.(*cosmos.ChainNode)
-	//	s.Require().True(ok, "follower node is not a cosmos.ChainNode")
-	//	followerHeighters[i] = cosmosNode
+	//    cosmosNode, ok := follower.(*cosmos.ChainNode)
+	//    s.Require().True(ok, "follower node is not a cosmos.ChainNode")
+	//    followerHeighters[i] = cosmosNode
 	//}
 	//
 	//// wait for followers to reach chain height (which is the aggregator's height)
@@ -353,6 +353,44 @@ func getGenesisHash(ctx context.Context, chain types.Chain) (string, error) {
 	return genesisHash, nil
 }
 
+// copyWalletKeyToNode ensures the given wallet's private key is present in the target node's keyring.
+// It exports the key from the aggregator node (index 0) and imports it into the target node.
+//func (s *DockerIntegrationTestSuite) copyWalletKeyToNode(ctx context.Context, chain *cosmos.Chain, wallet *types.Wallet, targetNode *cosmos.ChainNode) error {
+//	// Get source (aggregator) keyring
+//	srcNode, ok := chain.GetNodes()[0].(*cosmos.ChainNode)
+//	if !ok {
+//		return fmt.Errorf("aggregator node is not a cosmos.ChainNode")
+//	}
+//	srcKr, err := srcNode.GetKeyring()
+//	if err != nil {
+//		return fmt.Errorf("failed to get source keyring: %w", err)
+//	}
+//
+//	// Get target keyring
+//	dstKr, err := targetNode.GetKeyring()
+//	if err != nil {
+//		return fmt.Errorf("failed to get target keyring: %w", err)
+//	}
+//
+//	keyName := wallet.GetKeyName()
+//
+//	// Try to lookup on destination first; if present, no-op
+//	if _, err := dstKr.Key(keyName); err == nil {
+//		return nil
+//	}
+//
+//	// Export from source and import into destination (empty passphrase for test backend)
+//	armored, err := srcKr.ExportPrivKeyArmor(keyName, "")
+//	if err != nil {
+//		return fmt.Errorf("failed to export key %q from source: %w", keyName, err)
+//	}
+//
+//	if err := dstKr.ImportPrivKey(keyName, armored, ""); err != nil {
+//		return fmt.Errorf("failed to import key %q into target: %w", keyName, err)
+//	}
+//	return nil
+//}
+
 // sendFunds sends funds from one wallet to another using bank transfer
 func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmos.Chain, fromWallet, toWallet *types.Wallet, amount sdk.Coins, nodeIdx int) error {
 	fromAddress, err := sdkacc.AddressFromWallet(fromWallet)
@@ -370,6 +408,24 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	if !ok {
 		return fmt.Errorf("chainNode is not a cosmos.ChainNode")
 	}
+
+	// Ensure the fromWallet key exists on the target node's keyring
+	// Wallets are created on chain.GetNode() (index 0). When broadcasting via a different
+	// node, copy the private key into that node's keyring for signing.
+	//if nodeIdx != 0 {
+	//	if err := s.copyWalletKeyToNode(ctx, chain, fromWallet, cosmosChainNode); err != nil {
+	//		return fmt.Errorf("failed to copy wallet key to target node: %w", err)
+	//	}
+	//
+	//	// Ensure the target node is in sync with the aggregator so account state exists
+	//	// on this node before we attempt to sign and broadcast.
+	//	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	//	defer cancel()
+	//	s.T().Logf("Waiting for target node to be in sync...")
+	//	if err := wait.ForInSync(syncCtx, chain, cosmosChainNode); err != nil {
+	//		return fmt.Errorf("target node not yet in sync for broadcast: %w", err)
+	//	}
+	//}
 	broadcaster := cosmos.NewBroadcasterForNode(chain, cosmosChainNode)
 
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)

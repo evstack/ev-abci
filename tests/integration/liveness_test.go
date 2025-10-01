@@ -97,7 +97,7 @@ func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testin
 
 	carolBalance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), carolsWallet.GetFormattedAddress(), denom)
 	require.NoError(t, err, "failed to query carol's balance")
-	require.True(t, carolBalance.Amount.Equal(math.NewInt(100)), "carol shouldaddFollowerNode have received 100 tokens")
+	require.True(t, carolBalance.Amount.Equal(math.NewInt(100)), "carol should have received 100 tokens")
 }
 
 // getEvolveAppContainer returns the evolve app container image.
