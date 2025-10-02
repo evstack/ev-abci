@@ -319,7 +319,7 @@ func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, ev
 
 	// convert nodes to Heighter interface
 	aggregator := nodes[0].(wait.Heighter)
-	followers := make([]wait.Heighter, len(nodes)-1)
+	followers := make([]wait.Heighter, 0)
 	for i := 1; i < len(nodes); i++ {
 		followers = append(followers, nodes[i].(wait.Heighter))
 	}
