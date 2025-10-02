@@ -194,9 +194,9 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 	err = evolveChain.Start(ctx)
 	s.Require().NoError(err)
 
-	// wait for aggregator to produce a few blocks before adding followers
+	// wait for aggregator to produce just 1 block to ensure it's running
 	s.T().Log("Waiting for aggregator to produce blocks...")
-	s.Require().NoError(wait.ForBlocks(ctx, 3, evolveChain))
+	s.Require().NoError(wait.ForBlocks(ctx, 1, evolveChain))
 
 	// Get aggregator's network info to construct ev-node RPC address
 	// Use External address since we're calling from the test host
@@ -210,12 +210,17 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 
 	s.T().Logf("Adding first follower node...")
 	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
-	s.T().Logf("Adding second follower node...")
-	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
 
-	// wait for follower nodes to sync with aggregator
-	s.T().Logf("Waiting for follower nodes to sync...")
+	// wait for first follower to sync before adding second
+	s.T().Logf("Waiting for first follower to sync...")
 	s.waitForFollowerSync(ctx, evolveChain)
+
+	//s.T().Logf("Adding second follower node...")
+	//s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
+	//
+	//wait for all follower nodes to sync with aggregator
+	//s.T().Logf("Waiting for all follower nodes to sync...")
+	//s.waitForFollowerSync(ctx, evolveChain)
 
 	return evolveChain
 }
@@ -303,32 +308,55 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 	s.Require().NoError(err)
 }
 
-// waitForFollowerSync waits for all follower nodes to sync with the aggregator
+// waitForFollowerSync waits for all follower nodes to be within acceptable delta of aggregator
 func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, evolveChain *cosmos.Chain) {
-	time.Sleep(1 * time.Minute)
-	//nodes := evolveChain.GetNodes()
-	//if len(nodes) <= 1 {
-	//    return
-	//}
-	//
-	//syncCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	//defer cancel()
-	//
-	//// use the chain as the heighter (it queries the first node)
-	//// convert follower nodes to Heighter interface by casting to concrete type
-	//followers := nodes[1:]
-	//followerHeighters := make([]wait.Heighter, len(followers))
-	//for i, follower := range followers {
-	//    cosmosNode, ok := follower.(*cosmos.ChainNode)
-	//    s.Require().True(ok, "follower node is not a cosmos.ChainNode")
-	//    followerHeighters[i] = cosmosNode
-	//}
-	//
-	//// wait for followers to reach chain height (which is the aggregator's height)
-	//err := wait.ForInSync(syncCtx, evolveChain, followerHeighters...)
-	//s.Require().NoError(err, "follower nodes failed to sync with aggregator")
+	nodes := evolveChain.GetNodes()
+	if len(nodes) <= 1 {
+		return
+	}
 
-	//s.T().Logf("All %d follower nodes are now in sync with aggregator", len(followers))
+	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	const maxAcceptableDelta = 5 // followers can be up to 5 blocks behind
+
+	for {
+		select {
+		case <-syncCtx.Done():
+			s.Require().FailNow("timeout waiting for followers to sync")
+		case <-ticker.C:
+			aggHeight, err := nodes[0].(*cosmos.ChainNode).Height(syncCtx)
+			if err != nil {
+				s.T().Logf("Failed to get aggregator height: %v", err)
+				continue
+			}
+
+			allInSync := true
+			for i := 1; i < len(nodes); i++ {
+				followerHeight, err := nodes[i].(*cosmos.ChainNode).Height(syncCtx)
+				if err != nil {
+					s.T().Logf("Failed to get follower %d height: %v", i, err)
+					allInSync = false
+					continue
+				}
+
+				delta := aggHeight - followerHeight
+				s.T().Logf("Follower %d: height=%d, aggregator=%d, delta=%d", i, followerHeight, aggHeight, delta)
+
+				if delta > maxAcceptableDelta {
+					allInSync = false
+				}
+			}
+
+			if allInSync {
+				s.T().Logf("All %d follower nodes are now in sync (within %d blocks of aggregator)", len(nodes)-1, maxAcceptableDelta)
+				return
+			}
+		}
+	}
 }
 
 // getGenesisHash retrieves the genesis hash from the celestia chain

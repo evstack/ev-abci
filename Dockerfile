@@ -24,7 +24,7 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
     ignite evolve add
 
-RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
+RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@v0.0.0-20251002090312-9e73dbfe55d4 && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy
 
