@@ -33,6 +33,7 @@ import (
 
 	"github.com/evstack/ev-abci/pkg/p2p"
 	execstore "github.com/evstack/ev-abci/pkg/store"
+	evtypes "github.com/evstack/ev-node/types"
 )
 
 var _ execution.Executor = &Adapter{}
@@ -310,22 +311,22 @@ func (a *Adapter) ExecuteTxs(
 	a.Logger.Info("Executing block", "height", blockHeight, "num_txs", len(txs), "timestamp", timestamp)
 	a.metrics.TxsExecutedPerBlock.Observe(float64(len(txs)))
 
-    s, err := a.Store.LoadState(ctx)
-    if err != nil {
-        // Lazy-initialize ev-abci state for sync nodes on first execution.
-        // This mirrors InitChain and allows followers to execute height 1.
-        if a.AppGenesis == nil {
-            return nil, 0, fmt.Errorf("load state: %w", err)
-        }
-        a.Logger.Info("Initializing ev-abci state lazily for sync node")
-        if _, _, initErr := a.InitChain(ctx, a.AppGenesis.GenesisTime, uint64(a.AppGenesis.InitialHeight), a.AppGenesis.ChainID); initErr != nil {
-            return nil, 0, fmt.Errorf("lazy init chain failed: %w", initErr)
-        }
-        s, err = a.Store.LoadState(ctx)
-        if err != nil {
-            return nil, 0, fmt.Errorf("load state after init: %w", err)
-        }
-    }
+	s, err := a.Store.LoadState(ctx)
+	if err != nil {
+		// Lazy-initialize ev-abci state for sync nodes on first execution.
+		// This mirrors InitChain and allows followers to execute height 1.
+		if a.AppGenesis == nil {
+			return nil, 0, fmt.Errorf("load state: %w", err)
+		}
+		a.Logger.Info("Initializing ev-abci state lazily for sync node")
+		if _, _, initErr := a.InitChain(ctx, a.AppGenesis.GenesisTime, uint64(a.AppGenesis.InitialHeight), a.AppGenesis.ChainID); initErr != nil {
+			return nil, 0, fmt.Errorf("lazy init chain failed: %w", initErr)
+		}
+		s, err = a.Store.LoadState(ctx)
+		if err != nil {
+			return nil, 0, fmt.Errorf("load state after init: %w", err)
+		}
+	}
 
 	header, ok := types.HeaderFromContext(ctx)
 	if !ok {

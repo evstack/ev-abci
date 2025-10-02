@@ -16,71 +16,53 @@ import (
 )
 
 func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
-    return func(header *evtypes.Header) ([]byte, error) {
-        // Special-case first block: use empty BlockID to avoid race/mismatch
-        // between aggregator and sync node at height 1.
-        var blockID *cmttypes.BlockID
-        if header.Height() == 1 {
-            empty := cmttypes.BlockID{}
-            blockID = &empty
-        } else {
-            var err error
-            blockID, err = adapter.Store.GetBlockID(context.Background(), header.Height())
-            if err != nil {
-                return nil, err
-            }
-        }
-
-		fmt.Printf("-----------agg node (height %d)------------\n", header.Height())
-		if blockID != nil {
-			fmt.Printf("AGG BlockID: Hash=%x, PartSetHeader=%+v\n", blockID.Hash, blockID.PartSetHeader)
-		} else {
-			fmt.Println("AGG BlockID: nil")
+	return func(header *evtypes.Header) ([]byte, error) {
+		// Special-case first block: use empty BlockID to avoid race/mismatch
+		// between aggregator and sync node at height 1.
+		if header.Height() == 1 {
+			return createVote(header, &cmttypes.BlockID{}), nil
 		}
+
+		blockID, err := adapter.Store.GetBlockID(context.Background(), header.Height())
+		if err != nil {
+			return nil, fmt.Errorf("get block ID: %w", err)
+		}
+
 		return createVote(header, blockID), nil
 	}
 }
 
 func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureBytesProvider {
-    return func(ctx context.Context, header *evtypes.Header, data *evtypes.Data) ([]byte, error) {
-        blockHeight := header.Height()
-        cmtTxs := make(cmttypes.Txs, len(data.Txs))
-        for i := range data.Txs {
-            cmtTxs[i] = cmttypes.Tx(data.Txs[i])
-        }
+	return func(ctx context.Context, header *evtypes.Header, data *evtypes.Data) ([]byte, error) {
+		blockHeight := header.Height()
+		cmtTxs := make(cmttypes.Txs, len(data.Txs))
+		for i := range data.Txs {
+			cmtTxs[i] = cmttypes.Tx(data.Txs[i])
+		}
 
-        // Special-case first block to match aggregator behavior
-        var blockID *cmttypes.BlockID
-        if blockHeight == 1 {
-            empty := cmttypes.BlockID{}
-            blockID = &empty
-        } else {
-            lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
-            if err != nil {
-                return nil, fmt.Errorf("get last commit: %w", err)
-            }
+		// Special-case first block to match aggregator behavior
+		if blockHeight == 1 {
+			return createVote(header, &cmttypes.BlockID{}), nil
+		}
 
-            abciHeader, err := ToABCIHeader(*header, lastCommit)
-            if err != nil {
-                return nil, fmt.Errorf("compute header hash: %w", err)
-            }
+		lastCommit, err := adapter.GetLastCommit(ctx, blockHeight)
+		if err != nil {
+			return nil, fmt.Errorf("get last commit: %w", err)
+		}
 
-            currentState, err := adapter.Store.LoadState(ctx)
-            if err != nil {
-                return nil, fmt.Errorf("load state: %w", err)
-            }
+		abciHeader, err := ToABCIHeader(*header, lastCommit)
+		if err != nil {
+			return nil, fmt.Errorf("compute header hash: %w", err)
+		}
 
-            _, blockID, err = MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
-            if err != nil {
-                return nil, fmt.Errorf("make ABCI block: %w", err)
-            }
-        }
+		currentState, err := adapter.Store.LoadState(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load state: %w", err)
+		}
 
-		fmt.Printf("-----------sync node (height %d)------------\n", header.Height())
-		if blockID != nil {
-			fmt.Printf("SYNC BlockID: Hash=%x, PartSetHeader=%+v\n", blockID.Hash, blockID.PartSetHeader)
-		} else {
-			fmt.Println("SYNC BlockID: nil")
+		_, blockID, err := MakeABCIBlock(blockHeight, cmtTxs, currentState, abciHeader, lastCommit)
+		if err != nil {
+			return nil, fmt.Errorf("make ABCI block: %w", err)
 		}
 
 		return createVote(header, blockID), nil
@@ -102,13 +84,10 @@ func createVote(header *evtypes.Header, blockID *cmttypes.BlockID) []byte {
 	chainID := header.ChainID()
 	consensusVoteBytes := cmttypes.VoteSignBytes(chainID, &vote)
 
-	fmt.Println(vote)
-	fmt.Println("-----------------------")
-
 	return consensusVoteBytes
 }
 
-// ValidatorHasher returns a function that calculates the ValidatorHash
+// ValidatorHasherProvider returns a function that calculates the ValidatorHash
 // compatible with CometBFT. This function is intended to be injected into ev-node's Manager.
 func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
 	return func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
