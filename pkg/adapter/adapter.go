@@ -474,14 +474,6 @@ func (a *Adapter) ExecuteTxs(
 	if err := fireEvents(a.EventBus, abciBlock, currentBlockID, fbResp, validatorUpdates); err != nil {
 		return nil, 0, fmt.Errorf("fire events: %w", err)
 	}
-	//} else {
-	//	a.stackBlockCommitEvents(currentBlockID, abciBlock, fbResp, validatorUpdates)
-	//	// clear events so that they are not stored with the block data at this stage.
-	//	fbResp.Events = nil
-	//	if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
-	//		return nil, 0, fmt.Errorf("save block response: %w", err)
-	//	}
-	//}
 
 	a.Logger.Info("block executed successfully", "height", blockHeight, "appHash", fmt.Sprintf("%X", fbResp.AppHash))
 
@@ -629,22 +621,6 @@ type StackedEvent struct {
 	abciResponse     *abci.ResponseFinalizeBlock
 	validatorUpdates []*cmttypes.Validator
 }
-
-// stackBlockCommitEvents is commented out for future use
-// func (a *Adapter) stackBlockCommitEvents(
-// 	blockID *cmttypes.BlockID,
-// 	block *cmttypes.Block,
-// 	abciResponse *abci.ResponseFinalizeBlock,
-// 	validatorUpdates []*cmttypes.Validator,
-// ) {
-// 	// todo (Alex): we need this persisted to recover from restart
-// 	a.stackedEvents = append(a.stackedEvents, StackedEvent{
-// 		blockID:          blockID,
-// 		block:            block,
-// 		abciResponse:     abciResponse,
-// 		validatorUpdates: validatorUpdates,
-// 	})
-// }
 
 // GetTxs calls PrepareProposal with the next height from the store and returns the transactions from the ABCI app
 func (a *Adapter) GetTxs(ctx context.Context) ([][]byte, error) {
