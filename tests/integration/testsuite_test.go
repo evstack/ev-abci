@@ -214,13 +214,12 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 	// wait for first follower to sync before adding second
 	s.T().Logf("Waiting for first follower to sync...")
 	s.waitForFollowerSync(ctx, evolveChain)
+	s.T().Logf("Adding second follower node...")
+	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
 
-	//s.T().Logf("Adding second follower node...")
-	//s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
-	//
 	//wait for all follower nodes to sync with aggregator
-	//s.T().Logf("Waiting for all follower nodes to sync...")
-	//s.waitForFollowerSync(ctx, evolveChain)
+	s.T().Logf("Waiting for all follower nodes to sync...")
+	s.waitForFollowerSync(ctx, evolveChain)
 
 	return evolveChain
 }
@@ -308,7 +307,7 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 	s.Require().NoError(err)
 }
 
-// waitForFollowerSync waits for all follower nodes to be within acceptable delta of aggregator
+// waitForFollowerSync waits for all follower nodes to sync with the aggregator
 func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, evolveChain *cosmos.Chain) {
 	nodes := evolveChain.GetNodes()
 	if len(nodes) <= 1 {
@@ -318,45 +317,17 @@ func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, ev
 	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	const maxAcceptableDelta = 5 // followers can be up to 5 blocks behind
-
-	for {
-		select {
-		case <-syncCtx.Done():
-			s.Require().FailNow("timeout waiting for followers to sync")
-		case <-ticker.C:
-			aggHeight, err := nodes[0].(*cosmos.ChainNode).Height(syncCtx)
-			if err != nil {
-				s.T().Logf("Failed to get aggregator height: %v", err)
-				continue
-			}
-
-			allInSync := true
-			for i := 1; i < len(nodes); i++ {
-				followerHeight, err := nodes[i].(*cosmos.ChainNode).Height(syncCtx)
-				if err != nil {
-					s.T().Logf("Failed to get follower %d height: %v", i, err)
-					allInSync = false
-					continue
-				}
-
-				delta := aggHeight - followerHeight
-				s.T().Logf("Follower %d: height=%d, aggregator=%d, delta=%d", i, followerHeight, aggHeight, delta)
-
-				if delta > maxAcceptableDelta {
-					allInSync = false
-				}
-			}
-
-			if allInSync {
-				s.T().Logf("All %d follower nodes are now in sync (within %d blocks of aggregator)", len(nodes)-1, maxAcceptableDelta)
-				return
-			}
-		}
+	// convert nodes to Heighter interface
+	aggregator := nodes[0].(wait.Heighter)
+	followers := make([]wait.Heighter, len(nodes)-1)
+	for i := 1; i < len(nodes); i++ {
+		followers = append(followers, nodes[i].(wait.Heighter))
 	}
+
+	s.T().Logf("Waiting for %d follower nodes to sync with aggregator...", len(followers))
+	err := wait.ForInSync(syncCtx, aggregator, followers...)
+	s.Require().NoError(err, "followers failed to sync with aggregator")
+	s.T().Logf("All follower nodes are now in sync with aggregator")
 }
 
 // getGenesisHash retrieves the genesis hash from the celestia chain
@@ -381,44 +352,6 @@ func getGenesisHash(ctx context.Context, chain types.Chain) (string, error) {
 	return genesisHash, nil
 }
 
-// copyWalletKeyToNode ensures the given wallet's private key is present in the target node's keyring.
-// It exports the key from the aggregator node (index 0) and imports it into the target node.
-//func (s *DockerIntegrationTestSuite) copyWalletKeyToNode(ctx context.Context, chain *cosmos.Chain, wallet *types.Wallet, targetNode *cosmos.ChainNode) error {
-//	// Get source (aggregator) keyring
-//	srcNode, ok := chain.GetNodes()[0].(*cosmos.ChainNode)
-//	if !ok {
-//		return fmt.Errorf("aggregator node is not a cosmos.ChainNode")
-//	}
-//	srcKr, err := srcNode.GetKeyring()
-//	if err != nil {
-//		return fmt.Errorf("failed to get source keyring: %w", err)
-//	}
-//
-//	// Get target keyring
-//	dstKr, err := targetNode.GetKeyring()
-//	if err != nil {
-//		return fmt.Errorf("failed to get target keyring: %w", err)
-//	}
-//
-//	keyName := wallet.GetKeyName()
-//
-//	// Try to lookup on destination first; if present, no-op
-//	if _, err := dstKr.Key(keyName); err == nil {
-//		return nil
-//	}
-//
-//	// Export from source and import into destination (empty passphrase for test backend)
-//	armored, err := srcKr.ExportPrivKeyArmor(keyName, "")
-//	if err != nil {
-//		return fmt.Errorf("failed to export key %q from source: %w", keyName, err)
-//	}
-//
-//	if err := dstKr.ImportPrivKey(keyName, armored, ""); err != nil {
-//		return fmt.Errorf("failed to import key %q into target: %w", keyName, err)
-//	}
-//	return nil
-//}
-
 // sendFunds sends funds from one wallet to another using bank transfer
 func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmos.Chain, fromWallet, toWallet *types.Wallet, amount sdk.Coins, nodeIdx int) error {
 	fromAddress, err := sdkacc.AddressFromWallet(fromWallet)
@@ -436,24 +369,6 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	if !ok {
 		return fmt.Errorf("chainNode is not a cosmos.ChainNode")
 	}
-
-	// Ensure the fromWallet key exists on the target node's keyring
-	// Wallets are created on chain.GetNode() (index 0). When broadcasting via a different
-	// node, copy the private key into that node's keyring for signing.
-	//if nodeIdx != 0 {
-	//	if err := s.copyWalletKeyToNode(ctx, chain, fromWallet, cosmosChainNode); err != nil {
-	//		return fmt.Errorf("failed to copy wallet key to target node: %w", err)
-	//	}
-	//
-	//	// Ensure the target node is in sync with the aggregator so account state exists
-	//	// on this node before we attempt to sign and broadcast.
-	//	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	//	defer cancel()
-	//	s.T().Logf("Waiting for target node to be in sync...")
-	//	if err := wait.ForInSync(syncCtx, chain, cosmosChainNode); err != nil {
-	//		return fmt.Errorf("target node not yet in sync for broadcast: %w", err)
-	//	}
-	//}
 	broadcaster := cosmos.NewBroadcasterForNode(chain, cosmosChainNode)
 
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
