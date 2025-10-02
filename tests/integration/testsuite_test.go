@@ -1,15 +1,18 @@
 package integration_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"cosmossdk.io/math"
+	evnodev1connect "github.com/evstack/ev-node/types/pb/evnode/v1/v1connect"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
@@ -227,46 +230,24 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 // GetNodeMultiAddr queries the ev-node RPC to get the actual p2p multiaddr
 // Returns the multiaddr in the format: /ip4/{IP}/tcp/36656/p2p/{PEER_ID}
 func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, rpcAddress string) string {
-	// The ev-node RPC uses Connect protocol (HTTP/1.1 compatible)
-	// Make HTTP POST to the Connect endpoint
-	rpcURL := fmt.Sprintf("http://%s/evnode.v1.P2PService/GetNetInfo", rpcAddress)
-	s.T().Logf("Calling RPC URL: %s", rpcURL)
+	baseURL := fmt.Sprintf("http://%s", rpcAddress)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", rpcURL, bytes.NewReader([]byte("{}")))
-	s.Require().NoError(err)
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	p2pClient := evnodev1connect.NewP2PServiceClient(httpClient, baseURL)
 
-	req.Header.Set("Content-Type", "application/json")
+	// call GetNetInfo
+	resp, err := p2pClient.GetNetInfo(ctx, connect.NewRequest(&emptypb.Empty{}))
+	s.Require().NoError(err, "failed to call GetNetInfo RPC")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	s.Require().NoError(err)
-	defer resp.Body.Close()
+	netInfo := resp.Msg.GetNetInfo()
+	s.Require().NotNil(netInfo, "netInfo is nil")
 
-	s.T().Logf("Response status: %d", resp.StatusCode)
+	s.Require().NotEmpty(netInfo.GetListenAddresses(), "no listen addresses returned")
 
-	// Read response body for logging
-	bodyBytes, err := io.ReadAll(resp.Body)
-	s.Require().NoError(err)
-	s.T().Logf("Response body: %s", string(bodyBytes))
-
-	s.Require().Equal(200, resp.StatusCode, "unexpected status code from RPC")
-
-	var response struct {
-		NetInfo struct {
-			ID              string   `json:"id"`
-			ListenAddresses []string `json:"listenAddresses"`
-		} `json:"netInfo"`
-	}
-
-	err = json.Unmarshal(bodyBytes, &response)
-	s.Require().NoError(err)
-	s.T().Logf("Parsed response - ID: %s, ListenAddresses: %v", response.NetInfo.ID, response.NetInfo.ListenAddresses)
-	s.Require().NotEmpty(response.NetInfo.ListenAddresses, "no listen addresses returned")
-
-	// Find the non-localhost address
+	// find the non-localhost address
 	var multiAddr string
-	for _, addr := range response.NetInfo.ListenAddresses {
-		if !contains(addr, "127.0.0.1") {
+	for _, addr := range netInfo.GetListenAddresses() {
+		if !strings.Contains(addr, "127.0.0.1") {
 			multiAddr = addr
 			break
 		}
@@ -275,17 +256,6 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, rpcAd
 	s.Require().NotEmpty(multiAddr, "no non-localhost listen address found")
 	s.T().Logf("Selected multiaddr: %s", multiAddr)
 	return multiAddr
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && func() bool {
-		for i := 0; i <= len(s)-len(substr); i++ {
-			if s[i:i+len(substr)] == substr {
-				return true
-			}
-		}
-		return false
-	}()
 }
 
 // addFollowerNode adds a follower node to the evolve chain.
