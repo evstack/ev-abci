@@ -208,7 +208,10 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 
 	s.T().Logf("NetworkInfo - External: IP=%s, Hostname=%s", networkInfo.External.IP, networkInfo.External.Hostname)
 
-	aggregatorPeer := s.GetNodeMultiAddr(ctx, networkInfo.External.Hostname+":"+networkInfo.External.Ports.EVNodeRPC)
+	evNodePort, ok := networkInfo.GetExtraPortMapping("7331")
+	s.Require().True(ok, "failed to get ev-node RPC port mapping")
+
+	aggregatorPeer := s.GetNodeMultiAddr(ctx, networkInfo.External.Hostname+":"+evNodePort)
 	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
 
 	s.T().Logf("Adding first follower node...")
