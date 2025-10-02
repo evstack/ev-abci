@@ -33,7 +33,6 @@ import (
 
 	"github.com/evstack/ev-abci/pkg/p2p"
 	execstore "github.com/evstack/ev-abci/pkg/store"
-	evtypes "github.com/evstack/ev-node/types"
 )
 
 var _ execution.Executor = &Adapter{}
