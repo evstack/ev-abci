@@ -317,6 +317,9 @@ func (a *Adapter) ExecuteTxs(
 		if a.AppGenesis == nil {
 			return nil, 0, fmt.Errorf("load state: %w", err)
 		}
+		if blockHeight != uint64(a.AppGenesis.InitialHeight) {
+			return nil, 0, fmt.Errorf("load state: %w", err)
+		}
 		a.Logger.Info("Initializing ev-abci state lazily for sync node")
 		if _, _, initErr := a.InitChain(ctx, a.AppGenesis.GenesisTime, uint64(a.AppGenesis.InitialHeight), a.AppGenesis.ChainID); initErr != nil {
 			return nil, 0, fmt.Errorf("lazy init chain failed: %w", initErr)
