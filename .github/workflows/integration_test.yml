@@ -11,141 +11,94 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-attester-images:
-    name: Build Attester Images
+  build-gm-image:
+    name: Build GM Image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
     outputs:
-      gm_primary_tag: ${{ steps.primary_tags.outputs.gm_primary }}
-      attester_primary_tag: ${{ steps.primary_tags.outputs.attester_primary }}
-      gm_release_tag: ${{ steps.reltag.outputs.gm_tag }}
-      attester_release_tag: ${{ steps.reltag.outputs.attester_tag }}
+      image_tag: ${{ steps.tag.outputs.tag }}
     env:
-      REGISTRY: ghcr.io
-      IMAGE_OWNER: ${{ github.repository_owner }}
-      GM_IMAGE_NAME: ev-abci-gm
-      ATTESTER_IMAGE_NAME: ev-abci-attester
       IGNITE_VERSION: v29.3.1
       IGNITE_EVOLVE_APP_VERSION: main
       EVNODE_VERSION: v1.0.0-beta.5
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Metadata for GM image
-        id: meta_gm
-        uses: docker/metadata-action@v5
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.GM_IMAGE_NAME }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Metadata for Attester image
-        id: meta_attester
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.ATTESTER_IMAGE_NAME }}
-
-      - name: Compute release branch tags
-        id: reltag
-        if: startsWith(github.ref_name, 'release/v')
-        shell: bash
+      - name: Determine image tag
+        id: tag
         run: |
-          SANITIZED="${GITHUB_REF_NAME//\//-}"
-          echo "gm_tag=${REGISTRY}/${IMAGE_OWNER}/${GM_IMAGE_NAME}:branch-${SANITIZED}" >> "$GITHUB_OUTPUT"
-          echo "attester_tag=${REGISTRY}/${IMAGE_OWNER}/${ATTESTER_IMAGE_NAME}:branch-${SANITIZED}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "tag=ghcr.io/evstack/evolve-gm:pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=ghcr.io/evstack/evolve-gm:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Build GM image
+      - name: Build and push GM image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: tests/integration/docker/Dockerfile.gm
-          load: true
-          tags: evabci/gm:local
+          push: true
+          tags: ${{ steps.tag.outputs.tag }}
           build-args: |
             IGNITE_VERSION=${{ env.IGNITE_VERSION }}
             IGNITE_EVOLVE_APP_VERSION=${{ env.IGNITE_EVOLVE_APP_VERSION }}
             EVNODE_VERSION=${{ env.EVNODE_VERSION }}
 
-      - name: Build Attester image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: tests/integration/docker/Dockerfile.attester
-          load: true
-          tags: evabci/attester:local
+  build-attester-image:
+    name: Build Attester Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
 
-      - name: Smoke test GM image
-        shell: bash
-        run: docker run --rm --entrypoint /bin/sh evabci/gm:local -c "gmd version"
-
-      - name: Smoke test Attester image
-        shell: bash
-        run: docker run --rm --entrypoint /bin/sh evabci/attester:local -c "attester --help >/dev/null"
-
-      - name: Determine primary tags
-        id: primary_tags
-        shell: bash
-        env:
-          GM_TAGS: ${{ steps.meta_gm.outputs.tags }}
-          ATTESTER_TAGS: ${{ steps.meta_attester.outputs.tags }}
-        run: |
-          set -euo pipefail
-          GM_PRIMARY=$(echo "$GM_TAGS" | head -n 1)
-          ATTESTER_PRIMARY=$(echo "$ATTESTER_TAGS" | head -n 1)
-          echo "gm_primary=${GM_PRIMARY}" >> "$GITHUB_OUTPUT"
-          echo "attester_primary=${ATTESTER_PRIMARY}" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push GM image
-        shell: bash
-        env:
-          TAGS: ${{ steps.meta_gm.outputs.tags }}
-          RELEASE_TAG: ${{ steps.reltag.outputs.gm_tag }}
+      - name: Determine image tag
+        id: tag
         run: |
-          if [ -n "$TAGS" ]; then
-            while IFS= read -r tag; do
-              [ -z "$tag" ] && continue
-              docker tag evabci/gm:local "$tag"
-              docker push "$tag"
-            done <<< "$TAGS"
-          fi
-          if [ -n "$RELEASE_TAG" ]; then
-            docker tag evabci/gm:local "$RELEASE_TAG"
-            docker push "$RELEASE_TAG"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "tag=ghcr.io/evstack/attester:pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=ghcr.io/evstack/attester:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Push Attester image
-        shell: bash
-        env:
-          TAGS: ${{ steps.meta_attester.outputs.tags }}
-          RELEASE_TAG: ${{ steps.reltag.outputs.attester_tag }}
-        run: |
-          if [ -n "$TAGS" ]; then
-            while IFS= read -r tag; do
-              [ -z "$tag" ] && continue
-              docker tag evabci/attester:local "$tag"
-              docker push "$tag"
-            done <<< "$TAGS"
-          fi
-          if [ -n "$RELEASE_TAG" ]; then
-            docker tag evabci/attester:local "$RELEASE_TAG"
-            docker push "$RELEASE_TAG"
-          fi
+      - name: Build and push Attester image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tests/integration/docker/Dockerfile.attester
+          push: true
+          tags: ${{ steps.tag.outputs.tag }}
 
   liveness-tastora:
-    needs: build-attester-images
+    needs: [build-gm-image, build-attester-image]
     name: Test with EV-ABCI Chain (Tastora)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -178,28 +131,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull GM image from GHCR
-        shell: bash
-        env:
-          PRIMARY_TAG: ${{ needs.build-attester-images.outputs.gm_primary_tag }}
         run: |
-          set -euo pipefail
-          if [ -z "$PRIMARY_TAG" ]; then
-            echo "GM primary tag missing" >&2
-            exit 1
-          fi
-          docker pull "$PRIMARY_TAG"
-          docker tag "$PRIMARY_TAG" evabci/gm:local
+          docker pull ${{ needs.build-gm-image.outputs.image_tag }}
+          docker tag ${{ needs.build-gm-image.outputs.image_tag }} evabci/gm:local
 
       - name: Pull Attester image from GHCR
-        shell: bash
-        env:
-          PRIMARY_TAG: ${{ needs.build-attester-images.outputs.attester_primary_tag }}
         run: |
-          set -euo pipefail
-          if [ -n "$PRIMARY_TAG" ]; then
-            docker pull "$PRIMARY_TAG"
-            docker tag "$PRIMARY_TAG" evabci/attester:local
-          fi
+          docker pull ${{ needs.build-attester-image.outputs.image_tag }}
+          docker tag ${{ needs.build-attester-image.outputs.image_tag }} evabci/attester:local
 
       - name: Build Evolve Docker Image
         run: |
@@ -219,7 +158,7 @@ jobs:
           EVOLVE_IMAGE_TAG: ${{ env.EVOLVE_IMAGE_TAG }}
 
   liveness:
-    needs: build-attester-images
+    needs: [build-gm-image, build-attester-image]
     name: Test with Evolve Chain
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -677,7 +616,7 @@ jobs:
           fi
 
   attester-integration:
-    needs: build-attester-images
+    needs: [build-gm-image, build-attester-image]
     name: Attester Mode Integration Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -709,30 +648,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull GM image from GHCR
-        shell: bash
-        env:
-          PRIMARY_TAG: ${{ needs.build-attester-images.outputs.gm_primary_tag }}
         run: |
-          set -euo pipefail
-          if [ -z "$PRIMARY_TAG" ]; then
-            echo "GM primary tag missing" >&2
-            exit 1
-          fi
-          docker pull "$PRIMARY_TAG"
-          docker tag "$PRIMARY_TAG" evabci/gm:local
+          docker pull ${{ needs.build-gm-image.outputs.image_tag }}
+          docker tag ${{ needs.build-gm-image.outputs.image_tag }} evabci/gm:local
 
       - name: Pull Attester image from GHCR
-        shell: bash
-        env:
-          PRIMARY_TAG: ${{ needs.build-attester-images.outputs.attester_primary_tag }}
         run: |
-          set -euo pipefail
-          if [ -z "$PRIMARY_TAG" ]; then
-            echo "Attester primary tag missing" >&2
-            exit 1
-          fi
-          docker pull "$PRIMARY_TAG"
-          docker tag "$PRIMARY_TAG" evabci/attester:local
+          docker pull ${{ needs.build-attester-image.outputs.image_tag }}
+          docker tag ${{ needs.build-attester-image.outputs.image_tag }} evabci/attester:local
 
       - name: Run attester integration test
         working-directory: tests/integration
