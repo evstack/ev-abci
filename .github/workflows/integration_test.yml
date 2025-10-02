@@ -98,7 +98,6 @@ jobs:
           tags: ${{ steps.tag.outputs.tag }}
 
   liveness-tastora:
-    needs: [build-gm-image, build-attester-image]
     name: Test with EV-ABCI Chain (Tastora)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -123,23 +122,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull GM image from GHCR
-        run: |
-          docker pull ${{ needs.build-gm-image.outputs.image_tag }}
-          docker tag ${{ needs.build-gm-image.outputs.image_tag }} evabci/gm:local
-
-      - name: Pull Attester image from GHCR
-        run: |
-          docker pull ${{ needs.build-attester-image.outputs.image_tag }}
-          docker tag ${{ needs.build-attester-image.outputs.image_tag }} evabci/attester:local
-
       - name: Build Evolve Docker Image
         run: |
           docker build \
@@ -158,7 +140,6 @@ jobs:
           EVOLVE_IMAGE_TAG: ${{ env.EVOLVE_IMAGE_TAG }}
 
   liveness:
-    needs: [build-gm-image, build-attester-image]
     name: Test with Evolve Chain
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -181,37 +162,6 @@ jobs:
         with:
           go-version: "stable"
           cache: true
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull GM image from GHCR
-        shell: bash
-        env:
-          PRIMARY_TAG: ${{ needs.build-attester-images.outputs.gm_primary_tag }}
-        run: |
-          set -euo pipefail
-          if [ -z "$PRIMARY_TAG" ]; then
-            echo "GM primary tag missing" >&2
-            exit 1
-          fi
-          docker pull "$PRIMARY_TAG"
-          docker tag "$PRIMARY_TAG" evabci/gm:local
-
-      - name: Pull Attester image from GHCR
-        shell: bash
-        env:
-          PRIMARY_TAG: ${{ needs.build-attester-images.outputs.attester_primary_tag }}
-        run: |
-          set -euo pipefail
-          if [ -n "$PRIMARY_TAG" ]; then
-            docker pull "$PRIMARY_TAG"
-            docker tag "$PRIMARY_TAG" evabci/attester:local
-          fi
 
       - name: Install Ignite CLI
         run: |
