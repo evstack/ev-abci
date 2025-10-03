@@ -2,17 +2,25 @@ package integration_test
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
+	"connectrpc.com/connect"
 	"cosmossdk.io/math"
+	evnodev1connect "github.com/evstack/ev-node/types/pb/evnode/v1/v1connect"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/dataavailability"
+	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
+	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
 	"github.com/cometbft/cometbft/crypto"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
@@ -22,9 +30,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/moby/moby/client"
-	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -165,6 +171,7 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 		WithBinaryName("gmd").
 		// explicitly set 0 gas so that we can make exact assertions when sending balances.
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
+		WithAdditionalExposedPorts("7331").
 		WithNodes(
 			cosmos.NewChainNodeConfigBuilder().
 				// Create aggregator node with rollkit-specific start arguments
@@ -177,11 +184,10 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 					"--evnode.rpc.address", "0.0.0.0:7331",
 					"--evnode.da.namespace", "ev-header",
 					"--evnode.da.data_namespace", "ev-data",
-					"--evnode.da.start_height", daStartHeight,
 					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 					"--log_level", "*:info",
 				).
-				WithPostInit(addSingleSequencer).
+				WithPostInit(addSingleSequencer, setDAStartHeight(daStartHeight)).
 				Build(),
 		).
 		Build(ctx)
@@ -192,49 +198,67 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 	err = evolveChain.Start(ctx)
 	s.Require().NoError(err)
 
-	aggregatorPeer := s.GetNodeMultiAddr(ctx, evolveChain.GetNode())
+	// wait for aggregator to produce just 1 block to ensure it's running
+	s.T().Log("Waiting for aggregator to produce blocks...")
+	s.Require().NoError(wait.ForBlocks(ctx, 1, evolveChain))
+
+	// Get aggregator's network info to construct ev-node RPC address
+	// Use External address since we're calling from the test host
+	networkInfo, err := evolveChain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+
+	s.T().Logf("NetworkInfo - External: IP=%s, Hostname=%s", networkInfo.External.IP, networkInfo.External.Hostname)
+
+	evNodePort, ok := networkInfo.ExtraPortMappings["7331"]
+	s.Require().True(ok, "failed to get ev-node RPC port mapping")
+
+	aggregatorPeer := s.GetNodeMultiAddr(ctx, networkInfo.External.Hostname+":"+evNodePort)
 	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
 
 	s.T().Logf("Adding first follower node...")
 	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
+
+	// wait for first follower to sync before adding second
+	s.T().Logf("Waiting for first follower to sync...")
+	s.waitForFollowerSync(ctx, evolveChain)
 	s.T().Logf("Adding second follower node...")
 	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
+
+	//wait for all follower nodes to sync with aggregator
+	s.T().Logf("Waiting for all follower nodes to sync...")
+	s.waitForFollowerSync(ctx, evolveChain)
 
 	return evolveChain
 }
 
-// GetNodeMultiAddr extracts the multiaddr from a rollkit chain node
+// GetNodeMultiAddr queries the ev-node RPC to get the actual p2p multiaddr
 // Returns the multiaddr in the format: /ip4/{IP}/tcp/36656/p2p/{PEER_ID}
-func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, node types.ChainNode) string {
-	// Cast to concrete cosmos.ChainNode to access NodeID method
-	cosmosNode, ok := node.(*cosmos.ChainNode)
-	s.Require().True(ok, "node is not a cosmos.ChainNode")
+func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, rpcAddress string) string {
+	baseURL := fmt.Sprintf("http://%s", rpcAddress)
 
-	// Get the node ID
-	nodeID, err := cosmosNode.NodeID(ctx)
-	s.Require().NoError(err)
-	s.Require().NotEmpty(nodeID, "node ID is empty")
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	p2pClient := evnodev1connect.NewP2PServiceClient(httpClient, baseURL)
 
-	// Get the node's internal IP address
-	nodeNetworkInfo, err := node.GetNetworkInfo(ctx)
-	s.Require().NoError(err)
-	nodeIP := nodeNetworkInfo.Internal.IP
+	// call GetNetInfo
+	resp, err := p2pClient.GetNetInfo(ctx, connect.NewRequest(&emptypb.Empty{}))
+	s.Require().NoError(err, "failed to call GetNetInfo RPC")
 
-	// Convert hex node ID to libp2p peer ID
-	nodeIDBytes, err := hex.DecodeString(nodeID)
-	s.Require().NoError(err)
+	netInfo := resp.Msg.GetNetInfo()
+	s.Require().NotNil(netInfo, "netInfo is nil")
 
-	// Create a multihash from the node ID bytes (using identity hash since it's already hashed)
-	mh, err := multihash.Sum(nodeIDBytes, multihash.IDENTITY, -1)
-	s.Require().NoError(err)
+	s.Require().NotEmpty(netInfo.GetListenAddresses(), "no listen addresses returned")
 
-	// Create peer ID from multihash
-	peerID, err := peer.IDFromBytes(mh)
-	s.Require().NoError(err)
+	// find the non-localhost address
+	var multiAddr string
+	for _, addr := range netInfo.GetListenAddresses() {
+		if !strings.Contains(addr, "127.0.0.1") {
+			multiAddr = addr
+			break
+		}
+	}
 
-	// Construct the multiaddr with default rollkit P2P port
-	multiAddr := fmt.Sprintf("/ip4/%s/tcp/36656/p2p/%s", nodeIP, peerID.String())
-
+	s.Require().NotEmpty(multiAddr, "no non-localhost listen address found")
+	s.T().Logf("Selected multiaddr: %s", multiAddr)
 	return multiAddr
 }
 
@@ -248,13 +272,35 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",
 			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			//"--evnode.p2p.peers", aggregatorPeer, // TODO uncomment to enable P2P, seems broken right now
+			"--evnode.p2p.peers", aggregatorPeer,
 			"--log_level", "*:debug",
 		).
 		Build())
 	s.Require().NoError(err)
+}
+
+// waitForFollowerSync waits for all follower nodes to sync with the aggregator
+func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, evolveChain *cosmos.Chain) {
+	nodes := evolveChain.GetNodes()
+	if len(nodes) <= 1 {
+		return
+	}
+
+	syncCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	// convert nodes to Heighter interface
+	aggregator := nodes[0].(wait.Heighter)
+	followers := make([]wait.Heighter, 0)
+	for i := 1; i < len(nodes); i++ {
+		followers = append(followers, nodes[i].(wait.Heighter))
+	}
+
+	s.T().Logf("Waiting for %d follower nodes to sync with aggregator...", len(followers))
+	err := wait.ForInSync(syncCtx, aggregator, followers...)
+	s.Require().NoError(err, "followers failed to sync with aggregator")
+	s.T().Logf("All follower nodes are now in sync with aggregator")
 }
 
 // getGenesisHash retrieves the genesis hash from the celestia chain
@@ -298,8 +344,6 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	}
 	broadcaster := cosmos.NewBroadcasterForNode(chain, cosmosChainNode)
 
-	time.Sleep(30 * time.Second)
-
 	msg := banktypes.NewMsgSend(fromAddress, toAddress, amount)
 	resp, err := broadcaster.BroadcastMessages(ctx, fromWallet, msg)
 	if err != nil {
@@ -311,6 +355,25 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	}
 
 	return nil
+}
+
+// setDAStartHeight creates a PostInit function that sets the DA start height in the genesis file
+func setDAStartHeight(daStartHeight string) func(context.Context, *cosmos.ChainNode) error {
+	return func(ctx context.Context, node *cosmos.ChainNode) error {
+		daHeight, err := strconv.ParseUint(daStartHeight, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse da start height: %w", err)
+		}
+
+		return config.Modify(ctx, node, "config/genesis.json", func(genDoc *map[string]interface{}) {
+			evolveGenesis, ok := (*genDoc)["evolve"].(map[string]interface{})
+			if !ok {
+				return
+			}
+
+			evolveGenesis["da_start_height"] = daHeight
+		})
+	}
 }
 
 // addSingleSequencer modifies the genesis file to ensure single sequencer setup
