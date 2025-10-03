@@ -10,8 +10,8 @@ require (
 )
 
 require (
-	connectrpc.com/connect v1.18.1
-	github.com/evstack/ev-node v1.0.0-beta.5
+	connectrpc.com/connect v1.19.0
+	github.com/evstack/ev-node v1.0.0-beta.6
 )
 
 require (

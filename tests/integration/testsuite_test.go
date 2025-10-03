@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/dataavailability"
+	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
@@ -182,11 +184,10 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 					"--evnode.rpc.address", "0.0.0.0:7331",
 					"--evnode.da.namespace", "ev-header",
 					"--evnode.da.data_namespace", "ev-data",
-					"--evnode.da.start_height", daStartHeight,
 					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 					"--log_level", "*:info",
 				).
-				WithPostInit(addSingleSequencer).
+				WithPostInit(addSingleSequencer, setDAStartHeight(daStartHeight)).
 				Build(),
 		).
 		Build(ctx)
@@ -271,7 +272,6 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",
 			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 			"--evnode.p2p.peers", aggregatorPeer,
 			"--log_level", "*:debug",
@@ -355,6 +355,25 @@ func (s *DockerIntegrationTestSuite) sendFunds(ctx context.Context, chain *cosmo
 	}
 
 	return nil
+}
+
+// setDAStartHeight creates a PostInit function that sets the DA start height in the genesis file
+func setDAStartHeight(daStartHeight string) func(context.Context, *cosmos.ChainNode) error {
+	return func(ctx context.Context, node *cosmos.ChainNode) error {
+		daHeight, err := strconv.ParseUint(daStartHeight, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse da start height: %w", err)
+		}
+
+		return config.Modify(ctx, node, "config/genesis.json", func(genDoc *map[string]interface{}) {
+			evolveGenesis, ok := (*genDoc)["evolve"].(map[string]interface{})
+			if !ok {
+				return
+			}
+
+			evolveGenesis["da_start_height"] = daHeight
+		})
+	}
 }
 
 // addSingleSequencer modifies the genesis file to ensure single sequencer setup

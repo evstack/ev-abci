@@ -7,7 +7,7 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-beta.5
+ENV EVNODE_VERSION=v1.0.0-beta.6
 ENV IGNITE_VERSION=v29.3.1
 ENV IGNITE_EVOLVE_APP_VERSION=main
 
@@ -24,7 +24,7 @@ WORKDIR /workspace/gm
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
     ignite evolve add
 
-RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@v0.0.0-20251002090312-9e73dbfe55d4 && \
+RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy
 
