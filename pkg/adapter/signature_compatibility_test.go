@@ -68,24 +68,55 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 	currentState, err := storeOnlyAdapter.Store.LoadState(context.Background())
 	require.NoError(t, err)
 
-	lastCommit, err := storeOnlyAdapter.GetLastCommit(context.Background(), header.Height())
-	require.NoError(t, err)
-
-	abciHeader, err := ToABCIHeader(*header, lastCommit)
-	require.NoError(t, err)
-
-	cmtTxs := make(cmttypes.Txs, 0)
-	_, blockID, err := MakeABCIBlock(header.Height(), cmtTxs, currentState, abciHeader, lastCommit)
 	require.NoError(t, err)
 
 	// Save the properly generated BlockID to the store
-	err = storeOnlyAdapter.Store.SaveBlockID(context.Background(), header.Height(), blockID)
+	err = storeOnlyAdapter.Store.SaveBlockID(context.Background(), header.Height(), &cmttypes.BlockID{})
 	require.NoError(t, err)
 
 	signBytes2, err := provider(header)
 	require.NoError(t, err)
 	require.NotEmpty(t, signBytes2)
 
-	// The sign bytes should be different now that we have a real BlockID
-	require.NotEqual(t, signBytes, signBytes2)
+	// The equal as height 1 has an empty block ID
+	require.Equal(t, signBytes, signBytes2)
+
+	// Test 4: Verify that height 2 uses a real BlockID and produces different signature bytes
+	header2 := &types.Header{
+		BaseHeader: types.BaseHeader{
+			Height:  2,
+			Time:    uint64(time.Now().UnixNano()),
+			ChainID: chainID,
+		},
+		ProposerAddress: validatorAddress,
+	}
+
+	// Save header 1 so GetLastCommit can retrieve it for height 2
+	signedHeader1 := &types.SignedHeader{
+		Header:    *header,
+		Signature: types.Signature(make([]byte, 64)),
+	}
+	err = storeOnlyAdapter.RollkitStore.SaveBlockData(context.Background(), signedHeader1, &types.Data{}, &types.Signature{})
+	require.NoError(t, err)
+
+	// Generate and save BlockID for height 2
+	lastCommit2, err := storeOnlyAdapter.GetLastCommit(context.Background(), header2.Height())
+	require.NoError(t, err)
+
+	abciHeader2, err := ToABCIHeader(*header2, lastCommit2)
+	require.NoError(t, err)
+
+	cmtTxs := make(cmttypes.Txs, 0)
+	_, blockID2, err := MakeABCIBlock(header2.Height(), cmtTxs, currentState, abciHeader2, lastCommit2)
+	require.NoError(t, err)
+
+	err = storeOnlyAdapter.Store.SaveBlockID(context.Background(), header2.Height(), blockID2)
+	require.NoError(t, err)
+
+	signBytes3, err := provider(header2)
+	require.NoError(t, err)
+	require.NotEmpty(t, signBytes3)
+
+	// Height 2 should have different signature bytes than height 1 (different BlockID)
+	require.NotEqual(t, signBytes, signBytes3)
 }

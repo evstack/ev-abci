@@ -288,16 +288,6 @@ func createTestBlock(height uint64, chainID string, baseTime time.Time, validato
 	return blockData, rollkitHeader
 }
 
-func signBlock(t *testing.T, executor *adapter.Adapter, header types.Header, privKey crypto.PrivKey) []byte {
-	signBytes, err := adapter.AggregatorNodeSignatureBytesProvider(executor)(&header)
-	require.NoError(t, err)
-
-	signature, err := privKey.Sign(signBytes)
-	require.NoError(t, err)
-
-	return signature
-}
-
 func signBlockWithBlockID(t *testing.T, header types.Header, privKey crypto.PrivKey, blockID *cmttypes.BlockID) []byte {
 	// create vote bytes using the createVote helper from adapter
 	vote := cmtproto.Vote{
