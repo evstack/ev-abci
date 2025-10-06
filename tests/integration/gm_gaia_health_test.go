@@ -116,7 +116,7 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	hermes, err := relayer.NewHermes(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
 	require.NoError(s.T(), err, "failed to create hermes relayer")
 
-	err = hermes.Init(ctx, s.celestiaChain, gmChain)
+	err = hermes.Init(ctx, []types.Chain{s.celestiaChain, gmChain})
 	require.NoError(s.T(), err, "failed to initialize relayer")
 
 	// Switch hermes to pull mode to avoid WebSocket connection issues
