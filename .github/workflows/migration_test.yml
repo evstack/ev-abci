@@ -34,7 +34,7 @@ jobs:
       - name: Scaffold Standard Cosmos SDK Chain
         run: |
           # scaffold a new chain without evolve
-          ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+          IGNT_DEBUG=1 ignite scaffold chain gm --no-module --skip-git --address-prefix gm
           cd gm
 
           # build the standard cosmos sdk chain
