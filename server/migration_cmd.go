@@ -66,6 +66,8 @@ func (g evolveMigrationGenesis) ToEVGenesis() *rollkitgenesis.Genesis {
 		g.SequencerAddr,
 	)
 
+	// A migrated chain wont have yet a DaStartHeight.
+
 	return &genesis
 }
 
