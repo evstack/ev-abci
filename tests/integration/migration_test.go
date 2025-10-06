@@ -118,8 +118,11 @@ func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *cosmos.C
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
 		WithNodes(
 			cosmos.NewChainNodeConfigBuilder().
-				WithAdditionalStartArgs().
-				WithPostInit(addSingleSequencerWithTxIndex).
+				WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
+					return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
+						cfg.TxIndex.Indexer = "kv"
+					})
+				}).
 				Build(),
 		).
 		Build(ctx)
@@ -270,6 +273,7 @@ func (s *MigrationTestSuite) recreateChainWithEvolveImage(ctx context.Context) {
 		WithBech32Prefix("gm").
 		WithBinaryName("gmd").
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
+		WithSkipInit(true). // skip initalization as we have already done that previously.
 		WithNodes(
 			cosmos.NewChainNodeConfigBuilder().
 				WithAdditionalStartArgs(
@@ -281,11 +285,16 @@ func (s *MigrationTestSuite) recreateChainWithEvolveImage(ctx context.Context) {
 					"--evnode.rpc.address", "0.0.0.0:7331",
 					"--evnode.da.namespace", "ev-header",
 					"--evnode.da.data_namespace", "ev-data",
-					"--evnode.da.start_height", daStartHeight,
 					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 					"--log_level", "*:info",
 				).
-				WithPostInit(addSingleSequencerWithTxIndex).
+				WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
+					stdout, stderr, err := node.Exec(ctx, []string{"gmd", "evolve-migrate", "--home", node.HomeDir()}, nil)
+					if err != nil {
+						return fmt.Errorf("migration failed: %w\nstdout: %s\nstderr: %s", err, string(stdout), string(stderr))
+					}
+					return nil
+				}, setDAStartHeight(daStartHeight)).
 				Build(),
 		).
 		Build(ctx)
@@ -293,8 +302,8 @@ func (s *MigrationTestSuite) recreateChainWithEvolveImage(ctx context.Context) {
 	s.Require().NoError(err)
 
 	// run migration command before starting the chain
-	_, _, err = evolveChain.GetNode().Exec(ctx, []string{"gmd", "evolve-migrate", "--home", "/var/cosmos-chain/evolve"}, nil)
-	s.Require().NoError(err)
+	//_, _, err = evolveChain.GetNode().Exec(ctx, []string{"gmd", "evolve-migrate", "--home", "/var/cosmos-chain/evolve"}, nil)
+	//s.Require().NoError(err)
 
 	// now start the chain with migrated state
 	err = evolveChain.Start(ctx)
