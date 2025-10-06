@@ -9,6 +9,7 @@ import (
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/math"
 	"github.com/cometbft/cometbft/light"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -239,8 +240,8 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 		err = env.Adapter.Store.SaveBlockID(context.Background(), blockHeight, blockID)
 		require.NoError(err, "Failed to save BlockID for height %d", blockHeight)
 
-		// create the signature for the rollkit block
-		realSignature := signBlock(t, env.Adapter, rollkitHeader, aggregatorPrivKey)
+		// Create signature over the actual blockID for light client compatibility
+		realSignature := signBlockWithBlockID(t, rollkitHeader, aggregatorPrivKey, blockID)
 
 		// mock the store to return our signed block
 		mockBlock(blockHeight, rollkitHeader, blockData, realSignature, aggregatorPubKey, validatorAddress)
@@ -287,9 +288,20 @@ func createTestBlock(height uint64, chainID string, baseTime time.Time, validato
 	return blockData, rollkitHeader
 }
 
-func signBlock(t *testing.T, executor *adapter.Adapter, header types.Header, privKey crypto.PrivKey) []byte {
-	signBytes, err := adapter.AggregatorNodeSignatureBytesProvider(executor)(&header)
-	require.NoError(t, err)
+func signBlockWithBlockID(t *testing.T, header types.Header, privKey crypto.PrivKey, blockID *cmttypes.BlockID) []byte {
+	// create vote bytes using the createVote helper from adapter
+	vote := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           int64(header.Height()),
+		BlockID:          blockID.ToProto(),
+		Round:            0,
+		Timestamp:        header.Time(),
+		ValidatorAddress: header.ProposerAddress,
+		ValidatorIndex:   0,
+	}
+
+	chainID := header.ChainID()
+	signBytes := cmttypes.VoteSignBytes(chainID, &vote)
 
 	signature, err := privKey.Sign(signBytes)
 	require.NoError(t, err)

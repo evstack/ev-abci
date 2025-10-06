@@ -97,7 +97,7 @@ func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testin
 
 	carolBalance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), carolsWallet.GetFormattedAddress(), denom)
 	require.NoError(t, err, "failed to query carol's balance")
-	require.True(t, carolBalance.Amount.Equal(math.NewInt(100)), "carol shouldaddFollowerNode have received 100 tokens")
+	require.True(t, carolBalance.Amount.Equal(math.NewInt(100)), "carol should have received 100 tokens")
 }
 
 // getEvolveAppContainer returns the evolve app container image.
@@ -106,7 +106,7 @@ func getEvolveAppContainer() container.Image {
 	// get image repo and tag from environment variables
 	imageRepo := os.Getenv("EVOLVE_IMAGE_REPO")
 	if imageRepo == "" {
-		imageRepo = "ev-node" // fallback default
+		imageRepo = "evolve-gm" // fallback default
 	}
 
 	imageTag := os.Getenv("EVOLVE_IMAGE_TAG")
