@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -40,9 +42,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	rollkitblock "github.com/evstack/ev-node/block"
+	evblock "github.com/evstack/ev-node/block"
 	"github.com/evstack/ev-node/da/jsonrpc"
 	"github.com/evstack/ev-node/node"
+	"github.com/evstack/ev-node/pkg/cmd"
 	"github.com/evstack/ev-node/pkg/config"
 	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/evstack/ev-node/pkg/p2p"
@@ -324,18 +327,18 @@ func setupNodeAndExecutor(
 
 	nodeKey := &key.NodeKey{PrivKey: signingKey, PubKey: signingKey.GetPublic()}
 
-	rollkitcfg, err := config.LoadFromViper(srvCtx.Viper)
+	evcfg, err := config.LoadFromViper(srvCtx.Viper)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
 
-	if err := rollkitcfg.Validate(); err != nil {
+	if err := evcfg.Validate(); err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to validate ev-node config: %w", err)
 	}
 
 	// only load signer if rollkit.node.aggregator == true
 	var signer signer.Signer
-	if rollkitcfg.Node.Aggregator {
+	if evcfg.Node.Aggregator {
 		signer, err = execsigner.NewSignerWrapper(pval.Key.PrivKey)
 		if err != nil {
 			return nil, nil, cleanupFn, err
@@ -343,8 +346,9 @@ func setupNodeAndExecutor(
 	}
 
 	var (
-		rollkitGenesis *genesis.Genesis
-		appGenesis     *genutiltypes.AppGenesis
+		evGenesis     *genesis.Genesis
+		appGenesis    *genutiltypes.AppGenesis
+		daStartHeight uint64
 	)
 
 	// determine the genesis source: evolve genesis or app genesis
@@ -354,7 +358,7 @@ func setupNodeAndExecutor(
 	}
 
 	if migrationGenesis != nil {
-		rollkitGenesis = migrationGenesis.ToEVGenesis()
+		evGenesis = migrationGenesis.ToEVGenesis()
 
 		sdkLogger.Info("using evolve migration genesis",
 			"chain_id", migrationGenesis.ChainID,
@@ -364,7 +368,7 @@ func setupNodeAndExecutor(
 		appGenesis = &genutiltypes.AppGenesis{
 			ChainID:       migrationGenesis.ChainID,
 			InitialHeight: int64(migrationGenesis.InitialHeight),
-			GenesisTime:   rollkitGenesis.StartTime,
+			GenesisTime:   evGenesis.StartTime,
 			Consensus: &genutiltypes.ConsensusGenesis{ // used in rpc/status.go
 				Validators: []cmttypes.GenesisValidator{
 					{
@@ -377,7 +381,12 @@ func setupNodeAndExecutor(
 		}
 	} else {
 		// normal scenario: create evolve genesis from full cometbft genesis
-		appGenesis, err = getAppGenesis(cfg)()
+		appGenesis, err = getAppGenesis(cfg)
+		if err != nil {
+			return nil, nil, cleanupFn, err
+		}
+
+		daStartHeight, err = getDaStartHeight(cfg)
 		if err != nil {
 			return nil, nil, cleanupFn, err
 		}
@@ -387,7 +396,8 @@ func setupNodeAndExecutor(
 			return nil, nil, cleanupFn, err
 		}
 
-		rollkitGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc)
+		evGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc, daStartHeight)
+
 		sdkLogger.Info("created evolve genesis from cometbft genesis",
 			"chain_id", cmtGenDoc.ChainID,
 			"initial_height", cmtGenDoc.InitialHeight)
@@ -398,22 +408,22 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, err
 	}
 
-	metrics := node.DefaultMetricsProvider(rollkitcfg.Instrumentation)
+	metrics := node.DefaultMetricsProvider(evcfg.Instrumentation)
 
-	_, p2pMetrics := metrics(rollkitGenesis.ChainID)
+	_, p2pMetrics := metrics(evGenesis.ChainID)
 	p2pLogger, ok := sdkLogger.With("module", "p2p").Impl().(*zerolog.Logger)
 	if !ok {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to get p2p logger")
 	}
 
-	p2pClient, err := p2p.NewClient(rollkitcfg.P2P, nodeKey.PrivKey, database, appGenesis.ChainID, *p2pLogger, p2pMetrics)
+	p2pClient, err := p2p.NewClient(evcfg.P2P, nodeKey.PrivKey, database, appGenesis.ChainID, *p2pLogger, p2pMetrics)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
 
 	var opts []adapter.Option
-	if rollkitcfg.Instrumentation.IsPrometheusEnabled() {
-		m := adapter.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", rollkitGenesis.ChainID)
+	if evcfg.Instrumentation.IsPrometheusEnabled() {
+		m := adapter.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", evGenesis.ChainID)
 		opts = append(opts, adapter.WithMetrics(m))
 	}
 
@@ -447,10 +457,11 @@ func setupNodeAndExecutor(
 	daClient, err := jsonrpc.NewClient(
 		ctx,
 		*evLogger,
-		rollkitcfg.DA.Address,
-		rollkitcfg.DA.AuthToken,
-		rollkitcfg.DA.GasPrice,
-		rollkitcfg.DA.GasMultiplier,
+		evcfg.DA.Address,
+		evcfg.DA.AuthToken,
+		evcfg.DA.GasPrice,
+		evcfg.DA.GasMultiplier,
+		cmd.DefaultMaxBlobSize,
 	)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
@@ -461,8 +472,8 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, err
 	}
 
-	if rollkitcfg.Instrumentation.IsPrometheusEnabled() {
-		singleMetrics, err = single.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", rollkitGenesis.ChainID)
+	if evcfg.Instrumentation.IsPrometheusEnabled() {
+		singleMetrics, err = single.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", evGenesis.ChainID)
 		if err != nil {
 			return nil, nil, cleanupFn, err
 		}
@@ -473,10 +484,10 @@ func setupNodeAndExecutor(
 		*evLogger,
 		database,
 		&daClient.DA,
-		[]byte(rollkitGenesis.ChainID),
-		rollkitcfg.Node.BlockTime.Duration,
+		[]byte(evGenesis.ChainID),
+		evcfg.Node.BlockTime.Duration,
 		singleMetrics,
-		rollkitcfg.Node.Aggregator,
+		evcfg.Node.Aggregator,
 	)
 	if err != nil {
 		return nil, nil, cleanupFn, err
@@ -496,18 +507,18 @@ func setupNodeAndExecutor(
 	}
 
 	rolllkitNode, err = node.NewNode(
-		rollkitcfg,
+		evcfg,
 		executor,
 		sequencer,
 		&daClient.DA,
 		signer,
 		p2pClient,
-		*rollkitGenesis,
+		*evGenesis,
 		database,
 		metrics,
 		*evLogger,
 		node.NodeOptions{
-			BlockOptions: rollkitblock.BlockOptions{
+			BlockOptions: evblock.BlockOptions{
 				AggregatorNodeSignatureBytesProvider: adapter.AggregatorNodeSignatureBytesProvider(executor),
 				SyncNodeSignatureBytesProvider:       adapter.SyncNodeSignatureBytesProvider(executor),
 				ValidatorHasherProvider:              validatorHasherProvider,
@@ -523,7 +534,7 @@ func setupNodeAndExecutor(
 	}
 	executor.EventBus = eventBus
 
-	idxSvc, txIndexer, blockIndexer, err := createAndStartIndexerService(cfg, rollkitGenesis.ChainID, cmtcfg.DefaultDBProvider, eventBus, sdkLogger)
+	idxSvc, txIndexer, blockIndexer, err := createAndStartIndexerService(cfg, evGenesis.ChainID, cmtcfg.DefaultDBProvider, eventBus, sdkLogger)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("start indexer service: %w", err)
 	}
@@ -534,7 +545,7 @@ func setupNodeAndExecutor(
 		BlockIndexer: blockIndexer,
 		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
 		RPCConfig:    *cfg.RPC,
-		EVNodeConfig: rollkitcfg,
+		EVNodeConfig: evcfg,
 		AttesterMode: srvCtx.Viper.GetBool(FlagAttesterMode),
 	})
 
@@ -601,16 +612,78 @@ func createAndStartIndexerService(
 	return indexerService, txIndexer, blockIndexer, nil
 }
 
-// getAppGenesis returns a function which returns the app genesis based on its location in the config.
-func getAppGenesis(cfg *cmtcfg.Config) func() (*genutiltypes.AppGenesis, error) {
-	return func() (*genutiltypes.AppGenesis, error) {
-		appGenesis, err := genutiltypes.AppGenesisFromFile(cfg.GenesisFile())
+// getAppGenesis returns the app genesis based on its location in the config.
+func getAppGenesis(cfg *cmtcfg.Config) (*genutiltypes.AppGenesis, error) {
+	appGenesis, err := genutiltypes.AppGenesisFromFile(cfg.GenesisFile())
+	if err != nil {
+		return nil, fmt.Errorf("failed to read genesis from file %s: %w", cfg.GenesisFile(), err)
+	}
+
+	return appGenesis, nil
+}
+
+// getDaStartHeight parses the da_start_height from the genesis file.
+func getDaStartHeight(cfg *cmtcfg.Config) (uint64, error) {
+	genFile, err := os.Open(filepath.Clean(cfg.GenesisFile()))
+	if err != nil {
+		return 0, fmt.Errorf("failed to open genesis file %s: %w", cfg.GenesisFile(), err)
+	}
+
+	daStartHeight, err := parseDAStartHeightFromGenesis(bufio.NewReader(genFile))
+	if err != nil {
+		return 0, err
+	}
+
+	if err := genFile.Close(); err != nil {
+		return 0, fmt.Errorf("failed to close genesis file %s: %v", genFile.Name(), err)
+	}
+
+	return daStartHeight, nil
+}
+
+// parseDAStartHeightFromGenesis parses the `da_start_height` from a genesis JSON file, aborting early after finding the `da_start_height`.
+// For efficiency, it's recommended to place the `da_start_height` field before any large entries in the JSON file.
+// Returns no error when the `da_start_height` field is not found.
+// Logic based on https://github.com/cosmos/cosmos-sdk/blob/v0.50.14/x/genutil/types/chain_id.go#L18.
+func parseDAStartHeightFromGenesis(r io.Reader) (uint64, error) {
+	const dAStartHeightFieldName = "da_start_height"
+
+	dec := json.NewDecoder(r)
+
+	t, err := dec.Token()
+	if err != nil {
+		return 0, err
+	}
+	if t != json.Delim('{') {
+		return 0, fmt.Errorf("expected {, got %s", t)
+	}
+
+	for dec.More() {
+		t, err = dec.Token()
 		if err != nil {
-			return nil, err
+			return 0, err
+		}
+		key, ok := t.(string)
+		if !ok {
+			return 0, fmt.Errorf("expected string for the key type, got %s", t)
 		}
 
-		return appGenesis, nil
+		if key == dAStartHeightFieldName {
+			var chainID uint64
+			if err := dec.Decode(&chainID); err != nil {
+				return 0, err
+			}
+			return chainID, nil
+		}
+
+		// skip the value
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return 0, err
+		}
 	}
+
+	return 0, nil
 }
 
 func getAndValidateConfig(svrCtx *server.Context) (serverconfig.Config, error) {
@@ -721,15 +794,19 @@ func loadEvolveMigrationGenesis(rootDir string) (*evolveMigrationGenesis, error)
 // createEvolveGenesisFromCometBFT creates a evolve genesis from cometbft genesis.
 // This is used for normal startup scenarios where a full cometbft genesis document
 // is available and contains all the necessary information.
-func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Genesis {
-	rollkitGenesis := genesis.NewGenesis(
+func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc, daStartHeight uint64) *genesis.Genesis {
+	gen := genesis.NewGenesis(
 		cmtGenDoc.ChainID,
 		uint64(cmtGenDoc.InitialHeight),
 		cmtGenDoc.GenesisTime,
 		cmtGenDoc.Validators[0].Address.Bytes(), // use the first validator as sequencer
 	)
 
-	return &rollkitGenesis
+	if daStartHeight > 0 {
+		gen.DAStartHeight = daStartHeight
+	}
+
+	return &gen
 }
 
 func openRawEvolveDB(rootDir string) (ds.Batching, error) {

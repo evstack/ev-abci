@@ -58,78 +58,20 @@ This adapter achieves compatibility with ABCI by calling the appropriate methods
 
 Note, that because of the nature of ev-node (single proposer), **Vote Extensions are not supported**. The adapter will not call the `VoteExtensions` methods on the ABCI application, and any logic related to vote extensions should be handled separately or not used at all.
 
-## Installation
-
-```bash
-go get github.com/evstack/ev-abci
-```
-
-## Dependencies
-
-The project relies on several key dependencies:
-
-- [Evolve Node](https://github.com/evstack/ev-node): For the core rollup functionality
-- [Cosmos SDK](https://github.com/cosmos/cosmos-sdk): For the ABCI integration
-- [CometBFT](https://github.com/cometbft/cometbft): For consensus-related types and functionality
-- [libp2p](https://github.com/libp2p/go-libp2p): For peer-to-peer networking
-
 ## Usage
 
 The adapter can be used to create a Evolve node with an ABCI application, such as a Cosmos SDK chain.
+Here Ignite CLI with the [evolve app](https://github.com/ignite/apps/tree/main/evolve) is used for simplicity.
 
-```diff
-diff --git a/cmd/gmd/cmd/commands.go b/cmd/gmd/cmd/commands.go
-index 310b195..19abe36 100644
---- a/cmd/gmd/cmd/commands.go
-+++ b/cmd/gmd/cmd/commands.go
-@@ -2,6 +2,7 @@ package cmd
-
- import (
- 	"errors"
-+	"gm/app"
- 	"io"
-
- 	"github.com/spf13/cobra"
-@@ -24,7 +25,8 @@ import (
- 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
- 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
-
--	"gm/app"
-+	abciserver "github.com/evstack/ev-abci/server"
-+	rollconf "github.com/evstack/ev-node/pkg/config"
- )
-
- func initRootCmd(
-@@ -32,8 +34,18 @@ func initRootCmd(
- 	txConfig client.TxConfig,
- 	basicManager module.BasicManager,
- ) {
-+	genesisCmd := genutilcli.InitCmd(basicManager, app.DefaultNodeHome)
-+	rollconf.AddFlags(genesisCmd)
-+	genesisCmdRunE := genesisCmd.RunE
-+	genesisCmd.RunE = func(cmd *cobra.Command, args []string) error {
-+		if err := genesisCmdRunE(cmd, args); err != nil {
-+			return err
-+		}
-+		return abciserver.InitRunE(cmd, args)
-+	}
-+
- 	rootCmd.AddCommand(
--		genutilcli.InitCmd(basicManager, app.DefaultNodeHome),
-+		genesisCmd,
- 		NewInPlaceTestnetCmd(),
- 		NewTestnetMultiNodeCmd(basicManager, banktypes.GenesisBalancesIterator{}),
- 		debug.Cmd(),
-@@ -43,7 +55,10 @@ func initRootCmd(
- 	)
-
- 	server.AddCommandsWithStartCmdOptions(rootCmd, app.DefaultNodeHome, newApp, appExport, server.StartCmdOptions{
--		AddFlags: addModuleInitFlags,
-+		AddFlags: func(cmd *cobra.Command) {
-+			abciserver.AddFlags(cmd)
-+		},
-+		StartCommandHandler: abciserver.StartHandler(),
- 	})
+```bash
+ignite s chain gm --address-prefix gm --minimal --no-module
+cd gm
+ignite app install -g github.com/ignite/apps/evolve@latest
+ignite evolve add
+ignite chain build --skip-proto
+ignite evolve init
+go tool github.com/evstack/ev-node/da/cmd/local-da &
+gmd start --rollkit.node.aggregator
 ```
 
 ## Transaction Flow
@@ -240,12 +182,11 @@ classDiagram
     Adapter o-- Store : uses
 ```
 
-## Development
+## Contributing
 
 ### Prerequisites
 
-- Go 1.23.3 or later
-- Protocol Buffers compiler
+- Go 1.25 or later
 
 ### Building
 
@@ -267,12 +208,18 @@ ev-abci/
 ├── pkg
 │   ├── adapter/      # Core adapter implementation
 │   ├── signer/       # Signers helpers functions
+│   ├── store/        # Store management for ev-abci
 │   ├── p2p/          # Peer-to-peer networking
 │   └── rpc/          # RPC server implementation
 ├── modules/          # Optional Cosmos SDK modules for Evolve
 └── server/           # Server startup and configuration
 ```
 
-## Contributing
+## Dependencies
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+The project relies on several key dependencies:
+
+- [Evolve Node](https://github.com/evstack/ev-node): For the core rollup functionality
+- [Cosmos SDK](https://github.com/cosmos/cosmos-sdk): For the ABCI integration
+- [CometBFT](https://github.com/cometbft/cometbft): For consensus-related types and functionality
+- [libp2p](https://github.com/libp2p/go-libp2p): For peer-to-peer networking
