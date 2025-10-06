@@ -10,6 +10,7 @@ import (
 	"cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
+	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
@@ -27,12 +28,12 @@ type MigrationTestSuite struct {
 	DockerIntegrationTestSuite
 
 	// chain instance that will be updated during migration
-	chain *docker.Chain
+	chain *cosmos.Chain
 
 	// pre-migration state for validation
 	preMigrationTxHashes []string
 	preMigrationBalances map[string]sdk.Coin
-	testWallets          []types.Wallet
+	testWallets          []*types.Wallet
 }
 
 func TestMigrationSuite(t *testing.T) {
@@ -48,7 +49,7 @@ func (s *MigrationTestSuite) SetupTest() {
 
 	s.preMigrationTxHashes = []string{}
 	s.preMigrationBalances = make(map[string]sdk.Coin)
-	s.testWallets = []types.Wallet{}
+	s.testWallets = []*types.Wallet{}
 }
 
 // TestCosmosToEvolveMigration tests the complete migration workflow
@@ -101,10 +102,10 @@ func getCosmosSDKAppContainer() container.Image {
 }
 
 // createCosmosSDKChain creates a cosmos-sdk chain without evolve modules
-func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *docker.Chain {
+func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *cosmos.Chain {
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 
-	cosmosChain, err := docker.NewChainBuilder(s.T()).
+	cosmosChain, err := cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getCosmosSDKAppContainer()).
 		WithDenom("stake").
@@ -116,7 +117,7 @@ func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *docker.C
 		WithBinaryName("gmd").
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
 		WithNodes(
-			docker.NewChainNodeConfigBuilder().
+			cosmos.NewChainNodeConfigBuilder().
 				WithAdditionalStartArgs().
 				WithPostInit(addSingleSequencerWithTxIndex).
 				Build(),
@@ -140,7 +141,7 @@ func (s *MigrationTestSuite) generateTestTransactions(ctx context.Context) {
 	bobWallet, err := s.chain.CreateWallet(ctx, "bob")
 	s.Require().NoError(err)
 
-	s.testWallets = []types.Wallet{faucetWallet, aliceWallet, bobWallet}
+	s.testWallets = []*types.Wallet{faucetWallet, aliceWallet, bobWallet}
 
 	// fund alice and bob from faucet
 	fundAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(1000000)))
@@ -266,8 +267,9 @@ func (s *MigrationTestSuite) startEvolveChain(ctx context.Context) {
 	authToken, err := s.DockerIntegrationTestSuite.bridgeNode.GetAuthToken()
 	s.Require().NoError(err)
 
-	bridgeRPCAddress, err := s.DockerIntegrationTestSuite.bridgeNode.GetInternalRPCAddress()
+	bridgeNetworkInfo, err := s.DockerIntegrationTestSuite.bridgeNode.GetNetworkInfo(ctx)
 	s.Require().NoError(err)
+	bridgeRPCAddress := bridgeNetworkInfo.Internal.RPCAddress()
 
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
 
@@ -284,7 +286,7 @@ func (s *MigrationTestSuite) startEvolveChain(ctx context.Context) {
 			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
 			"--evnode.rpc.address", "0.0.0.0:7331",
-			"--evnode.da.header_namespace", "ev-header",
+			"--evnode.da.namespace", "ev-header",
 			"--evnode.da.data_namespace", "ev-data",
 			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
@@ -406,7 +408,7 @@ func (s *MigrationTestSuite) validateNewBlockProduction(ctx context.Context) {
 }
 
 // addSingleSequencerWithTxIndex modifies the genesis file and enables tx indexing
-func addSingleSequencerWithTxIndex(ctx context.Context, node *docker.ChainNode) error {
+func addSingleSequencerWithTxIndex(ctx context.Context, node *cosmos.ChainNode) error {
 	// first call the existing addSingleSequencer function
 	err := addSingleSequencer(ctx, node)
 	if err != nil {

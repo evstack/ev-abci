@@ -9,6 +9,7 @@ import (
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/math"
 	"github.com/cometbft/cometbft/light"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -21,7 +22,6 @@ import (
 	"github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
-	"github.com/evstack/ev-abci/pkg/cometcompat"
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
@@ -201,8 +201,8 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 	chainID := "test-chain"
 	now := time.Now()
 
-	// use the validator hasher helper from cometcompat
-	validatorHash, err := cometcompat.ValidatorHasherProvider()(validatorAddress, aggregatorPubKey)
+	// use the validator hasher helpers
+	validatorHash, err := adapter.ValidatorHasherProvider()(validatorAddress, aggregatorPubKey)
 	require.NoError(err)
 
 	fixedValSet := &cmttypes.ValidatorSet{
@@ -222,10 +222,10 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 		lastCommit, err := env.Adapter.GetLastCommit(context.Background(), blockHeight)
 		require.NoError(err, "Failed to get last commit for height %d", blockHeight)
 
-		abciHeader, err := cometcompat.ToABCIHeader(rollkitHeader, lastCommit)
+		abciHeader, err := adapter.ToABCIHeader(rollkitHeader, lastCommit)
 		require.NoError(err, "Failed to create ABCI header")
 
-		abciBlock, err := cometcompat.ToABCIBlock(abciHeader, lastCommit, blockData)
+		abciBlock, err := adapter.ToABCIBlock(abciHeader, lastCommit, blockData)
 		require.NoError(err, "Failed to create ABCI block")
 
 		blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
@@ -240,8 +240,8 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 		err = env.Adapter.Store.SaveBlockID(context.Background(), blockHeight, blockID)
 		require.NoError(err, "Failed to save BlockID for height %d", blockHeight)
 
-		// create the signature for the rollkit block
-		realSignature := signBlock(t, env.Adapter.Store, rollkitHeader, aggregatorPrivKey)
+		// Create signature over the actual blockID for light client compatibility
+		realSignature := signBlockWithBlockID(t, rollkitHeader, aggregatorPrivKey, blockID)
 
 		// mock the store to return our signed block
 		mockBlock(blockHeight, rollkitHeader, blockData, realSignature, aggregatorPubKey, validatorAddress)
@@ -288,9 +288,20 @@ func createTestBlock(height uint64, chainID string, baseTime time.Time, validato
 	return blockData, rollkitHeader
 }
 
-func signBlock(t *testing.T, abciExecStore *execstore.Store, header types.Header, privKey crypto.PrivKey) []byte {
-	signBytes, err := cometcompat.SignaturePayloadProvider(abciExecStore)(&header)
-	require.NoError(t, err)
+func signBlockWithBlockID(t *testing.T, header types.Header, privKey crypto.PrivKey, blockID *cmttypes.BlockID) []byte {
+	// create vote bytes using the createVote helper from adapter
+	vote := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           int64(header.Height()),
+		BlockID:          blockID.ToProto(),
+		Round:            0,
+		Timestamp:        header.Time(),
+		ValidatorAddress: header.ProposerAddress,
+		ValidatorIndex:   0,
+	}
+
+	chainID := header.ChainID()
+	signBytes := cmttypes.VoteSignBytes(chainID, &vote)
 
 	signature, err := privKey.Sign(signBytes)
 	require.NoError(t, err)

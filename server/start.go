@@ -33,6 +33,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/version"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/hashicorp/go-metrics"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -50,11 +51,9 @@ import (
 	"github.com/evstack/ev-node/sequencers/single"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
-	"github.com/evstack/ev-abci/pkg/cometcompat"
 	"github.com/evstack/ev-abci/pkg/rpc"
 	"github.com/evstack/ev-abci/pkg/rpc/core"
 	execsigner "github.com/evstack/ev-abci/pkg/signer"
-	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
 const (
@@ -328,6 +327,10 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, err
 	}
 
+	if err := rollkitcfg.Validate(); err != nil {
+		return nil, nil, cleanupFn, fmt.Errorf("failed to validate ev-node config: %w", err)
+	}
+
 	// only load signer if rollkit.node.aggregator == true
 	var signer signer.Signer
 	if rollkitcfg.Node.Aggregator {
@@ -359,7 +362,7 @@ func setupNodeAndExecutor(
 		appGenesis = &genutiltypes.AppGenesis{
 			ChainID:       migrationGenesis.ChainID,
 			InitialHeight: int64(migrationGenesis.InitialHeight),
-			GenesisTime:   rollkitGenesis.GenesisDAStartTime,
+			GenesisTime:   rollkitGenesis.StartTime,
 			Consensus: &genutiltypes.ConsensusGenesis{ // used in rpc/status.go
 				Validators: []cmttypes.GenesisValidator{
 					{
@@ -388,7 +391,7 @@ func setupNodeAndExecutor(
 			"initial_height", cmtGenDoc.InitialHeight)
 	}
 
-	database, err := store.NewDefaultKVStore(cfg.RootDir, "data", "evolve")
+	database, err := openRawEvolveDB(cfg.RootDir)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -482,7 +485,6 @@ func setupNodeAndExecutor(
 	}
 
 	rolllkitNode, err = node.NewNode(
-		ctx,
 		rollkitcfg,
 		executor,
 		sequencer,
@@ -494,9 +496,10 @@ func setupNodeAndExecutor(
 		metrics,
 		*evLogger,
 		node.NodeOptions{
-			ManagerOptions: rollkitblock.ManagerOptions{
-				SignaturePayloadProvider: cometcompat.SignaturePayloadProvider(execstore.NewExecABCIStore(database)),
-				ValidatorHasherProvider:  cometcompat.ValidatorHasherProvider(),
+			BlockOptions: rollkitblock.BlockOptions{
+				AggregatorNodeSignatureBytesProvider: adapter.AggregatorNodeSignatureBytesProvider(executor),
+				SyncNodeSignatureBytesProvider:       adapter.SyncNodeSignatureBytesProvider(executor),
+				ValidatorHasherProvider:              adapter.ValidatorHasherProvider(),
 			},
 		},
 	)
@@ -519,7 +522,8 @@ func setupNodeAndExecutor(
 		TxIndexer:    txIndexer,
 		BlockIndexer: blockIndexer,
 		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
-		Config:       *cfg.RPC,
+		RPCConfig:    *cfg.RPC,
+		EVNodeConfig: rollkitcfg,
 	})
 
 	// Pass the created handler to the RPC server constructor
@@ -714,4 +718,13 @@ func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc) *genesis.Ge
 	)
 
 	return &rollkitGenesis
+}
+
+func openRawEvolveDB(rootDir string) (ds.Batching, error) {
+	database, err := store.NewDefaultKVStore(rootDir, "data", "evolve")
+	if err != nil {
+		return nil, err
+	}
+
+	return database, nil
 }

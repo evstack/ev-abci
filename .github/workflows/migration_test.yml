@@ -13,8 +13,8 @@ jobs:
     timeout-minutes: 45
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.2.0.20250818133040-d096a24e7052"
-      IGNITE_VERSION: "v29.3.1"
+      EVNODE_VERSION: "v1.0.0-beta.6"
+      IGNITE_VERSION: "v29.4.0"
       IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
     steps:
       - uses: actions/checkout@v5
@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "stable"
           cache: true
