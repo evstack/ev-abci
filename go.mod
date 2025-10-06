@@ -20,16 +20,16 @@ require (
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/math v1.5.3
 	cosmossdk.io/store v1.1.2
-	github.com/celestiaorg/go-header v0.7.2
+	github.com/celestiaorg/go-header v0.7.3
 	github.com/cometbft/cometbft v0.38.17
 	github.com/cometbft/cometbft-db v0.14.1
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/gogoproto v1.7.0
-	github.com/evstack/ev-node v1.0.0-beta.5
+	github.com/evstack/ev-node v1.0.0-beta.6
 	github.com/evstack/ev-node/core v1.0.0-beta.3
-	github.com/evstack/ev-node/da v1.0.0-beta.3
+	github.com/evstack/ev-node/da v1.0.0-beta.4
 	github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
@@ -65,7 +65,7 @@ require (
 	buf.build/go/spdx v0.2.0 // indirect
 	buf.build/go/standard v0.1.0 // indirect
 	cel.dev/expr v0.24.0 // indirect
-	connectrpc.com/connect v1.18.1 // indirect
+	connectrpc.com/connect v1.19.0 // indirect
 	connectrpc.com/grpcreflect v1.3.0 // indirect
 	connectrpc.com/otelconnect v0.7.2 // indirect
 	cosmossdk.io/schema v1.1.0 // indirect
