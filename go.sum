@@ -28,8 +28,8 @@ cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMT
 cloud.google.com/go v0.31.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.37.0/go.mod h1:TS1dMSSfndXH133OKGwekG838Om/cQT0BUHV3HcBgoo=
-connectrpc.com/connect v1.18.1 h1:PAg7CjSAGvscaf6YZKUefjoih5Z/qYkyaTrBW8xvYPw=
-connectrpc.com/connect v1.18.1/go.mod h1:0292hj1rnx8oFrStN7cB4jjVBeqs+Yx5yDIC2prWDO8=
+connectrpc.com/connect v1.19.0 h1:LuqUbq01PqbtL0o7vn0WMRXzR2nNsiINe5zfcJ24pJM=
+connectrpc.com/connect v1.19.0/go.mod h1:tN20fjdGlewnSFeZxLKb0xwIZ6ozc3OQs2hTXy4du9w=
 connectrpc.com/grpcreflect v1.3.0 h1:Y4V+ACf8/vOb1XOc251Qun7jMB75gCUNw6llvB9csXc=
 connectrpc.com/grpcreflect v1.3.0/go.mod h1:nfloOtCS8VUQOQ1+GTdFzVg2CJo4ZGaat8JIovCtDYs=
 connectrpc.com/otelconnect v0.7.2 h1:WlnwFzaW64dN06JXU+hREPUGeEzpz3Acz2ACOmN8cMI=
@@ -290,12 +290,12 @@ github.com/envoyproxy/go-control-plane v0.9.9-0.20201210154907-fd9021fe5dad/go.m
 github.com/envoyproxy/go-control-plane v0.9.10-0.20210907150352-cf90f659a021/go.mod h1:AFq3mo9L8Lqqiid3OhADV3RfLJnjiw63cSpi+fDTRC0=
 github.com/envoyproxy/go-control-plane v0.10.2-0.20220325020618-49ff273808a1/go.mod h1:KJwIaB5Mv44NWtYuAOFCVOjcI94vtpEz2JU/D2v6IjE=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
-github.com/evstack/ev-node v1.0.0-beta.5 h1:NAZ7FE725OQZicNFvTE/delGnLRDQoYe3a2Oba7GUlM=
-github.com/evstack/ev-node v1.0.0-beta.5/go.mod h1:zdQYHWY37hetY+ySJeMgcFfCDIiJX44Ucl6V/f4JXSY=
+github.com/evstack/ev-node v1.0.0-beta.6 h1:jjGWAUsjHDpuBjvM7KXnY6Y8uYHM8LOrn0hDrk5zE6E=
+github.com/evstack/ev-node v1.0.0-beta.6/go.mod h1:ZABT4xTIg4bINUS08r8e8LFIUk5anWe799fZ320q+Mk=
 github.com/evstack/ev-node/core v1.0.0-beta.3 h1:01K2Ygm3puX4m2OBxvg/HDxu+he54jeNv+KDmpgujFc=
 github.com/evstack/ev-node/core v1.0.0-beta.3/go.mod h1:n2w/LhYQTPsi48m6lMj16YiIqsaQw6gxwjyJvR+B3sY=
-github.com/evstack/ev-node/da v1.0.0-beta.3 h1:jeJ2MOixjr5TnIiLSCtrim/Ulb/r4QIDSrovFO/MiGU=
-github.com/evstack/ev-node/da v1.0.0-beta.3/go.mod h1:O3Lbx4/WFN0DIUOHdTihmyRnGmQwVXdswH19RW/KyG4=
+github.com/evstack/ev-node/da v1.0.0-beta.4 h1:6W+UsQrsEdBbAnyy8j+lYNo2VQvJUaoSNkToMFThtVU=
+github.com/evstack/ev-node/da v1.0.0-beta.4/go.mod h1:O3Lbx4/WFN0DIUOHdTihmyRnGmQwVXdswH19RW/KyG4=
 github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2 h1:UlQd3WL2p6bBtGMYYok8PUGxUEQJ74rf2XHlCqJF7Z8=
 github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2/go.mod h1:df5iQYNItmXgJlEJnW+nRlfWzsgwOtRwIEsh2c2wwu4=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
