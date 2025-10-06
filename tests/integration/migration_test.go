@@ -72,14 +72,14 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	// Phase 3: Stop chain preserving volumes
 	s.stopChainPreservingVolumes(ctx)
 
-	// Phase 4: Execute migration (includes image update)
-	s.executeMigrationCommand(ctx)
-
-	// Phase 5: Setup DA network
+	// Phase 4: Setup DA network (before recreating with evolve image)
 	s.setupDANetwork(ctx)
 
-	// Phase 6: Start evolve chain
-	s.startEvolveChain(ctx)
+	// Phase 5: Execute migration (includes recreating with evolve image and DA config)
+	s.executeMigrationCommand(ctx)
+
+	// Phase 6: Validate migration and restart with full DA configuration
+	s.restartEvolveChainWithDA(ctx)
 
 	// Phase 7: Validate migration success
 	s.validateMigrationSuccess(ctx)
@@ -183,9 +183,12 @@ func (s *MigrationTestSuite) recordPreMigrationState(ctx context.Context) {
 	s.T().Log("Recording pre-migration state...")
 
 	// get current balances for all test wallets
+	networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+
 	for _, wallet := range s.testWallets {
 		balance, err := queryBankBalance(ctx,
-			s.chain.GetGRPCAddress(),
+			networkInfo.External.GRPCAddress(),
 			wallet.GetFormattedAddress(),
 			"stake")
 		s.Require().NoError(err)
@@ -199,28 +202,23 @@ func (s *MigrationTestSuite) recordPreMigrationState(ctx context.Context) {
 	s.T().Logf("Recorded balances for %d wallets", len(s.preMigrationBalances))
 }
 
-// stopChainPreservingVolumes stops containers without removing volumes
+// stopChainPreservingVolumes removes containers while preserving volumes
 func (s *MigrationTestSuite) stopChainPreservingVolumes(ctx context.Context) {
-	s.T().Log("Stopping chain while preserving volumes...")
+	s.T().Log("Removing containers while preserving volumes...")
 
-	// stop containers but don't remove them (preserves volumes)
-	for _, node := range s.chain.Nodes() {
-		err := node.StopContainer(ctx)
-		s.Require().NoError(err)
-		s.T().Logf("Stopped container for node: %s", node.Name())
-	}
+	// remove containers while preserving volumes
+	err := s.chain.Remove(ctx, types.WithPreserveVolumes())
+	s.Require().NoError(err)
+	s.T().Log("Containers removed, volumes preserved")
 }
 
-// executeMigrationCommand runs the migration command on the stopped chain
+// executeMigrationCommand recreates the chain with evolve image and runs migration via PostInit
 func (s *MigrationTestSuite) executeMigrationCommand(ctx context.Context) {
-	s.T().Log("Executing migration command...")
+	s.T().Log("Recreating chain with evolve image to run migration...")
 
-	// first update the chain to use evolve image which has the migration command
-	s.updateChainToEvolveImage(ctx)
-
-	// run migration on the container with evolve image, specifying the correct home directory
-	_, _, err := s.chain.GetNode().Exec(ctx, []string{"gmd", "evolve-migrate", "--home", "/var/cosmos-chain/evolve"}, nil)
-	s.Require().NoError(err)
+	// recreate the chain with evolve image which has the migration command
+	// migration will run automatically via PostInit
+	s.recreateChainWithEvolveImage(ctx)
 
 	s.T().Log("Migration command completed successfully")
 }
@@ -235,33 +233,14 @@ func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
 
 	s.DockerIntegrationTestSuite.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
-	
+
 	// reset bech32 prefix back to gm after DA network setup
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 }
 
-// updateChainToEvolveImage swaps the chain to use evolve image
-func (s *MigrationTestSuite) updateChainToEvolveImage(ctx context.Context) {
-	s.T().Log("Updating chain to evolve image...")
-
-	// update chain to use evolve image
-	evolveImage := getEvolveAppContainer()
-
-	// update the chain configuration to use evolve image
-	// this preserves the container and volumes
-	for _, node := range s.chain.Validators {
-		node.Image = evolveImage
-	}
-	for _, node := range s.chain.FullNodes {
-		node.Image = evolveImage
-	}
-
-	s.T().Log("Chain updated to evolve image")
-}
-
-// startEvolveChain starts the evolve chain with DA configuration
-func (s *MigrationTestSuite) startEvolveChain(ctx context.Context) {
-	s.T().Log("Starting evolve chain...")
+// recreateChainWithEvolveImage recreates the chain with evolve image and DA config, reusing existing volumes
+func (s *MigrationTestSuite) recreateChainWithEvolveImage(ctx context.Context) {
+	s.T().Log("Recreating chain with evolve image...")
 
 	// get DA connection details
 	authToken, err := s.DockerIntegrationTestSuite.bridgeNode.GetAuthToken()
@@ -277,34 +256,60 @@ func (s *MigrationTestSuite) startEvolveChain(ctx context.Context) {
 	s.Require().NoError(err)
 	daStartHeight := fmt.Sprintf("%d", celestiaHeight)
 
-	// update nodes with evolve-specific start arguments
-	for _, node := range s.chain.Nodes() {
-		node.AdditionalStartArgs = []string{
-			"--evnode.node.aggregator",
-			"--evnode.signer.passphrase", "12345678",
-			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
-			"--evnode.da.auth_token", authToken,
-			"--evnode.rpc.address", "0.0.0.0:7331",
-			"--evnode.da.namespace", "ev-header",
-			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", daStartHeight,
-			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			"--log_level", "*:info",
-		}
-	}
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
 
-	// start the existing containers with new configuration
-	for _, node := range s.chain.Nodes() {
-		err := node.StartContainer(ctx)
-		s.Require().NoError(err)
-		s.T().Logf("Started container for node: %s", node.Name())
-	}
+	// recreate using same builder config as createCosmosSDKChain but with evolve image and DA config
+	evolveChain, err := cosmos.NewChainBuilder(s.T()).
+		WithEncodingConfig(&testEncCfg).
+		WithImage(getEvolveAppContainer()).
+		WithDenom("stake").
+		WithDockerClient(s.dockerClient).
+		WithName("evolve").
+		WithDockerNetworkID(s.networkID).
+		WithChainID("evolve-test").
+		WithBech32Prefix("gm").
+		WithBinaryName("gmd").
+		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
+		WithNodes(
+			cosmos.NewChainNodeConfigBuilder().
+				WithAdditionalStartArgs(
+					"--evnode.node.aggregator",
+					"--evnode.signer.passphrase", "12345678",
+					"--evnode.da.address", daAddress,
+					"--evnode.da.gas_price", "0.000001",
+					"--evnode.da.auth_token", authToken,
+					"--evnode.rpc.address", "0.0.0.0:7331",
+					"--evnode.da.namespace", "ev-header",
+					"--evnode.da.data_namespace", "ev-data",
+					"--evnode.da.start_height", daStartHeight,
+					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+					"--log_level", "*:info",
+				).
+				WithPostInit(addSingleSequencerWithTxIndex).
+				Build(),
+		).
+		Build(ctx)
 
-	s.T().Log("Evolve chain started successfully")
+	s.Require().NoError(err)
+
+	// run migration command before starting the chain
+	_, _, err = evolveChain.GetNode().Exec(ctx, []string{"gmd", "evolve-migrate", "--home", "/var/cosmos-chain/evolve"}, nil)
+	s.Require().NoError(err)
+
+	// now start the chain with migrated state
+	err = evolveChain.Start(ctx)
+	s.Require().NoError(err)
+
+	s.chain = evolveChain
+	s.T().Log("Chain recreated with evolve image and migration completed")
+}
+
+// restartEvolveChainWithDA waits for the chain to sync and produce blocks
+func (s *MigrationTestSuite) restartEvolveChainWithDA(ctx context.Context) {
+	s.T().Log("Waiting for evolve chain to sync...")
 
 	// wait for the chain to sync and produce a few blocks
-	err = wait.ForBlocks(ctx, 3, s.chain)
+	err := wait.ForBlocks(ctx, 3, s.chain)
 	s.Require().NoError(err)
 	s.T().Log("Evolve chain synced and producing blocks")
 }
@@ -353,9 +358,12 @@ func (s *MigrationTestSuite) validateOldTransactions(ctx context.Context) {
 func (s *MigrationTestSuite) validateBalancesPreserved(ctx context.Context) {
 	s.T().Log("Validating balances are preserved...")
 
+	networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+
 	for address, expectedBalance := range s.preMigrationBalances {
 		currentBalance, err := queryBankBalance(ctx,
-			s.chain.GetGRPCAddress(),
+			networkInfo.External.GRPCAddress(),
 			address,
 			"stake")
 		s.Require().NoError(err)
