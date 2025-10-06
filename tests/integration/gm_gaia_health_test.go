@@ -285,7 +285,7 @@ func (s *DockerIntegrationTestSuite) configureHermesForPullMode(ctx context.Cont
 }
 
 func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Chain {
-	daAddress, authToken, daStartHeight, err := s.getDANetworkParams(ctx)
+	daAddress, authToken, _, err := s.getDANetworkParams(ctx)
 	require.NoError(s.T(), err)
 
 	s.T().Log("Creating GM chain connected to DA network...")
@@ -311,7 +311,6 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",
 			"--evnode.da.data_namespace", "ev-data",
-			"--evnode.da.start_height", daStartHeight,
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 			"--rpc.laddr", "tcp://0.0.0.0:26657",
 			"--evnode.attester-mode", "true",
