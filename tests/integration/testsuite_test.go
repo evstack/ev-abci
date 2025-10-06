@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -32,9 +33,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/moby/moby/client"
-	"github.com/multiformats/go-multihash"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
@@ -308,7 +307,7 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, rpcAd
 }
 
 // addFollowerNode adds a follower node to the evolve chain.
-func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, daStartHeight, _ string) {
+func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, _, aggregatorPeer string) {
 	err := evolveChain.AddNode(ctx, cosmos.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--evnode.da.address", daAddress,
