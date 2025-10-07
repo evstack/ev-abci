@@ -288,24 +288,39 @@ func (s *MigrationTestSuite) recreateChainWithEvolveImage(ctx context.Context) {
 					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 					"--log_level", "*:info",
 				).
-				WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
-					stdout, stderr, err := node.Exec(ctx, []string{"gmd", "evolve-migrate", "--home", node.HomeDir()}, nil)
-					if err != nil {
-						return fmt.Errorf("migration failed: %w\nstdout: %s\nstderr: %s", err, string(stdout), string(stderr))
-					}
-					return nil
-				}, setDAStartHeight(daStartHeight)).
 				Build(),
 		).
 		Build(ctx)
 
 	s.Require().NoError(err)
 
-	// run migration command before starting the chain
-	//_, _, err = evolveChain.GetNode().Exec(ctx, []string{"gmd", "evolve-migrate", "--home", "/var/cosmos-chain/evolve"}, nil)
-	//s.Require().NoError(err)
+	// Run migration command
+	s.T().Log("Running migration command...")
+	stdout, stderr, err := evolveChain.GetNode().Exec(ctx, []string{
+		"gmd", "evolve-migrate",
+		"--home", evolveChain.GetNode().HomeDir(),
+	}, nil)
+	if err != nil {
+		s.T().Logf("Migration stdout: %s", string(stdout))
+		s.T().Logf("Migration stderr: %s", string(stderr))
+		s.Require().NoError(fmt.Errorf("migration failed: %w", err))
+	}
+	s.T().Log("Migration command completed successfully")
 
-	// now start the chain with migrated state
+	// Verify the ev_genesis.json file was created
+	lsStdout, lsStderr, err := evolveChain.GetNode().Exec(ctx, []string{"ls", "-la", evolveChain.GetNode().HomeDir() + "/ev_genesis.json"}, nil)
+	if err != nil {
+		s.T().Logf("ls stdout: %s", string(lsStdout))
+		s.T().Logf("ls stderr: %s", string(lsStderr))
+		s.Require().NoError(err, "ev_genesis.json not found after migration")
+	}
+
+	// Set DA start height in ev_genesis.json
+	s.T().Log("Setting DA start height in ev_genesis.json...")
+	err = setDAStartHeightEV(daStartHeight)(ctx, evolveChain.GetNode())
+	s.Require().NoError(err, "failed to set DA start height in ev_genesis.json")
+
+	// Now start the chain with migrated state
 	err = evolveChain.Start(ctx)
 	s.Require().NoError(err)
 
@@ -384,7 +399,7 @@ func (s *MigrationTestSuite) validateBalancesPreserved(ctx context.Context) {
 
 // sendNewTransactions tests transaction functionality on evolve chain
 func (s *MigrationTestSuite) sendNewTransactions(ctx context.Context) {
-	s.T().Log("Sending new transactions on evolve chain...")
+    s.T().Log("Sending new transactions on evolve chain...")
 
 	if len(s.testWallets) < 2 {
 		s.T().Skip("Not enough test wallets for new transactions")
@@ -394,12 +409,15 @@ func (s *MigrationTestSuite) sendNewTransactions(ctx context.Context) {
 	alice := s.testWallets[1] // assuming alice is at index 1
 	bob := s.testWallets[2]   // assuming bob is at index 2
 
-	transferAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(50000)))
-	txResp, err := s.chain.BroadcastMessages(ctx, alice,
-		banktypes.NewMsgSend(
-			sdk.MustAccAddressFromBech32(alice.GetFormattedAddress()),
-			sdk.MustAccAddressFromBech32(bob.GetFormattedAddress()),
-			transferAmount))
+    // Use a per-node broadcaster to avoid relying on a faucet wallet
+    broadcaster := cosmos.NewBroadcasterForNode(s.chain, s.chain.GetNode())
+
+    transferAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(50000)))
+    txResp, err := broadcaster.BroadcastMessages(ctx, alice,
+        banktypes.NewMsgSend(
+            sdk.MustAccAddressFromBech32(alice.GetFormattedAddress()),
+            sdk.MustAccAddressFromBech32(bob.GetFormattedAddress()),
+            transferAmount))
 	s.Require().NoError(err)
 	s.Require().Equal(uint32(0), txResp.Code)
 
