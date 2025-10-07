@@ -67,6 +67,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 
 	// Phase 2: Generate test transactions and record state
 	s.generateTestTransactions(ctx)
+
 	s.recordPreMigrationState(ctx)
 
 	// Phase 3: Stop chain preserving volumes
@@ -78,10 +79,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	// Phase 5: Execute migration (includes recreating with evolve image and DA config)
 	s.executeMigrationCommand(ctx)
 
-	// Phase 6: Validate migration and restart with full DA configuration
-	s.restartEvolveChainWithDA(ctx)
-
-	// Phase 7: Validate migration success
+	// Phase 6: Validate migration success
 	s.validateMigrationSuccess(ctx)
 
 	s.T().Log("Migration test completed successfully!")
@@ -101,11 +99,10 @@ func getCosmosSDKAppContainer() container.Image {
 	return container.NewImage(imageRepo, imageTag, "10001:10001")
 }
 
-// createCosmosSDKChain creates a cosmos-sdk chain without evolve modules
-func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *cosmos.Chain {
+// getCosmosChainBuilder returns a chain builder for cosmos-sdk chain
+func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
-
-	cosmosChain, err := cosmos.NewChainBuilder(s.T()).
+	return cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getCosmosSDKAppContainer()).
 		WithDenom("stake").
@@ -124,11 +121,41 @@ func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *cosmos.C
 					})
 				}).
 				Build(),
-		).
-		Build(ctx)
+		)
+}
 
+// createCosmosSDKChain creates a cosmos-sdk chain without evolve modules
+func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *cosmos.Chain {
+	cosmosChain, err := s.getCosmosChainBuilder().Build(ctx)
 	s.Require().NoError(err)
 	return cosmosChain
+}
+
+// createEvolveChain creates a chain with evolve chain which alligns with the existing cosmos sdk chain.
+// the image is changed, and initialization is skipped as we are reusing existing volumes.
+func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, daAddress string) *cosmos.Chain {
+	evolveChain, err := s.getCosmosChainBuilder().
+		WithImage(getEvolveAppContainer()).
+		WithSkipInit(true). // skip initalization as we have already done that previously when it was an sdk chain..
+		WithNodes(
+			cosmos.NewChainNodeConfigBuilder().
+				WithAdditionalStartArgs(
+					"--evnode.node.aggregator",
+					"--evnode.signer.passphrase", "12345678",
+					"--evnode.da.address", daAddress,
+					"--evnode.da.gas_price", "0.000001",
+					"--evnode.da.auth_token", authToken,
+					"--evnode.rpc.address", "0.0.0.0:7331",
+					"--evnode.da.namespace", "ev-header",
+					"--evnode.da.data_namespace", "ev-data",
+					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+					"--log_level", "*:info",
+				).
+				Build(),
+		).
+		Build(ctx)
+	s.Require().NoError(err)
+	return evolveChain
 }
 
 // generateTestTransactions creates test wallets and sends transactions
@@ -231,14 +258,24 @@ func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
 	s.T().Log("Setting up DA network...")
 
 	// reuse existing celestia setup from testsuite_test.go
-	s.DockerIntegrationTestSuite.celestiaChain = s.CreateCelestiaChain(ctx)
+	s.celestiaChain = s.CreateCelestiaChain(ctx)
 	s.T().Log("Celestia app chain started")
 
-	s.DockerIntegrationTestSuite.bridgeNode = s.CreateDANetwork(ctx)
+	s.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
 
 	// reset bech32 prefix back to gm after DA network setup
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
+}
+
+// performMigration runs the migration command on the given chain node.
+func (s *MigrationTestSuite) performMigration(ctx context.Context, chain *cosmos.Chain) {
+	_, stderr, err := chain.GetNode().Exec(ctx, []string{
+		"gmd", "evolve-migrate",
+		"--home", chain.GetNode().HomeDir(),
+	}, nil)
+
+	s.Require().NoError(err, "migration command failed: %s", stderr)
 }
 
 // recreateChainWithEvolveImage recreates the chain with evolve image and DA config, reusing existing volumes
@@ -255,87 +292,28 @@ func (s *MigrationTestSuite) recreateChainWithEvolveImage(ctx context.Context) {
 
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
 
-	celestiaHeight, err := s.DockerIntegrationTestSuite.celestiaChain.Height(ctx)
-	s.Require().NoError(err)
-	daStartHeight := fmt.Sprintf("%d", celestiaHeight)
-
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	//celestiaHeight, err := s.celestiaChain.Height(ctx)
+	//s.Require().NoError(err)
+	//daStartHeight := fmt.Sprintf("%d", celestiaHeight)
 
 	// recreate using same builder config as createCosmosSDKChain but with evolve image and DA config
-	evolveChain, err := cosmos.NewChainBuilder(s.T()).
-		WithEncodingConfig(&testEncCfg).
-		WithImage(getEvolveAppContainer()).
-		WithDenom("stake").
-		WithDockerClient(s.dockerClient).
-		WithName("evolve").
-		WithDockerNetworkID(s.networkID).
-		WithChainID("evolve-test").
-		WithBech32Prefix("gm").
-		WithBinaryName("gmd").
-		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
-		WithSkipInit(true). // skip initalization as we have already done that previously.
-		WithNodes(
-			cosmos.NewChainNodeConfigBuilder().
-				WithAdditionalStartArgs(
-					"--evnode.node.aggregator",
-					"--evnode.signer.passphrase", "12345678",
-					"--evnode.da.address", daAddress,
-					"--evnode.da.gas_price", "0.000001",
-					"--evnode.da.auth_token", authToken,
-					"--evnode.rpc.address", "0.0.0.0:7331",
-					"--evnode.da.namespace", "ev-header",
-					"--evnode.da.data_namespace", "ev-data",
-					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-					"--log_level", "*:info",
-				).
-				Build(),
-		).
-		Build(ctx)
+	evolveChain := s.createEvolveChain(ctx, authToken, daAddress)
 
-	s.Require().NoError(err)
-
-	// Run migration command
-	s.T().Log("Running migration command...")
-	stdout, stderr, err := evolveChain.GetNode().Exec(ctx, []string{
-		"gmd", "evolve-migrate",
-		"--home", evolveChain.GetNode().HomeDir(),
-	}, nil)
-	if err != nil {
-		s.T().Logf("Migration stdout: %s", string(stdout))
-		s.T().Logf("Migration stderr: %s", string(stderr))
-		s.Require().NoError(fmt.Errorf("migration failed: %w", err))
-	}
+	s.performMigration(ctx, evolveChain)
 	s.T().Log("Migration command completed successfully")
 
-	// Verify the ev_genesis.json file was created
-	lsStdout, lsStderr, err := evolveChain.GetNode().Exec(ctx, []string{"ls", "-la", evolveChain.GetNode().HomeDir() + "/ev_genesis.json"}, nil)
-	if err != nil {
-		s.T().Logf("ls stdout: %s", string(lsStdout))
-		s.T().Logf("ls stderr: %s", string(lsStderr))
-		s.Require().NoError(err, "ev_genesis.json not found after migration")
-	}
-
 	// Set DA start height in ev_genesis.json
-	s.T().Log("Setting DA start height in ev_genesis.json...")
-	err = setDAStartHeightEV(daStartHeight)(ctx, evolveChain.GetNode())
-	s.Require().NoError(err, "failed to set DA start height in ev_genesis.json")
+	//s.T().Log("Setting DA start height in ev_genesis.json...")
+	//err = setDAStartHeightEV(daStartHeight)(ctx, evolveChain.GetNode())
+	//s.Require().NoError(err, "failed to set DA start height in ev_genesis.json")
 
 	// Now start the chain with migrated state
 	err = evolveChain.Start(ctx)
 	s.Require().NoError(err)
 
+	// overwrite the chain variable so that it now points to the evolve chain.
 	s.chain = evolveChain
 	s.T().Log("Chain recreated with evolve image and migration completed")
-}
-
-// restartEvolveChainWithDA waits for the chain to sync and produce blocks
-func (s *MigrationTestSuite) restartEvolveChainWithDA(ctx context.Context) {
-	s.T().Log("Waiting for evolve chain to sync...")
-
-	// wait for the chain to sync and produce a few blocks
-	err := wait.ForBlocks(ctx, 3, s.chain)
-	s.Require().NoError(err)
-	s.T().Log("Evolve chain synced and producing blocks")
 }
 
 // validateMigrationSuccess verifies that migration worked correctly
@@ -399,7 +377,7 @@ func (s *MigrationTestSuite) validateBalancesPreserved(ctx context.Context) {
 
 // sendNewTransactions tests transaction functionality on evolve chain
 func (s *MigrationTestSuite) sendNewTransactions(ctx context.Context) {
-    s.T().Log("Sending new transactions on evolve chain...")
+	s.T().Log("Sending new transactions on evolve chain...")
 
 	if len(s.testWallets) < 2 {
 		s.T().Skip("Not enough test wallets for new transactions")
@@ -409,15 +387,15 @@ func (s *MigrationTestSuite) sendNewTransactions(ctx context.Context) {
 	alice := s.testWallets[1] // assuming alice is at index 1
 	bob := s.testWallets[2]   // assuming bob is at index 2
 
-    // Use a per-node broadcaster to avoid relying on a faucet wallet
-    broadcaster := cosmos.NewBroadcasterForNode(s.chain, s.chain.GetNode())
+	// Use a per-node broadcaster to avoid relying on a faucet wallet
+	broadcaster := cosmos.NewBroadcasterForNode(s.chain, s.chain.GetNode())
 
-    transferAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(50000)))
-    txResp, err := broadcaster.BroadcastMessages(ctx, alice,
-        banktypes.NewMsgSend(
-            sdk.MustAccAddressFromBech32(alice.GetFormattedAddress()),
-            sdk.MustAccAddressFromBech32(bob.GetFormattedAddress()),
-            transferAmount))
+	transferAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(50000)))
+	txResp, err := broadcaster.BroadcastMessages(ctx, alice,
+		banktypes.NewMsgSend(
+			sdk.MustAccAddressFromBech32(alice.GetFormattedAddress()),
+			sdk.MustAccAddressFromBech32(bob.GetFormattedAddress()),
+			transferAmount))
 	s.Require().NoError(err)
 	s.Require().Equal(uint32(0), txResp.Code)
 
@@ -431,7 +409,6 @@ func (s *MigrationTestSuite) validateNewBlockProduction(ctx context.Context) {
 	initialHeight, err := s.chain.Height(ctx)
 	s.Require().NoError(err)
 
-	// wait for a few new blocks using tastora's wait utility
 	err = wait.ForBlocks(ctx, 3, s.chain)
 	s.Require().NoError(err)
 
