@@ -367,14 +367,16 @@ func setupNodeAndExecutor(
 			ChainID:       migrationGenesis.ChainID,
 			InitialHeight: int64(migrationGenesis.InitialHeight),
 			GenesisTime:   evGenesis.StartTime,
+			AppState:      json.RawMessage("{}"),
 			Consensus: &genutiltypes.ConsensusGenesis{ // used in rpc/status.go
 				Validators: []cmttypes.GenesisValidator{
 					{
 						Address: migrationGenesis.SequencerAddr,
 						PubKey:  migrationGenesis.SequencerPubKey,
-						Power:   1,
+						Power:   5,
 					},
 				},
+				Params: cmttypes.DefaultConsensusParams(),
 			},
 		}
 	} else {
