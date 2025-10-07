@@ -364,6 +364,7 @@ jobs:
         uses: actions/download-artifact@v4 # keep v4.
         with:
           name: gmd
+          path: gmd
 
       - name: Download Gaia Binary
         run: |
