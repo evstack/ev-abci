@@ -362,6 +362,8 @@ jobs:
 
       - name: Download gm Binary and gmd Home Directory
         uses: actions/download-artifact@v4 # keep v4.
+        with:
+          name: gmd
 
       - name: Download Gaia Binary
         run: |
