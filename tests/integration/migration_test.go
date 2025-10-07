@@ -56,33 +56,23 @@ func (s *MigrationTestSuite) SetupTest() {
 func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	ctx := context.Background()
 
-	// Phase 1: Start with cosmos-sdk chain
 	s.chain = s.createCosmosSDKChain(ctx)
 	s.Require().NotNil(s.chain)
 
 	err := s.chain.Start(ctx)
 	s.Require().NoError(err)
 
-	s.T().Log("Cosmos SDK chain started successfully")
-
-	// Phase 2: Generate test transactions and record state
 	s.generateTestTransactions(ctx)
 
 	s.recordPreMigrationState(ctx)
 
-	// Phase 3: Stop chain preserving volumes
 	s.stopChainPreservingVolumes(ctx)
 
-	// Phase 4: Setup DA network (before recreating with evolve image)
 	s.setupDANetwork(ctx)
 
-	// Phase 5: Execute migration (includes recreating with evolve image and DA config)
-	s.executeMigrationCommand(ctx)
+	s.recreateChainAndPerformMigration(ctx)
 
-	// Phase 6: Validate migration success
 	s.validateMigrationSuccess(ctx)
-
-	s.T().Log("Migration test completed successfully!")
 }
 
 // getCosmosSDKAppContainer returns the cosmos-sdk container image
@@ -242,17 +232,6 @@ func (s *MigrationTestSuite) stopChainPreservingVolumes(ctx context.Context) {
 	s.T().Log("Containers removed, volumes preserved")
 }
 
-// executeMigrationCommand recreates the chain with evolve image and runs migration via PostInit
-func (s *MigrationTestSuite) executeMigrationCommand(ctx context.Context) {
-	s.T().Log("Recreating chain with evolve image to run migration...")
-
-	// recreate the chain with evolve image which has the migration command
-	// migration will run automatically via PostInit
-	s.recreateChainWithEvolveImage(ctx)
-
-	s.T().Log("Migration command completed successfully")
-}
-
 // setupDANetwork starts the celestia DA network for evolve chain
 func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
 	s.T().Log("Setting up DA network...")
@@ -278,34 +257,25 @@ func (s *MigrationTestSuite) performMigration(ctx context.Context, chain *cosmos
 	s.Require().NoError(err, "migration command failed: %s", stderr)
 }
 
-// recreateChainWithEvolveImage recreates the chain with evolve image and DA config, reusing existing volumes
-func (s *MigrationTestSuite) recreateChainWithEvolveImage(ctx context.Context) {
+// recreateChainAndPerformMigration recreates the chain with evolve image and DA config, reusing existing volumes
+func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Context) {
 	s.T().Log("Recreating chain with evolve image...")
 
 	// get DA connection details
-	authToken, err := s.DockerIntegrationTestSuite.bridgeNode.GetAuthToken()
+	authToken, err := s.bridgeNode.GetAuthToken()
 	s.Require().NoError(err)
 
-	bridgeNetworkInfo, err := s.DockerIntegrationTestSuite.bridgeNode.GetNetworkInfo(ctx)
+	bridgeNetworkInfo, err := s.bridgeNode.GetNetworkInfo(ctx)
 	s.Require().NoError(err)
 	bridgeRPCAddress := bridgeNetworkInfo.Internal.RPCAddress()
 
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
-
-	//celestiaHeight, err := s.celestiaChain.Height(ctx)
-	//s.Require().NoError(err)
-	//daStartHeight := fmt.Sprintf("%d", celestiaHeight)
 
 	// recreate using same builder config as createCosmosSDKChain but with evolve image and DA config
 	evolveChain := s.createEvolveChain(ctx, authToken, daAddress)
 
 	s.performMigration(ctx, evolveChain)
 	s.T().Log("Migration command completed successfully")
-
-	// Set DA start height in ev_genesis.json
-	//s.T().Log("Setting DA start height in ev_genesis.json...")
-	//err = setDAStartHeightEV(daStartHeight)(ctx, evolveChain.GetNode())
-	//s.Require().NoError(err, "failed to set DA start height in ev_genesis.json")
 
 	// Now start the chain with migrated state
 	err = evolveChain.Start(ctx)
