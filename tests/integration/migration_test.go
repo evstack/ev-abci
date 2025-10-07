@@ -55,38 +55,155 @@ func (s *MigrationTestSuite) SetupTest() {
 // TestCosmosToEvolveMigration tests the complete migration workflow
 func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	ctx := context.Background()
+	t := s.T()
 
+	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
+		s.createAndStartSDKChain(ctx)
+	})
+
+	t.Run("generate_test_transactions", func(t *testing.T) {
+		s.generateTestTransactions(ctx)
+	})
+
+	t.Run("record_pre_migration_state", func(t *testing.T) {
+		s.recordPreMigrationState(ctx)
+	})
+
+	t.Run("stop_sdk_chain", func(t *testing.T) {
+		s.stopChainPreservingVolumes(ctx)
+	})
+
+	t.Run("setup_da_network", func(t *testing.T) {
+		s.setupDANetwork(ctx)
+	})
+
+	t.Run("migrate_chain", func(t *testing.T) {
+		s.recreateChainAndPerformMigration(ctx)
+	})
+
+	t.Run("validate_migration_success", func(t *testing.T) {
+		s.validateMigrationSuccess(ctx)
+	})
+}
+
+func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context) {
 	s.chain = s.createCosmosSDKChain(ctx)
 	s.Require().NotNil(s.chain)
 
 	err := s.chain.Start(ctx)
 	s.Require().NoError(err)
-
-	s.generateTestTransactions(ctx)
-
-	s.recordPreMigrationState(ctx)
-
-	s.stopChainPreservingVolumes(ctx)
-
-	s.setupDANetwork(ctx)
-
-	s.recreateChainAndPerformMigration(ctx)
-
-	s.validateMigrationSuccess(ctx)
 }
 
-// getCosmosSDKAppContainer returns the cosmos-sdk container image
-func getCosmosSDKAppContainer() container.Image {
-	imageRepo := os.Getenv("COSMOS_SDK_IMAGE_REPO")
-	if imageRepo == "" {
-		imageRepo = "cosmos-gm"
+// generateTestTransactions creates test wallets and sends transactions
+func (s *MigrationTestSuite) generateTestTransactions(ctx context.Context) {
+	s.T().Log("Generating test transactions...")
+
+	// create test wallets
+	faucetWallet := s.chain.GetFaucetWallet()
+
+	aliceWallet, err := s.chain.CreateWallet(ctx, "alice")
+	s.Require().NoError(err)
+
+	bobWallet, err := s.chain.CreateWallet(ctx, "bob")
+	s.Require().NoError(err)
+
+	s.testWallets = []*types.Wallet{faucetWallet, aliceWallet, bobWallet}
+
+	s.recordTestTransaction(ctx, faucetWallet, aliceWallet, math.NewInt(1_000_000))
+	s.recordTestTransaction(ctx, faucetWallet, bobWallet, math.NewInt(1_000_000))
+	s.recordTestTransaction(ctx, aliceWallet, bobWallet, math.NewInt(10_000))
+
+	s.T().Logf("Generated %d test transactions", len(s.preMigrationTxHashes))
+}
+
+// recordPreMigrationState stores current chain state for validation
+func (s *MigrationTestSuite) recordPreMigrationState(ctx context.Context) {
+	s.T().Log("Recording pre-migration state...")
+
+	// get current balances for all test wallets
+	networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+
+	for _, wallet := range s.testWallets {
+		balance, err := queryBankBalance(ctx, networkInfo.External.GRPCAddress(), wallet.GetFormattedAddress(), "stake")
+		s.Require().NoError(err)
+		s.preMigrationBalances[wallet.GetFormattedAddress()] = *balance
 	}
 
-	imageTag := os.Getenv("COSMOS_SDK_IMAGE_TAG")
-	if imageTag == "" {
-		imageTag = "test"
-	}
-	return container.NewImage(imageRepo, imageTag, "10001:10001")
+	// record current block height
+	height, err := s.chain.Height(ctx)
+	s.Require().NoError(err)
+	s.T().Logf("Pre-migration block height: %d", height)
+	s.T().Logf("Recorded balances for %d wallets", len(s.preMigrationBalances))
+}
+
+// stopChainPreservingVolumes removes containers while preserving volumes
+func (s *MigrationTestSuite) stopChainPreservingVolumes(ctx context.Context) {
+	s.T().Log("Removing containers while preserving volumes...")
+
+	// remove containers while preserving volumes
+	err := s.chain.Remove(ctx, types.WithPreserveVolumes())
+	s.Require().NoError(err)
+	s.T().Log("Containers removed, volumes preserved")
+}
+
+// setupDANetwork starts the celestia DA network for evolve chain
+func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
+	s.T().Log("Setting up DA network...")
+
+	// reuse existing celestia setup from testsuite_test.go
+	s.celestiaChain = s.CreateCelestiaChain(ctx)
+	s.T().Log("Celestia app chain started")
+
+	s.bridgeNode = s.CreateDANetwork(ctx)
+	s.T().Log("Bridge node started")
+
+	// reset bech32 prefix back to gm after DA network setup
+	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
+}
+
+// recreateChainAndPerformMigration recreates the chain with evolve image and DA config, reusing existing volumes
+func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Context) {
+	s.T().Log("Recreating chain with evolve image...")
+
+	// get DA connection details
+	authToken, err := s.bridgeNode.GetAuthToken()
+	s.Require().NoError(err)
+
+	bridgeNetworkInfo, err := s.bridgeNode.GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+	bridgeRPCAddress := bridgeNetworkInfo.Internal.RPCAddress()
+
+	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
+
+	// recreate using same builder config as createCosmosSDKChain but with evolve image and DA config
+	evolveChain := s.createEvolveChain(ctx, authToken, daAddress)
+
+	s.performMigration(ctx, evolveChain)
+	s.T().Log("Migration command completed successfully")
+
+	// Now start the chain with migrated state
+	err = evolveChain.Start(ctx)
+	s.Require().NoError(err)
+
+	// overwrite the chain variable so that it now points to the evolve chain.
+	s.chain = evolveChain
+	s.T().Log("Chain recreated with evolve image and migration completed")
+}
+
+// validateMigrationSuccess verifies that migration worked correctly
+func (s *MigrationTestSuite) validateMigrationSuccess(ctx context.Context) {
+	s.T().Log("Validating migration success...")
+
+	s.validateOldTransactions(ctx)
+
+	s.validateBalancesPreserved(ctx)
+
+	s.sendNewTransactions(ctx)
+
+	s.validateNewBlockProduction(ctx)
+
+	s.T().Log("All migration validations passed!")
 }
 
 // getCosmosChainBuilder returns a chain builder for cosmos-sdk chain
@@ -148,103 +265,17 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 	return evolveChain
 }
 
-// generateTestTransactions creates test wallets and sends transactions
-func (s *MigrationTestSuite) generateTestTransactions(ctx context.Context) {
-	s.T().Log("Generating test transactions...")
-
-	// create test wallets
-	faucetWallet := s.chain.GetFaucetWallet()
-
-	aliceWallet, err := s.chain.CreateWallet(ctx, "alice")
-	s.Require().NoError(err)
-
-	bobWallet, err := s.chain.CreateWallet(ctx, "bob")
-	s.Require().NoError(err)
-
-	s.testWallets = []*types.Wallet{faucetWallet, aliceWallet, bobWallet}
-
-	// fund alice and bob from faucet
-	fundAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(1000000)))
-
-	txResp, err := s.chain.BroadcastMessages(ctx, faucetWallet,
+// recordTestTransaction sends a transaction and records its hash
+func (s *MigrationTestSuite) recordTestTransaction(ctx context.Context, fromWallet, destWallet *types.Wallet, amount math.Int) {
+	fundAmount := sdk.NewCoins(sdk.NewCoin("stake", amount))
+	txResp, err := s.chain.BroadcastMessages(ctx, fromWallet,
 		banktypes.NewMsgSend(
-			sdk.MustAccAddressFromBech32(faucetWallet.GetFormattedAddress()),
-			sdk.MustAccAddressFromBech32(aliceWallet.GetFormattedAddress()),
+			sdk.MustAccAddressFromBech32(fromWallet.GetFormattedAddress()),
+			sdk.MustAccAddressFromBech32(destWallet.GetFormattedAddress()),
 			fundAmount))
 	s.Require().NoError(err)
 	s.Require().Equal(uint32(0), txResp.Code)
 	s.preMigrationTxHashes = append(s.preMigrationTxHashes, txResp.TxHash)
-
-	txResp, err = s.chain.BroadcastMessages(ctx, faucetWallet,
-		banktypes.NewMsgSend(
-			sdk.MustAccAddressFromBech32(faucetWallet.GetFormattedAddress()),
-			sdk.MustAccAddressFromBech32(bobWallet.GetFormattedAddress()),
-			fundAmount))
-	s.Require().NoError(err)
-	s.Require().Equal(uint32(0), txResp.Code)
-	s.preMigrationTxHashes = append(s.preMigrationTxHashes, txResp.TxHash)
-
-	// send transaction between alice and bob
-	transferAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(100000)))
-	txResp, err = s.chain.BroadcastMessages(ctx, aliceWallet,
-		banktypes.NewMsgSend(
-			sdk.MustAccAddressFromBech32(aliceWallet.GetFormattedAddress()),
-			sdk.MustAccAddressFromBech32(bobWallet.GetFormattedAddress()),
-			transferAmount))
-	s.Require().NoError(err)
-	s.Require().Equal(uint32(0), txResp.Code)
-	s.preMigrationTxHashes = append(s.preMigrationTxHashes, txResp.TxHash)
-
-	s.T().Logf("Generated %d test transactions", len(s.preMigrationTxHashes))
-}
-
-// recordPreMigrationState stores current chain state for validation
-func (s *MigrationTestSuite) recordPreMigrationState(ctx context.Context) {
-	s.T().Log("Recording pre-migration state...")
-
-	// get current balances for all test wallets
-	networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
-	s.Require().NoError(err)
-
-	for _, wallet := range s.testWallets {
-		balance, err := queryBankBalance(ctx,
-			networkInfo.External.GRPCAddress(),
-			wallet.GetFormattedAddress(),
-			"stake")
-		s.Require().NoError(err)
-		s.preMigrationBalances[wallet.GetFormattedAddress()] = *balance
-	}
-
-	// record current block height
-	height, err := s.chain.Height(ctx)
-	s.Require().NoError(err)
-	s.T().Logf("Pre-migration block height: %d", height)
-	s.T().Logf("Recorded balances for %d wallets", len(s.preMigrationBalances))
-}
-
-// stopChainPreservingVolumes removes containers while preserving volumes
-func (s *MigrationTestSuite) stopChainPreservingVolumes(ctx context.Context) {
-	s.T().Log("Removing containers while preserving volumes...")
-
-	// remove containers while preserving volumes
-	err := s.chain.Remove(ctx, types.WithPreserveVolumes())
-	s.Require().NoError(err)
-	s.T().Log("Containers removed, volumes preserved")
-}
-
-// setupDANetwork starts the celestia DA network for evolve chain
-func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
-	s.T().Log("Setting up DA network...")
-
-	// reuse existing celestia setup from testsuite_test.go
-	s.celestiaChain = s.CreateCelestiaChain(ctx)
-	s.T().Log("Celestia app chain started")
-
-	s.bridgeNode = s.CreateDANetwork(ctx)
-	s.T().Log("Bridge node started")
-
-	// reset bech32 prefix back to gm after DA network setup
-	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 }
 
 // performMigration runs the migration command on the given chain node.
@@ -255,54 +286,6 @@ func (s *MigrationTestSuite) performMigration(ctx context.Context, chain *cosmos
 	}, nil)
 
 	s.Require().NoError(err, "migration command failed: %s", stderr)
-}
-
-// recreateChainAndPerformMigration recreates the chain with evolve image and DA config, reusing existing volumes
-func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Context) {
-	s.T().Log("Recreating chain with evolve image...")
-
-	// get DA connection details
-	authToken, err := s.bridgeNode.GetAuthToken()
-	s.Require().NoError(err)
-
-	bridgeNetworkInfo, err := s.bridgeNode.GetNetworkInfo(ctx)
-	s.Require().NoError(err)
-	bridgeRPCAddress := bridgeNetworkInfo.Internal.RPCAddress()
-
-	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
-
-	// recreate using same builder config as createCosmosSDKChain but with evolve image and DA config
-	evolveChain := s.createEvolveChain(ctx, authToken, daAddress)
-
-	s.performMigration(ctx, evolveChain)
-	s.T().Log("Migration command completed successfully")
-
-	// Now start the chain with migrated state
-	err = evolveChain.Start(ctx)
-	s.Require().NoError(err)
-
-	// overwrite the chain variable so that it now points to the evolve chain.
-	s.chain = evolveChain
-	s.T().Log("Chain recreated with evolve image and migration completed")
-}
-
-// validateMigrationSuccess verifies that migration worked correctly
-func (s *MigrationTestSuite) validateMigrationSuccess(ctx context.Context) {
-	s.T().Log("Validating migration success...")
-
-	// verify old transactions are still queryable
-	s.validateOldTransactions(ctx)
-
-	// verify balances are preserved
-	s.validateBalancesPreserved(ctx)
-
-	// send new transactions on evolve chain
-	s.sendNewTransactions(ctx)
-
-	// verify chain is producing new blocks
-	s.validateNewBlockProduction(ctx)
-
-	s.T().Log("All migration validations passed!")
 }
 
 // validateOldTransactions verifies old transactions are still accessible
@@ -322,7 +305,7 @@ func (s *MigrationTestSuite) validateOldTransactions(ctx context.Context) {
 		tx, err := client.Tx(ctx, txHashBytes, false)
 		s.Require().NoError(err, "Failed to query transaction %d with hash %s", i, txHash)
 		s.Require().NotNil(tx)
-		s.T().Logf("✅ Old transaction %d (%s) successfully queried", i, txHash)
+		s.T().Logf("Old transaction %d (%s) successfully queried", i, txHash)
 	}
 }
 
@@ -341,7 +324,7 @@ func (s *MigrationTestSuite) validateBalancesPreserved(ctx context.Context) {
 		s.Require().NoError(err)
 		s.Require().Equal(expectedBalance.Amount, currentBalance.Amount,
 			"Balance mismatch for address %s", address)
-		s.T().Logf("✅ Balance preserved for %s: %s", address, currentBalance.Amount)
+		s.T().Logf("Balance preserved for %s: %s", address, currentBalance.Amount)
 	}
 }
 
@@ -349,17 +332,11 @@ func (s *MigrationTestSuite) validateBalancesPreserved(ctx context.Context) {
 func (s *MigrationTestSuite) sendNewTransactions(ctx context.Context) {
 	s.T().Log("Sending new transactions on evolve chain...")
 
-	if len(s.testWallets) < 2 {
-		s.T().Skip("Not enough test wallets for new transactions")
-		return
-	}
-
-	alice := s.testWallets[1] // assuming alice is at index 1
-	bob := s.testWallets[2]   // assuming bob is at index 2
+	alice := s.testWallets[1]
+	bob := s.testWallets[2]
 
 	// Use a per-node broadcaster to avoid relying on a faucet wallet
 	broadcaster := cosmos.NewBroadcasterForNode(s.chain, s.chain.GetNode())
-
 	transferAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(50000)))
 	txResp, err := broadcaster.BroadcastMessages(ctx, alice,
 		banktypes.NewMsgSend(
@@ -369,7 +346,7 @@ func (s *MigrationTestSuite) sendNewTransactions(ctx context.Context) {
 	s.Require().NoError(err)
 	s.Require().Equal(uint32(0), txResp.Code)
 
-	s.T().Logf("✅ New transaction successful on evolve chain: %s", txResp.TxHash)
+	s.T().Logf("New transaction successful on evolve chain: %s", txResp.TxHash)
 }
 
 // validateNewBlockProduction verifies the chain is producing new blocks
@@ -386,20 +363,19 @@ func (s *MigrationTestSuite) validateNewBlockProduction(ctx context.Context) {
 	s.Require().NoError(err)
 	s.Require().Greater(finalHeight, initialHeight)
 
-	s.T().Logf("✅ Chain producing new blocks: %d -> %d", initialHeight, finalHeight)
+	s.T().Logf("Chain producing new blocks: %d -> %d", initialHeight, finalHeight)
 }
 
-// addSingleSequencerWithTxIndex modifies the genesis file and enables tx indexing
-func addSingleSequencerWithTxIndex(ctx context.Context, node *cosmos.ChainNode) error {
-	// first call the existing addSingleSequencer function
-	err := addSingleSequencer(ctx, node)
-	if err != nil {
-		return err
+// getCosmosSDKAppContainer returns the cosmos-sdk container image
+func getCosmosSDKAppContainer() container.Image {
+	imageRepo := os.Getenv("COSMOS_SDK_IMAGE_REPO")
+	if imageRepo == "" {
+		imageRepo = "cosmos-gm"
 	}
 
-	// enable tx indexing using config.Modify
-	return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
-		// enable tx indexing
-		cfg.TxIndex.Indexer = "kv"
-	})
+	imageTag := os.Getenv("COSMOS_SDK_IMAGE_TAG")
+	if imageTag == "" {
+		imageTag = "test"
+	}
+	return container.NewImage(imageRepo, imageTag, "10001:10001")
 }
