@@ -1,0 +1,43 @@
+FROM golang:1.24-alpine AS ignite-builder
+
+# Install dependencies needed for ignite and building
+RUN apk add --no-cache \
+    libc6-compat \
+    curl \
+    bash
+
+# Set environment variables
+ENV IGNITE_VERSION=v29.3.1
+
+RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
+
+WORKDIR /workspace
+
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+
+WORKDIR /workspace/gm
+
+# Build standard cosmos-sdk chain (without evolve modules)
+RUN ignite chain build --skip-proto
+
+# create lightweight runtime image
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates
+
+# create non-root user
+RUN addgroup -g 10001 -S gm && \
+    adduser -u 10001 -S gm -G gm
+
+WORKDIR /home/gm
+
+# copy the built binary from the builder stage
+COPY --from=ignite-builder /go/bin/gmd /usr/local/bin/gmd
+
+RUN chown -R gm:gm /home/gm
+USER gm
+
+# expose common ports
+EXPOSE 26657 26656 9090 1317
+
+CMD ["gmd"]
