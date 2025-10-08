@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+<<<<<<< HEAD
     "context"
     "encoding/hex"
     "fmt"
@@ -11,6 +12,15 @@ import (
     "strings"
     "time"
     "strconv"
+=======
+	"context"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"testing"
+
+	"cosmossdk.io/math"
+>>>>>>> main
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
@@ -22,6 +32,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
+<<<<<<< HEAD
     banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
     authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
     govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
@@ -31,6 +42,10 @@ import (
     "github.com/stretchr/testify/suite"
     "google.golang.org/grpc"
     "google.golang.org/grpc/credentials/insecure"
+=======
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/stretchr/testify/suite"
+>>>>>>> main
 )
 
 // MigrationTestSuite tests the migration from cosmos-sdk to evolve
@@ -47,7 +62,11 @@ type MigrationTestSuite struct {
 }
 
 func TestMigrationSuite(t *testing.T) {
+<<<<<<< HEAD
     suite.Run(t, new(MigrationTestSuite))
+=======
+	suite.Run(t, new(MigrationTestSuite))
+>>>>>>> main
 }
 
 func (s *MigrationTestSuite) SetupTest() {
@@ -105,6 +124,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	})
 }
 
+<<<<<<< HEAD
 // TestCosmosToEvolveMigration_MultiValidator_OnChainRequired verifies that when multiple
 // validators exist, evolve-migrate requires the on-chain sequencer in migrationmngr state.
 // This test asserts the command fails with a clear error until the sequencer is set on-chain.
@@ -254,6 +274,8 @@ func setGovFastParams(ctx context.Context, node *cosmos.ChainNode) error {
     })
 }
 
+=======
+>>>>>>> main
 func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context) {
 	s.chain = s.createCosmosSDKChain(ctx)
 	s.Require().NotNil(s.chain)
@@ -388,6 +410,7 @@ func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
 		WithBech32Prefix("gm").
 		WithBinaryName("gmd").
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
+<<<<<<< HEAD
 		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
 			return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
 				cfg.TxIndex.Indexer = "kv"
@@ -399,6 +422,17 @@ func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
             cosmos.NewChainNodeConfigBuilder().Build(),
             cosmos.NewChainNodeConfigBuilder().Build(),
         )
+=======
+		WithNodes(
+			cosmos.NewChainNodeConfigBuilder().
+				WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
+					return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
+						cfg.TxIndex.Indexer = "kv"
+					})
+				}).
+				Build(),
+		)
+>>>>>>> main
 }
 
 // createCosmosSDKChain creates a cosmos-sdk chain without evolve modules
@@ -429,6 +463,7 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 					"--log_level", "*:info",
 				).
 				Build(),
+<<<<<<< HEAD
 			cosmos.NewChainNodeConfigBuilder().WithAdditionalStartArgs(
 				"--evnode.da.address", daAddress,
 				"--evnode.da.gas_price", "0.000001",
@@ -447,6 +482,8 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 				"--evnode.da.data_namespace", "ev-data",
 				"--log_level", "*:debug",
 			).Build(),
+=======
+>>>>>>> main
 		).
 		Build(ctx)
 	s.Require().NoError(err)
