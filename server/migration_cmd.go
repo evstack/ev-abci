@@ -106,21 +106,21 @@ After migration, start the node normally - it will automatically detect and use 
 			lastBlockHeight := cometBFTstate.LastBlockHeight
 			cmd.Printf("Last block height: %d\n", lastBlockHeight)
 
-            rollkitStores, err := loadRollkitStores(config.RootDir)
-            if err != nil {
-                return err
-            }
+			rollkitStores, err := loadRollkitStores(config.RootDir)
+			if err != nil {
+				return err
+			}
 
-            // Ensure all stores are stopped/closed in the right order on any exit path.
-            // Order matters: stop header/data sync stores first, then close rollkit store,
-            // then close Comet stores.
-            defer func() {
-                _ = rollkitStores.headerSyncStore.Stop(ctx)
-                _ = rollkitStores.dataSyncStore.Stop(ctx)
-                _ = rollkitStores.rollkitStore.Close()
-                _ = cometBlockStore.Close()
-                _ = cometStateStore.Close()
-            }()
+			// Ensure all stores are stopped/closed in the right order on any exit path.
+			// Order matters: stop header/data sync stores first, then close rollkit store,
+			// then close Comet stores.
+			defer func() {
+				_ = rollkitStores.headerSyncStore.Stop(ctx)
+				_ = rollkitStores.dataSyncStore.Stop(ctx)
+				_ = rollkitStores.rollkitStore.Close()
+				_ = cometBlockStore.Close()
+				_ = cometStateStore.Close()
+			}()
 
 			// save current CometBFT state to the ABCI exec store
 			if err = rollkitStores.abciExecStore.SaveState(ctx, &cometBFTstate); err != nil {
@@ -202,33 +202,33 @@ After migration, start the node normally - it will automatically detect and use 
 				return fmt.Errorf("failed to update evolve state at height %d: %w", lastBlockHeight, err)
 			}
 
-            cmd.Println("Seeding sync stores head with latest migrated header/data ...")
-            if err := rollkitStores.headerSyncStore.Start(ctx); err != nil {
-                return fmt.Errorf("failed to start header sync store: %w", err)
-            }
-            if err := rollkitStores.dataSyncStore.Start(ctx); err != nil {
-                return fmt.Errorf("failed to start data sync store: %w", err)
-            }
+			cmd.Println("Seeding sync stores head with latest migrated header/data ...")
+			if err := rollkitStores.headerSyncStore.Start(ctx); err != nil {
+				return fmt.Errorf("failed to start header sync store: %w", err)
+			}
+			if err := rollkitStores.dataSyncStore.Start(ctx); err != nil {
+				return fmt.Errorf("failed to start data sync store: %w", err)
+			}
 
 			currentSyncHeight := rollkitStores.headerSyncStore.Height()
-            if currentSyncHeight == 0 {
-                header, data, err := rollkitStores.rollkitStore.GetBlockData(ctx, uint64(lastBlockHeight))
-                if err != nil {
-                    return fmt.Errorf("failed to get block data for seeding sync stores at height %d: %w", lastBlockHeight, err)
-                }
-                if err := rollkitStores.headerSyncStore.Append(ctx, header); err != nil {
-                    return fmt.Errorf("failed to append header to sync store at height %d: %w", lastBlockHeight, err)
-                }
-                if err := rollkitStores.dataSyncStore.Append(ctx, data); err != nil {
-                    return fmt.Errorf("failed to append data to sync store at height %d: %w", lastBlockHeight, err)
-                }
-                cmd.Printf("Seeded sync stores head at height %d\n", lastBlockHeight)
-            } else {
-                cmd.Println("Sync stores already initialized. Skipping seeding")
-            }
-            // Defer cleanup above will stop/close stores in correct order
-            cmd.Println("Migration completed successfully")
-            return nil
+			if currentSyncHeight == 0 {
+				header, data, err := rollkitStores.rollkitStore.GetBlockData(ctx, uint64(lastBlockHeight))
+				if err != nil {
+					return fmt.Errorf("failed to get block data for seeding sync stores at height %d: %w", lastBlockHeight, err)
+				}
+				if err := rollkitStores.headerSyncStore.Append(ctx, header); err != nil {
+					return fmt.Errorf("failed to append header to sync store at height %d: %w", lastBlockHeight, err)
+				}
+				if err := rollkitStores.dataSyncStore.Append(ctx, data); err != nil {
+					return fmt.Errorf("failed to append data to sync store at height %d: %w", lastBlockHeight, err)
+				}
+				cmd.Printf("Seeded sync stores head at height %d\n", lastBlockHeight)
+			} else {
+				cmd.Println("Sync stores already initialized. Skipping seeding")
+			}
+			// Defer cleanup above will stop/close stores in correct order
+			cmd.Println("Migration completed successfully")
+			return nil
 		},
 	}
 

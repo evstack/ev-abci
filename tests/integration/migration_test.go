@@ -335,8 +335,7 @@ func (s *MigrationTestSuite) sendNewTransactions(ctx context.Context) {
 	alice := s.testWallets[1]
 	bob := s.testWallets[2]
 
-	// Use a per-node broadcaster to avoid relying on a faucet wallet
-	broadcaster := cosmos.NewBroadcasterForNode(s.chain, s.chain.GetNode())
+	broadcaster := cosmos.NewBroadcaster(s.chain)
 	transferAmount := sdk.NewCoins(sdk.NewCoin("stake", math.NewInt(50000)))
 	txResp, err := broadcaster.BroadcastMessages(ctx, alice,
 		banktypes.NewMsgSend(
