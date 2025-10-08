@@ -22,7 +22,7 @@ RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 WORKDIR /workspace/gm
 
 RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
-    ignite evolve add --migrate
+    ignite evolve add
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
