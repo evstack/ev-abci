@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"testing"
 	"strconv"
+	"testing"
 	"time"
 
 	"cosmossdk.io/math"
@@ -234,15 +234,33 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	// Vote YES with all validators by discovering local key names in each node
 	s.voteYesAllValidators(ctx, proposalID)
 
-	// wait for voting period to complete and proposal to be executed
-	time.Sleep(15 * time.Second)
+	// wait for the proposal to finish voting period and be executed
+	// poll every second for up to 30 seconds
+	var finalProp *govv1.QueryProposalResponse
+	err = wait.ForCondition(ctx, time.Minute*2, time.Second*5, func() (bool, error) {
+		prop, err := govQC.Proposal(ctx, &govv1.QueryProposalRequest{ProposalId: proposalID})
+		if err != nil {
+			return false, err
+		}
 
-	// verify the proposal passed and the migration state was set
-	prop, err := govQC.Proposal(ctx, &govv1.QueryProposalRequest{ProposalId: proposalID})
-	s.Require().NoError(err)
-	s.T().Logf("Proposal %d status: %s", proposalID, prop.Proposal.Status)
+		s.T().Logf("Proposal %d status: %s (checking...)", proposalID, prop.Proposal.Status)
+
+		// keep waiting while in deposit or voting period
+		if prop.Proposal.Status == govv1.ProposalStatus_PROPOSAL_STATUS_DEPOSIT_PERIOD ||
+			prop.Proposal.Status == govv1.ProposalStatus_PROPOSAL_STATUS_VOTING_PERIOD {
+			return false, nil
+		}
+
+		// proposal is in a final state (passed, rejected, or failed)
+		finalProp = prop
+		return true, nil
+	})
+	s.Require().NoError(err, "timeout waiting for proposal to reach final state")
+
+	// log proposal details for debugging
+	s.T().Logf("Proposal %d final status: %s", proposalID, finalProp.Proposal.Status)
 	s.T().Logf("Proposal details: final_tally_result=%+v, submit_time=%s, voting_end_time=%s",
-		prop.Proposal.FinalTallyResult, prop.Proposal.SubmitTime, prop.Proposal.VotingEndTime)
+		finalProp.Proposal.FinalTallyResult, finalProp.Proposal.SubmitTime, finalProp.Proposal.VotingEndTime)
 
 	// query votes to debug
 	votesResp, err := govQC.Votes(ctx, &govv1.QueryVotesRequest{ProposalId: proposalID})
@@ -252,7 +270,7 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 		s.T().Logf("Vote %d: voter=%s, options=%+v", i, vote.Voter, vote.Options)
 	}
 
-	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, prop.Proposal.Status, "proposal should have passed")
+	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, finalProp.Proposal.Status, "proposal should have passed")
 }
 
 // setGovFastParams reduces gov timings/thresholds for test speed.

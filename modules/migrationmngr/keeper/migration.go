@@ -63,21 +63,17 @@ func migrateToSequencer(
 	if err != nil {
 		return nil, err
 	}
-	sequencerUpdate := abci.ValidatorUpdate{PubKey: pk, Power: 1}
+	sequencerUpdate := abci.ValidatorUpdate{
+		PubKey: pk,
+		Power:  1,
+	}
 
 	for _, val := range lastValidatorSet {
-		vpk, err := val.CmtConsPublicKey()
-		if err != nil {
-			return nil, err
-		}
-		// Compare by CometBFT pubkey to avoid Any equality pitfalls
-		if vpk.String() == pk.String() {
-			// sequencer is already in validator set, skip removal
+		powerUpdate := val.ABCIValidatorUpdateZero()
+		if val.ConsensusPubkey.Equal(seq.ConsensusPubkey) {
 			continue
 		}
-		// use ABCIValidatorUpdateZero() to get the proper CometBFT representation
-		// this ensures the pubkey bytes match what CometBFT expects
-		initialValUpdates = append(initialValUpdates, val.ABCIValidatorUpdateZero())
+		initialValUpdates = append(initialValUpdates, powerUpdate)
 	}
 
 	return append(initialValUpdates, sequencerUpdate), nil
