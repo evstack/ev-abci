@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"cosmossdk.io/collections"
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -22,10 +23,16 @@ func (k Keeper) migrateNow(
 	migrationData types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
+	k.Logger(ctx).Info("migrateNow called", "num_validators", len(lastValidatorSet))
+
 	// ensure sequencer pubkey Any is unpacked and cached for TmConsPublicKey() to work correctly
 	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
 	}
+
+	k.Logger(ctx).Info("sequencer unpacked",
+		"sequencer_pubkey", migrationData.Sequencer.ConsensusPubkey.String(),
+		"cached_value", migrationData.Sequencer.ConsensusPubkey.GetCachedValue())
 	switch len(migrationData.Attesters) {
 	case 0:
 		// no attesters, we are migrating to a single sequencer
@@ -68,15 +75,23 @@ func migrateToSequencer(
 		Power:  1,
 	}
 
-	for _, val := range lastValidatorSet {
+	for i, val := range lastValidatorSet {
 		// skip the sequencer - we'll add it at the end with power 1
 		isEqual := val.ConsensusPubkey.Equal(seq.ConsensusPubkey)
 
-		// Debug logging
 		valPkStr := val.ConsensusPubkey.String()
 		seqPkStr := seq.ConsensusPubkey.String()
 		valCached := val.ConsensusPubkey.GetCachedValue()
 		seqCached := seq.ConsensusPubkey.GetCachedValue()
+
+		// Log all validators for debugging
+		fmt.Printf("DEBUG: Comparing validator[%d]:\n", i)
+		fmt.Printf("  val.ConsensusPubkey.String(): %s\n", valPkStr)
+		fmt.Printf("  seq.ConsensusPubkey.String(): %s\n", seqPkStr)
+		fmt.Printf("  val cached value: %v (type: %T)\n", valCached, valCached)
+		fmt.Printf("  seq cached value: %v (type: %T)\n", seqCached, seqCached)
+		fmt.Printf("  Equal result: %v\n", isEqual)
+		fmt.Printf("  Action: %s\n", map[bool]string{true: "SKIP (is sequencer)", false: "REMOVE"}[isEqual])
 
 		if isEqual {
 			continue
