@@ -75,6 +75,9 @@ func migrateToSequencer(
 		Power:  1,
 	}
 
+	fmt.Printf("DEBUG: Sequencer update pubkey: %v\n", pk)
+	fmt.Printf("DEBUG: Sequencer update pubkey String(): %s\n", pk.String())
+
 	for i, val := range lastValidatorSet {
 		// skip the sequencer - we'll add it at the end with power 1
 		isEqual := val.ConsensusPubkey.Equal(seq.ConsensusPubkey)
@@ -99,6 +102,8 @@ func migrateToSequencer(
 		// use ABCIValidatorUpdateZero() to get the proper CometBFT representation
 		// this ensures the pubkey bytes match what CometBFT expects
 		powerUpdate := val.ABCIValidatorUpdateZero()
+		fmt.Printf("  Removal update pubkey: %v\n", powerUpdate.PubKey)
+		fmt.Printf("  Removal update pubkey String(): %s\n", powerUpdate.PubKey.String())
 		initialValUpdates = append(initialValUpdates, powerUpdate)
 	}
 
