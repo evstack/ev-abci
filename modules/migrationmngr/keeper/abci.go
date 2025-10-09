@@ -22,15 +22,15 @@ import (
 	- Otherwise, slowly migrate the validator set to the attesters
 */
 
-// PreBlocker makes sure the chain halts at block height + 1 after the migration end.
+// BeginBlock makes sure the chain halts at block height + 1 after the migration end.
 // This is to ensure that the migration is completed with a binary switch.
-func (k Keeper) PreBlocker(ctx context.Context) error {
+func (k Keeper) BeginBlock(ctx context.Context) error {
 	start, end, _ := k.IsMigrating(ctx)
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	currentHeight := uint64(sdkCtx.BlockHeight())
 	shouldHalt := end > 0 && currentHeight == end+1
 
-	k.Logger(ctx).Info("PreBlocker migration check",
+	k.Logger(ctx).Info("BeginBlock migration check",
 		"height", currentHeight,
 		"start", start,
 		"end", end,
