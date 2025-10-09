@@ -7,17 +7,27 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV IGNITE_VERSION=v29.3.1
+ENV IGNITE_VERSION=v29.4.0
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
+# Install evolve app templates globally so `ignite evolve` subcommands are available
+#RUN ignite app install -g github.com/ignite/apps/evolve@main
+
 WORKDIR /workspace
 
+# Scaffold a plain Cosmos SDK chain
 RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 
 WORKDIR /workspace/gm
 
-# Build standard cosmos-sdk chain (without evolve modules)
+RUN ignite app install -g github.com/chatton/apps/evolve@main
+
+# Add only the evolve migrate command (do not scaffold full evolve integration)
+# Use the migrate subcommand exposed by the evolve app
+RUN ignite evolve add --start=false --migrate
+
+# Build the Cosmos SDK binary
 RUN ignite chain build --skip-proto
 
 # create lightweight runtime image

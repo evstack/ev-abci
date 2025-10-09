@@ -1,18 +1,6 @@
 package integration_test
 
 import (
-<<<<<<< HEAD
-    "context"
-    "encoding/hex"
-    "fmt"
-    "os"
-    "testing"
-
-    "cosmossdk.io/math"
-    "strings"
-    "time"
-    "strconv"
-=======
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -20,7 +8,6 @@ import (
 	"testing"
 
 	"cosmossdk.io/math"
->>>>>>> main
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
@@ -31,42 +18,43 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
-<<<<<<< HEAD
-    banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-    authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-    govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
-    govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-    stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+    govmodule "github.com/cosmos/cosmos-sdk/x/gov"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+    migrationmngr "github.com/evstack/ev-abci/modules/migrationmngr"
     migrationmngrtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
     "github.com/stretchr/testify/suite"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/credentials/insecure"
-=======
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/stretchr/testify/suite"
->>>>>>> main
+    codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+    ed25519sdk "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+    cmprivval "github.com/cometbft/cometbft/privval"
+    cmtjson "github.com/cometbft/cometbft/libs/json"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"strconv"
+	"time"
 )
 
 // MigrationTestSuite tests the migration from cosmos-sdk to evolve
 type MigrationTestSuite struct {
-	DockerIntegrationTestSuite
+    DockerIntegrationTestSuite
 
 	// chain instance that will be updated during migration
 	chain *cosmos.Chain
 
 	// pre-migration state for validation
-	preMigrationTxHashes []string
-	preMigrationBalances map[string]sdk.Coin
-	testWallets          []*types.Wallet
+    preMigrationTxHashes []string
+    preMigrationBalances map[string]sdk.Coin
+    testWallets          []*types.Wallet
+
+    migrationHeight uint64
 }
 
 func TestMigrationSuite(t *testing.T) {
-<<<<<<< HEAD
-    suite.Run(t, new(MigrationTestSuite))
-=======
 	suite.Run(t, new(MigrationTestSuite))
->>>>>>> main
 }
 
 func (s *MigrationTestSuite) SetupTest() {
@@ -124,49 +112,48 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	})
 }
 
-<<<<<<< HEAD
 // TestCosmosToEvolveMigration_MultiValidator_OnChainRequired verifies that when multiple
 // validators exist, evolve-migrate requires the on-chain sequencer in migrationmngr state.
 // This test asserts the command fails with a clear error until the sequencer is set on-chain.
 func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSuccess() {
-    ctx := context.Background()
-    t := s.T()
+	ctx := context.Background()
+	t := s.T()
 
-    t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
-        s.createAndStartSDKChain(ctx)
-    })
+	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
+		s.createAndStartSDKChain(ctx)
+	})
 
-    t.Run("generate_test_transactions", func(t *testing.T) {
-        s.generateTestTransactions(ctx)
-    })
+	t.Run("generate_test_transactions", func(t *testing.T) {
+		s.generateTestTransactions(ctx)
+	})
 
-    t.Run("record_pre_migration_state", func(t *testing.T) {
-        s.recordPreMigrationState(ctx)
-    })
+	t.Run("record_pre_migration_state", func(t *testing.T) {
+		s.recordPreMigrationState(ctx)
+	})
 
     t.Run("submit_migration_proposal_and_vote", func(t *testing.T) {
         s.submitMigrationProposalAndVote(ctx)
     })
 
     t.Run("halt_wait", func(t *testing.T) {
-        time.Sleep(12 * time.Second)
+        s.waitForMigrationHalt(ctx)
     })
 
-    t.Run("stop_sdk_chain", func(t *testing.T) {
-        s.stopChainPreservingVolumes(ctx)
-    })
+	t.Run("stop_sdk_chain", func(t *testing.T) {
+		s.stopChainPreservingVolumes(ctx)
+	})
 
-    t.Run("setup_da_network", func(t *testing.T) {
-        s.setupDANetwork(ctx)
-    })
+	t.Run("setup_da_network", func(t *testing.T) {
+		s.setupDANetwork(ctx)
+	})
 
-    t.Run("migrate_chain", func(t *testing.T) {
-        s.recreateChainAndPerformMigration(ctx)
-    })
+	t.Run("migrate_chain", func(t *testing.T) {
+		s.recreateChainAndPerformMigration(ctx)
+	})
 
-    t.Run("validate_migration_success", func(t *testing.T) {
-        s.validateMigrationSuccess(ctx)
-    })
+	t.Run("validate_migration_success", func(t *testing.T) {
+		s.validateMigrationSuccess(ctx)
+	})
 }
 
 // submitMigrationProposalAndVote prepares and submits a gov proposal to migrate,
@@ -179,103 +166,173 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
     s.Require().NoError(err)
     defer conn.Close()
 
-    stakeQC := stakingtypes.NewQueryClient(conn)
-    valsResp, err := stakeQC.Validators(ctx, &stakingtypes.QueryValidatorsRequest{})
+	curHeight, err := s.chain.Height(ctx)
+	s.Require().NoError(err)
+	// Schedule migration sufficiently in the future to allow proposal
+	// submission, deposits, and validator votes to complete.
+    migrateAt := uint64(curHeight + 30)
+    s.migrationHeight = migrateAt
+
+	faucet := s.chain.GetFaucetWallet()
+	proposer := faucet.GetFormattedAddress()
+
+    // Build sequencer pubkey Any from node-0 priv_validator_key.json to ensure a proper SDK pubkey is provided
+    node0 := s.chain.GetNodes()[0].(*cosmos.ChainNode)
+    keyJSONBytes, err := node0.ReadFile(ctx, "config/priv_validator_key.json")
     s.Require().NoError(err)
-    s.Require().GreaterOrEqual(len(valsResp.Validators), 2, "need multi-validator setup")
-
-    seqVal := valsResp.Validators[0]
-
-    curHeight, err := s.chain.Height(ctx)
+    var pvKey cmprivval.FilePVKey
+    s.Require().NoError(cmtjson.Unmarshal(keyJSONBytes, &pvKey))
+    sdkPk := &ed25519sdk.PubKey{Key: pvKey.PubKey.Bytes()}
+    seqAny, err := codectypes.NewAnyWithValue(sdkPk)
     s.Require().NoError(err)
-    migrateAt := uint64(curHeight + 2)
-
-    faucet := s.chain.GetFaucetWallet()
-    proposer := faucet.GetFormattedAddress()
 
     msg := &migrationmngrtypes.MsgMigrateToEvolve{
         Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
         BlockHeight: migrateAt,
         Sequencer: migrationmngrtypes.Sequencer{
             Name:            "sequencer-node-1",
-            ConsensusPubkey: seqVal.ConsensusPubkey,
+            ConsensusPubkey: seqAny,
         },
         Attesters: nil,
     }
 
-    deposit := sdk.NewCoins(sdk.NewInt64Coin("stake", 1_000_000))
-    propMsg, err := govv1.NewMsgSubmitProposal([]sdk.Msg{msg}, deposit, proposer, "Migrate to Evolve", "Set sequencer and migrate", "")
-    s.Require().NoError(err)
+	deposit := sdk.NewCoins(sdk.NewInt64Coin("stake", 1_000_000))
+	propMsg, err := govv1.NewMsgSubmitProposal(
+		[]sdk.Msg{msg},
+		deposit,
+		proposer,
+		"",                          // metadata
+		"Migrate to Evolve",         // title
+		"Set sequencer and migrate", // summary
+		false,                       // expedited
+	)
+	s.Require().NoError(err)
 
-    bc := cosmos.NewBroadcaster(s.chain)
-    submitResp, err := bc.BroadcastMessages(ctx, faucet, propMsg)
-    s.Require().NoError(err, submitResp.RawLog)
-    s.Require().Equal(uint32(0), submitResp.Code, submitResp.RawLog)
+	bc := cosmos.NewBroadcaster(s.chain)
+	submitResp, err := bc.BroadcastMessages(ctx, faucet, propMsg)
+	s.Require().NoError(err, submitResp.RawLog)
+	s.Require().Equal(uint32(0), submitResp.Code, submitResp.RawLog)
 
-    govQC := govv1.NewQueryClient(conn)
-    props, err := govQC.Proposals(ctx, &govv1.QueryProposalsRequest{ProposalStatus: govv1.ProposalStatus_PROPOSAL_STATUS_VOTING_PERIOD})
-    s.Require().NoError(err)
-    s.Require().NotEmpty(props.Proposals)
-    var proposalID uint64
-    for _, p := range props.Proposals {
-        if p.Id > proposalID {
-            proposalID = p.Id
-        }
-    }
-    s.Require().True(proposalID > 0)
+	// Discover proposal ID via gRPC (any status) with a short retry to allow indexing
+	govQC := govv1.NewQueryClient(conn)
+	var proposalID uint64
+	for i := 0; i < 10 && proposalID == 0; i++ {
+		props, err := govQC.Proposals(ctx, &govv1.QueryProposalsRequest{ProposalStatus: govv1.ProposalStatus_PROPOSAL_STATUS_UNSPECIFIED})
+		s.Require().NoError(err)
+		for _, p := range props.Proposals {
+			if p.Id > proposalID {
+				proposalID = p.Id
+			}
+		}
+		if proposalID == 0 {
+			time.Sleep(1 * time.Second)
+		}
+	}
+	s.Require().True(proposalID > 0, "no proposals found after submission")
 
-    // Vote YES via CLI inside the node container
-    _, stderr, err := s.chain.GetNode().Exec(ctx, []string{
-        "gmd", "tx", "gov", "vote", strconv.FormatUint(proposalID, 10), "yes",
-        "--from", proposer,
-        "--home", s.chain.GetNode().HomeDir(),
-        "--chain-id", s.chain.GetChainID(),
-        "--keyring-backend", "test",
-        "--yes",
-    }, nil)
-    s.Require().NoError(err, "vote tx failed: %s", stderr)
+	// Vote YES with all validators by discovering local key names in each node
+	s.voteYesAllValidators(ctx, proposalID)
 
-    // short delay for voting period / execution
-    time.Sleep(12 * time.Second)
+	// short delay for voting period / execution
+	time.Sleep(12 * time.Second)
 }
 
 // setGovFastParams reduces gov timings/thresholds for test speed.
 func setGovFastParams(ctx context.Context, node *cosmos.ChainNode) error {
-    return config.Modify(ctx, node, "config/genesis.json", func(genDoc *map[string]interface{}) {
-        appState, ok := (*genDoc)["app_state"].(map[string]interface{})
-        if !ok {
-            return
-        }
-        govState, ok := appState["gov"].(map[string]interface{})
-        if !ok {
-            return
-        }
-        if params, ok := govState["params"].(map[string]interface{}); ok {
-            params["voting_period"] = "10s"
-            params["max_deposit_period"] = "10s"
-            params["min_deposit"] = []map[string]interface{}{{"denom": "stake", "amount": "1"}}
-            params["quorum"] = "0.000000000000000000"
-            params["threshold"] = "0.200000000000000000"
-            params["veto_threshold"] = "0.334000000000000000"
-            return
-        }
-        if dp, ok := govState["deposit_params"].(map[string]interface{}); ok {
-            dp["min_deposit"] = []map[string]interface{}{{"denom": "stake", "amount": "1"}}
-            dp["max_deposit_period"] = "10s"
-        }
-        if vp, ok := govState["voting_params"].(map[string]interface{}); ok {
-            vp["voting_period"] = "10s"
-        }
-        if tp, ok := govState["tally_params"].(map[string]interface{}); ok {
-            tp["quorum"] = "0.000000000000000000"
-            tp["threshold"] = "0.200000000000000000"
-            tp["veto_threshold"] = "0.334000000000000000"
-        }
-    })
+	return config.Modify(ctx, node, "config/genesis.json", func(genDoc *map[string]interface{}) {
+		appState, ok := (*genDoc)["app_state"].(map[string]interface{})
+		if !ok {
+			return
+		}
+		govState, ok := appState["gov"].(map[string]interface{})
+		if !ok {
+			return
+		}
+		if params, ok := govState["params"].(map[string]interface{}); ok {
+			params["voting_period"] = "10s"
+			params["max_deposit_period"] = "10s"
+			params["min_deposit"] = []map[string]interface{}{{"denom": "stake", "amount": "1"}}
+			params["quorum"] = "0.000000000000000000"
+			params["threshold"] = "0.200000000000000000"
+			params["veto_threshold"] = "0.334000000000000000"
+			return
+		}
+		if dp, ok := govState["deposit_params"].(map[string]interface{}); ok {
+			dp["min_deposit"] = []map[string]interface{}{{"denom": "stake", "amount": "1"}}
+			dp["max_deposit_period"] = "10s"
+		}
+		if vp, ok := govState["voting_params"].(map[string]interface{}); ok {
+			vp["voting_period"] = "10s"
+		}
+		if tp, ok := govState["tally_params"].(map[string]interface{}); ok {
+			tp["quorum"] = "0.000000000000000000"
+			tp["threshold"] = "0.200000000000000000"
+			tp["veto_threshold"] = "0.334000000000000000"
+		}
+	})
 }
 
-=======
->>>>>>> main
+// voteYesAllValidators iterates nodes, finds a local key name, and votes YES from each node.
+func (s *MigrationTestSuite) voteYesAllValidators(ctx context.Context, proposalID uint64) {
+	for _, n := range s.chain.GetNodes() {
+		node := n.(*cosmos.ChainNode)
+
+		// Get the node's internal RPC address and use it explicitly
+		netInfo, err := node.GetNetworkInfo(ctx)
+		s.Require().NoError(err)
+		rpcAddr := fmt.Sprintf("tcp://%s", netInfo.Internal.RPCAddress())
+
+		// Vote from the validator key explicitly
+		from := "validator"
+
+		_, stderr, err := node.Exec(ctx, []string{
+			"gmd", "tx", "gov", "vote", strconv.FormatUint(proposalID, 10), "yes",
+			"--from", from,
+			"--home", node.HomeDir(),
+			"--chain-id", s.chain.GetChainID(),
+			"--keyring-backend", "test",
+			"--node", rpcAddr,
+			"--yes",
+		}, nil)
+		s.Require().NoError(err, "vote tx failed from %s: %s", from, stderr)
+	}
+}
+
+// waitForMigrationHalt waits until the chain reaches at least the migration
+// height threshold and then verifies that block production halts shortly after.
+// The test intends for the crash/halt, so this passes when halt is observed.
+func (s *MigrationTestSuite) waitForMigrationHalt(ctx context.Context) {
+    // Expected halt height (no IBC): the chain should stop at migrationHeight.
+    // We wait until the chain reaches migrationHeight, then assert it does not
+    // proceed past that height.
+    expected := int64(s.migrationHeight)
+
+    // Wait until the chain reaches the expected height (or timeout).
+    reachDeadline := time.Now().Add(2 * time.Minute)
+    for time.Now().Before(reachDeadline) {
+        h, err := s.chain.Height(ctx)
+        if err == nil && h >= expected {
+            break
+        }
+        time.Sleep(1 * time.Second)
+    }
+
+    // Once reached, ensure it does not proceed past expected.
+    // Accept RPC failures here as a sign of halt; only fail if we observe
+    // a height strictly greater than expected within the window.
+    holdDeadline := time.Now().Add(15 * time.Second)
+    for time.Now().Before(holdDeadline) {
+        h, err := s.chain.Height(ctx)
+        if err != nil {
+            // Treat RPC error as acceptable (node halted)
+            time.Sleep(500 * time.Millisecond)
+            continue
+        }
+        s.Require().LessOrEqual(h, expected, "chain progressed past expected halt height")
+        time.Sleep(500 * time.Millisecond)
+    }
+}
+
 func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context) {
 	s.chain = s.createCosmosSDKChain(ctx)
 	s.Require().NotNil(s.chain)
@@ -398,7 +455,14 @@ func (s *MigrationTestSuite) validateMigrationSuccess(ctx context.Context) {
 
 // getCosmosChainBuilder returns a chain builder for cosmos-sdk chain
 func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	// Include gov + migrationmngr so client-side encoding can marshal
+	// gov v1 MsgSubmitProposal and migrationmngr MsgMigrateToEvolve
+	testEncCfg := testutil.MakeTestEncodingConfig(
+		auth.AppModuleBasic{},
+		bank.AppModuleBasic{},
+		govmodule.AppModuleBasic{},
+		migrationmngr.AppModuleBasic{},
+	)
 	return cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getCosmosSDKAppContainer()).
@@ -410,29 +474,18 @@ func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
 		WithBech32Prefix("gm").
 		WithBinaryName("gmd").
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
-<<<<<<< HEAD
-		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
-			return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
-				cfg.TxIndex.Indexer = "kv"
-			})
-        }).
-        WithPostInit(setGovFastParams).
-        WithNodes(
-            cosmos.NewChainNodeConfigBuilder().Build(),
-            cosmos.NewChainNodeConfigBuilder().Build(),
-            cosmos.NewChainNodeConfigBuilder().Build(),
-        )
-=======
+		WithPostInit(
+			setGovFastParams,
+			func(ctx context.Context, node *cosmos.ChainNode) error {
+				return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
+					cfg.TxIndex.Indexer = "kv"
+				})
+			}).
 		WithNodes(
-			cosmos.NewChainNodeConfigBuilder().
-				WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
-					return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
-						cfg.TxIndex.Indexer = "kv"
-					})
-				}).
-				Build(),
+			cosmos.NewChainNodeConfigBuilder().Build(),
+			cosmos.NewChainNodeConfigBuilder().Build(),
+			cosmos.NewChainNodeConfigBuilder().Build(),
 		)
->>>>>>> main
 }
 
 // createCosmosSDKChain creates a cosmos-sdk chain without evolve modules
@@ -463,7 +516,6 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 					"--log_level", "*:info",
 				).
 				Build(),
-<<<<<<< HEAD
 			cosmos.NewChainNodeConfigBuilder().WithAdditionalStartArgs(
 				"--evnode.da.address", daAddress,
 				"--evnode.da.gas_price", "0.000001",
@@ -482,8 +534,6 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 				"--evnode.da.data_namespace", "ev-data",
 				"--log_level", "*:debug",
 			).Build(),
-=======
->>>>>>> main
 		).
 		Build(ctx)
 	s.Require().NoError(err)
