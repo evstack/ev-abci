@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -22,9 +23,8 @@ import (
 // NewRollbackCmd creates a command to rollback CometBFT and multistore state by one height.
 func NewRollbackCmd(appCreator types.AppCreator, defaultNodeHome string) *cobra.Command {
 	var (
-		height        uint64
-		syncNode      bool
-		skipP2PStores bool
+		height   uint64
+		syncNode bool
 	)
 
 	openDB := func(rootDir string, backendType dbm.BackendType) (dbm.DB, error) {
@@ -94,10 +94,6 @@ The application also rolls back to height n - 1. If a --height flag is specified
 				return fmt.Errorf("failed to rollback to version: %w", err)
 			}
 
-			if skipP2PStores {
-				return printSuccess(height)
-			}
-
 			// rollback ev-node goheader state
 			headerStore, err := goheaderstore.NewStore[*evtypes.SignedHeader](
 				evolveDB,
@@ -135,28 +131,26 @@ The application also rolls back to height n - 1. If a --height flag is specified
 				}
 			}()
 
+			var errs error
 			if err := headerStore.DeleteRange(goCtx, height+1, headerStore.Height()+1); err != nil {
-				return fmt.Errorf("failed to rollback header sync service state: %w", err)
+				errs = errors.Join(errs, fmt.Errorf("failed to rollback header sync service state: %w", err))
 			}
 
 			if err := dataStore.DeleteRange(goCtx, height+1, dataStore.Height()+1); err != nil {
-				return fmt.Errorf("failed to rollback data sync service state: %w", err)
+				errs = errors.Join(errs, fmt.Errorf("failed to rollback data sync service state: %w", err))
 			}
 
-			return printSuccess(height)
+			fmt.Printf("Rolled back ev-node state to height %d\n", height)
+			if syncNode {
+				fmt.Println("Restart the node with the `--clear-cache` flag")
+			}
+			return errs
 		},
 	}
 
 	cmd.Flags().String(flags.FlagHome, defaultNodeHome, "The application home directory")
 	cmd.Flags().Uint64Var(&height, flags.FlagHeight, 0, "rollback to a specific height")
 	cmd.Flags().BoolVar(&syncNode, "sync-node", false, "sync node (no aggregator)")
-	cmd.Flags().BoolVar(&skipP2PStores, "skip-p2p-stores", false, "skip rollback p2p stores (goheaderstore)")
 
 	return cmd
-}
-
-func printSuccess(height uint64) error {
-	fmt.Printf("Rolled back ev-node state to height %d\n", height)
-	fmt.Println("Restart the node with the `--clear-cache` flag")
-	return nil
 }
