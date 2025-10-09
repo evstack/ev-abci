@@ -74,6 +74,7 @@ func migrateToSequencer(
 		}
 		// Compare by CometBFT pubkey to avoid Any equality pitfalls
 		if vpk.String() == pk.String() {
+			// sequencer is already in validator set, skip removal
 			continue
 		}
 		initialValUpdates = append(initialValUpdates, abci.ValidatorUpdate{PubKey: vpk, Power: 0})

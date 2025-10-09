@@ -46,7 +46,9 @@ func (k Keeper) PreBlocker(ctx context.Context) error {
 func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
-	start, _, shouldBeMigrating := k.IsMigrating(ctx)
+	start, end, shouldBeMigrating := k.IsMigrating(ctx)
+	k.Logger(ctx).Info("EndBlock migration check", "height", sdkCtx.BlockHeight(), "start", start, "end", end, "shouldBeMigrating", shouldBeMigrating)
+
 	if !shouldBeMigrating || start > uint64(sdkCtx.BlockHeight()) {
 		// no migration in progress, return empty updates
 		return []abci.ValidatorUpdate{}, nil
@@ -62,10 +64,20 @@ func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 		return nil, err
 	}
 
+	var updates []abci.ValidatorUpdate
 	if !k.isIBCEnabled(ctx) {
 		// if IBC is not enabled, we can migrate immediately
-		return k.migrateNow(ctx, migration, validatorSet)
+		updates, err = k.migrateNow(ctx, migration, validatorSet)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		updates, err = k.migrateOver(sdkCtx, migration, validatorSet)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return k.migrateOver(sdkCtx, migration, validatorSet)
+	k.Logger(ctx).Info("EndBlock migration updates", "height", sdkCtx.BlockHeight(), "updates", len(updates))
+	return updates, nil
 }
