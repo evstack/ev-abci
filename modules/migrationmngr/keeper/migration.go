@@ -57,7 +57,7 @@ func migrateToSequencer(
 	migrationData types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-	seq := migrationData.Sequencer
+	seq := &migrationData.Sequencer
 
 	pk, err := seq.TmConsPublicKey()
 	if err != nil {
@@ -69,10 +69,13 @@ func migrateToSequencer(
 	}
 
 	for _, val := range lastValidatorSet {
-		powerUpdate := val.ABCIValidatorUpdateZero()
+		// skip the sequencer - we'll add it at the end with power 1
 		if val.ConsensusPubkey.Equal(seq.ConsensusPubkey) {
 			continue
 		}
+		// use ABCIValidatorUpdateZero() to get the proper CometBFT representation
+		// this ensures the pubkey bytes match what CometBFT expects
+		powerUpdate := val.ABCIValidatorUpdateZero()
 		initialValUpdates = append(initialValUpdates, powerUpdate)
 	}
 
@@ -101,8 +104,8 @@ func migrateToAttesters(
 	}
 
 	// Add attesters with power 1
-	for _, attester := range migrationData.Attesters {
-		pk, err := attester.TmConsPublicKey()
+	for i := range migrationData.Attesters {
+		pk, err := migrationData.Attesters[i].TmConsPublicKey()
 		if err != nil {
 			return nil, err
 		}
@@ -196,8 +199,8 @@ func (k Keeper) migrateOver(
 		}
 		startAdd := int(step) * addPerStep
 		endAdd := min(startAdd+addPerStep, len(newAttestersToAdd))
-		for _, attester := range newAttestersToAdd[startAdd:endAdd] {
-			pk, err := attester.TmConsPublicKey()
+		for i := startAdd; i < endAdd; i++ {
+			pk, err := newAttestersToAdd[i].TmConsPublicKey()
 			if err != nil {
 				return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to get attester pubkey: %v", err)
 			}
