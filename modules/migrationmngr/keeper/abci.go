@@ -25,11 +25,21 @@ import (
 // PreBlocker makes sure the chain halts at block height + 1 after the migration end.
 // This is to ensure that the migration is completed with a binary switch.
 func (k Keeper) PreBlocker(ctx context.Context) error {
-	_, end, _ := k.IsMigrating(ctx)
+	start, end, _ := k.IsMigrating(ctx)
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	currentHeight := uint64(sdkCtx.BlockHeight())
+	shouldHalt := end > 0 && currentHeight == end+1
+
+	k.Logger(ctx).Info("PreBlocker migration check",
+		"height", currentHeight,
+		"start", start,
+		"end", end,
+		"shouldHalt", shouldHalt)
 
 	// one block after the migration end, we halt forcing a binary switch
-	if end > 0 && end+1 == uint64(sdkCtx.BlockHeight()) {
+	if shouldHalt {
+		k.Logger(ctx).Info("HALTING CHAIN - migration complete, binary switch required")
+
 		// remove the migration state from the store
 		// this is to ensure at restart we won't halt the chain again
 		if err := k.Migration.Remove(ctx); err != nil {

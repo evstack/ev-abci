@@ -65,14 +65,14 @@ func (s *MigrationTestSuite) SetupTest() {
 	s.testWallets = []*types.Wallet{}
 }
 
-func (s *MigrationTestSuite) TearDownTest() {
-	if s.chain != nil {
-		s.T().Log("tearing down chain...")
-		if err := s.chain.Remove(context.Background()); err != nil {
-			s.T().Logf("failed to remove chain: %s", err)
-		}
-	}
-}
+//func (s *MigrationTestSuite) TearDownTest() {
+//	if s.chain != nil {
+//		s.T().Log("tearing down chain...")
+//		if err := s.chain.Remove(context.Background()); err != nil {
+//			s.T().Logf("failed to remove chain: %s", err)
+//		}
+//	}
+//}
 
 // TestCosmosToEvolveMigration tests the complete migration workflow
 func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
