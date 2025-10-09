@@ -17,11 +17,11 @@ import (
 )
 
 var (
-	_ module.AppModuleBasic      = AppModuleBasic{}
-	_ appmodule.AppModule        = AppModule{}
-	_ module.HasServices         = AppModule{}
-	_ module.HasABCIEndBlock     = AppModule{}
-	_ module.HasABCIBeginBlock   = AppModule{}
+	_ module.AppModuleBasic   = AppModuleBasic{}
+	_ appmodule.AppModule     = AppModule{}
+	_ module.HasServices      = AppModule{}
+	_ module.HasABCIEndBlock  = AppModule{}
+	_ appmodule.HasPreBlocker = AppModule{}
 )
 
 type AppModuleBasic struct {
@@ -75,9 +75,9 @@ func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *g
 // IsAppModule implements the appmodule.AppModule interface.
 func (am AppModule) IsAppModule() {}
 
-// BeginBlock implements the AppModule interface
-func (am AppModule) BeginBlock(ctx context.Context) error {
-	return am.keeper.BeginBlock(ctx)
+// PreBlock implements the appmodule.HasPreBlocker interface
+func (am AppModule) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error) {
+	return am.keeper.PreBlock(ctx)
 }
 
 // EndBlock implements the AppModule interface

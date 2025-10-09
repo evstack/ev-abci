@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"cosmossdk.io/core/appmodule"
 	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -22,15 +23,15 @@ import (
 	- Otherwise, slowly migrate the validator set to the attesters
 */
 
-// BeginBlock makes sure the chain halts at block height + 1 after the migration end.
+// PreBlock makes sure the chain halts at block height + 1 after the migration end.
 // This is to ensure that the migration is completed with a binary switch.
-func (k Keeper) BeginBlock(ctx context.Context) error {
+func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error) {
 	start, end, _ := k.IsMigrating(ctx)
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	currentHeight := uint64(sdkCtx.BlockHeight())
 	shouldHalt := end > 0 && currentHeight == end+1
 
-	k.Logger(ctx).Info("BeginBlock migration check",
+	k.Logger(ctx).Info("PreBlock migration check",
 		"height", currentHeight,
 		"start", start,
 		"end", end,
@@ -43,13 +44,13 @@ func (k Keeper) BeginBlock(ctx context.Context) error {
 		// remove the migration state from the store
 		// this is to ensure at restart we won't halt the chain again
 		if err := k.Migration.Remove(ctx); err != nil {
-			return sdkerrors.ErrLogic.Wrapf("failed to delete migration state: %v", err)
+			return &sdk.ResponsePreBlock{}, sdkerrors.ErrLogic.Wrapf("failed to delete migration state: %v", err)
 		}
 
-		return errors.New("app migration to evolve is in progress, switch to the new binary and run the evolve migration command to complete the migration")
+		return &sdk.ResponsePreBlock{}, errors.New("app migration to evolve is in progress, switch to the new binary and run the evolve migration command to complete the migration")
 	}
 
-	return nil
+	return &sdk.ResponsePreBlock{}, nil
 }
 
 // EndBlocker is called at the end of every block and returns sequencer updates.
