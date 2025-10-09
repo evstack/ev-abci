@@ -4,7 +4,8 @@ FROM golang:1.24-alpine AS ignite-builder
 RUN apk add --no-cache \
     libc6-compat \
     curl \
-    bash
+    bash \
+    git
 
 # Set environment variables
 ENV IGNITE_VERSION=v29.4.0

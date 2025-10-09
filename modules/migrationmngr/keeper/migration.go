@@ -1,17 +1,16 @@
 package keeper
 
 import (
-    "context"
-    "errors"
+	"context"
+	"errors"
 
-    "cosmossdk.io/collections"
-    abci "github.com/cometbft/cometbft/abci/types"
-    sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-    stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"cosmossdk.io/collections"
+	abci "github.com/cometbft/cometbft/abci/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-    "github.com/evstack/ev-abci/modules/migrationmngr/types"
-    cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-    cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/evstack/ev-abci/modules/migrationmngr/types"
 )
 
 // IBCSmoothingFactor is the factor used to smooth the migration process when IBC is enabled. It determines how many blocks the migration will take.
@@ -20,28 +19,22 @@ var IBCSmoothingFactor uint64 = 30
 // migrateNow migrates the chain to evolve immediately.
 // this method is used when ibc is not enabled, so no migration smoothing is needed.
 func (k Keeper) migrateNow(
-    ctx context.Context,
-    migrationData types.EvolveMigration,
-    lastValidatorSet []stakingtypes.Validator,
+	ctx context.Context,
+	migrationData types.EvolveMigration,
+	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-    // Unpack sequencer pubkey into concrete type
-    var seqPK cryptotypes.PubKey
-    if err := k.cdc.UnpackAny(migrationData.Sequencer.ConsensusPubkey, &seqPK); err != nil || seqPK == nil {
-        return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
-    }
+	// Unpack sequencer pubkey into concrete type
+	var seqPK cryptotypes.PubKey
+	if err := k.cdc.UnpackAny(migrationData.Sequencer.ConsensusPubkey, &seqPK); err != nil || seqPK == nil {
+		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
+	}
 	switch len(migrationData.Attesters) {
 	case 0:
-        // no attesters, migrate to a single sequencer: remove others, add sequencer
-        tmPk, err := cryptocodec.ToCmtProtoPublicKey(seqPK)
-        if err != nil {
-            return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to convert sequencer pubkey: %v", err)
-        }
-        for _, val := range lastValidatorSet {
-            if !val.ConsensusPubkey.Equal(migrationData.Sequencer.ConsensusPubkey) {
-                initialValUpdates = append(initialValUpdates, val.ABCIValidatorUpdateZero())
-            }
-        }
-        initialValUpdates = append(initialValUpdates, abci.ValidatorUpdate{PubKey: tmPk, Power: 1})
+		// no attesters, we are migrating to a single sequencer
+		initialValUpdates, err = migrateToSequencer(migrationData, lastValidatorSet)
+		if err != nil {
+			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to migrate to sequencer: %v", err)
+		}
 	default:
 		// we are migrating the validator set to attesters
 		initialValUpdates, err = migrateToAttesters(migrationData, lastValidatorSet)
@@ -63,26 +56,27 @@ func (k Keeper) migrateNow(
 // migrateToSequencer migrates the chain to a single sequencer.
 // the validator set is updated to include the sequencer and remove all other validators.
 func migrateToSequencer(
-    migrationData types.EvolveMigration,
-    lastValidatorSet []stakingtypes.Validator,
+	migrationData types.EvolveMigration,
+	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-    seq := migrationData.Sequencer
+	seq := migrationData.Sequencer
 
 	pk, err := seq.TmConsPublicKey()
 	if err != nil {
 		return nil, err
 	}
-	sequencerUpdate := abci.ValidatorUpdate{
-		PubKey: pk,
-		Power:  1,
-	}
+	sequencerUpdate := abci.ValidatorUpdate{PubKey: pk, Power: 1}
 
 	for _, val := range lastValidatorSet {
-		powerUpdate := val.ABCIValidatorUpdateZero()
-		if val.ConsensusPubkey.Equal(seq.ConsensusPubkey) {
+		vpk, err := val.CmtConsPublicKey()
+		if err != nil {
+			return nil, err
+		}
+		// Compare by CometBFT pubkey to avoid Any equality pitfalls
+		if vpk.String() == pk.String() {
 			continue
 		}
-		initialValUpdates = append(initialValUpdates, powerUpdate)
+		initialValUpdates = append(initialValUpdates, abci.ValidatorUpdate{PubKey: vpk, Power: 0})
 	}
 
 	return append(initialValUpdates, sequencerUpdate), nil
@@ -91,8 +85,8 @@ func migrateToSequencer(
 // migrateToAttesters migrates the chain to attesters.
 // the validator set is updated to include the attesters and remove all other validators.
 func migrateToAttesters(
-    migrationData types.EvolveMigration,
-    lastValidatorSet []stakingtypes.Validator,
+	migrationData types.EvolveMigration,
+	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
 	// First, remove all existing validators that are not attesters
 	attesterPubKeys := make(map[string]bool)
@@ -129,19 +123,19 @@ func migrateToAttesters(
 // this is to ensure ibc light client verification keep working while changing the whole validator set.
 // the migration step is tracked in store.
 func (k Keeper) migrateOver(
-    ctx context.Context,
-    migrationData types.EvolveMigration,
-    lastValidatorSet []stakingtypes.Validator,
+	ctx context.Context,
+	migrationData types.EvolveMigration,
+	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-    // Ensure pubkey Any fields are unpacked before use during progressive migrations
-    if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
-        return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer interfaces: %v", err)
-    }
-    for i := range migrationData.Attesters {
-        if err := migrationData.Attesters[i].UnpackInterfaces(k.cdc); err != nil {
-            return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack attester interfaces: %v", err)
-        }
-    }
+	// Ensure pubkey Any fields are unpacked before use during progressive migrations
+	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
+		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer interfaces: %v", err)
+	}
+	for i := range migrationData.Attesters {
+		if err := migrationData.Attesters[i].UnpackInterfaces(k.cdc); err != nil {
+			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack attester interfaces: %v", err)
+		}
+	}
 	step, err := k.MigrationStep.Get(ctx)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to get migration step: %v", err)
