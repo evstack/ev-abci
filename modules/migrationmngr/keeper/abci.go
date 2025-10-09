@@ -44,10 +44,12 @@ func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error
 		// remove the migration state from the store
 		// this is to ensure at restart we won't halt the chain again
 		if err := k.Migration.Remove(ctx); err != nil {
-			return &sdk.ResponsePreBlock{}, sdkerrors.ErrLogic.Wrapf("failed to delete migration state: %v", err)
+			k.Logger(ctx).Error("failed to remove migration state", "error", err)
 		}
 
-		return &sdk.ResponsePreBlock{}, errors.New("app migration to evolve is in progress, switch to the new binary and run the evolve migration command to complete the migration")
+		// Panic to halt the chain - this is the expected behavior for graceful chain halts
+		// The node operator will see this message and know to switch to the new binary
+		panic("MIGRATE: chain migration to evolve is complete. Switch to the evolve binary and run 'gmd evolve-migrate' to complete the migration.")
 	}
 
 	return &sdk.ResponsePreBlock{}, nil

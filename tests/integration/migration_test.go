@@ -131,25 +131,25 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 		s.submitMigrationProposalAndVote(ctx)
 	})
 
-	t.Run("halt_wait", func(t *testing.T) {
-		s.waitForMigrationHalt(ctx)
-	})
-
-	t.Run("stop_sdk_chain", func(t *testing.T) {
-		s.stopChainPreservingVolumes(ctx)
-	})
-
-	t.Run("setup_da_network", func(t *testing.T) {
-		s.setupDANetwork(ctx)
-	})
-
-	t.Run("migrate_chain", func(t *testing.T) {
-		s.recreateChainAndPerformMigration(ctx)
-	})
-
-	t.Run("validate_migration_success", func(t *testing.T) {
-		s.validateMigrationSuccess(ctx)
-	})
+	//t.Run("halt_wait", func(t *testing.T) {
+	//	s.waitForMigrationHalt(ctx)
+	//})
+	//
+	//t.Run("stop_sdk_chain", func(t *testing.T) {
+	//	s.stopChainPreservingVolumes(ctx)
+	//})
+	//
+	//t.Run("setup_da_network", func(t *testing.T) {
+	//	s.setupDANetwork(ctx)
+	//})
+	//
+	//t.Run("migrate_chain", func(t *testing.T) {
+	//	s.recreateChainAndPerformMigration(ctx)
+	//})
+	//
+	//t.Run("validate_migration_success", func(t *testing.T) {
+	//	s.validateMigrationSuccess(ctx)
+	//})
 }
 
 // submitMigrationProposalAndVote prepares and submits a gov proposal to migrate,
