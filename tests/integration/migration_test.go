@@ -21,17 +21,17 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-    govmodule "github.com/cosmos/cosmos-sdk/x/gov"
+	govmodule "github.com/cosmos/cosmos-sdk/x/gov"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-    migrationmngr "github.com/evstack/ev-abci/modules/migrationmngr"
-    migrationmngrtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
-    "github.com/stretchr/testify/suite"
-    codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-    ed25519sdk "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-    cmprivval "github.com/cometbft/cometbft/privval"
-    cmtjson "github.com/cometbft/cometbft/libs/json"
+	//stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
+	cmprivval "github.com/cometbft/cometbft/privval"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	ed25519sdk "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	migrationmngr "github.com/evstack/ev-abci/modules/migrationmngr"
+	migrationmngrtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
+	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"strconv"
@@ -40,17 +40,17 @@ import (
 
 // MigrationTestSuite tests the migration from cosmos-sdk to evolve
 type MigrationTestSuite struct {
-    DockerIntegrationTestSuite
+	DockerIntegrationTestSuite
 
 	// chain instance that will be updated during migration
 	chain *cosmos.Chain
 
 	// pre-migration state for validation
-    preMigrationTxHashes []string
-    preMigrationBalances map[string]sdk.Coin
-    testWallets          []*types.Wallet
+	preMigrationTxHashes []string
+	preMigrationBalances map[string]sdk.Coin
+	testWallets          []*types.Wallet
 
-    migrationHeight uint64
+	migrationHeight uint64
 }
 
 func TestMigrationSuite(t *testing.T) {
@@ -131,13 +131,13 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 		s.recordPreMigrationState(ctx)
 	})
 
-    t.Run("submit_migration_proposal_and_vote", func(t *testing.T) {
-        s.submitMigrationProposalAndVote(ctx)
-    })
+	t.Run("submit_migration_proposal_and_vote", func(t *testing.T) {
+		s.submitMigrationProposalAndVote(ctx)
+	})
 
-    t.Run("halt_wait", func(t *testing.T) {
-        s.waitForMigrationHalt(ctx)
-    })
+	t.Run("halt_wait", func(t *testing.T) {
+		s.waitForMigrationHalt(ctx)
+	})
 
 	t.Run("stop_sdk_chain", func(t *testing.T) {
 		s.stopChainPreservingVolumes(ctx)
@@ -159,42 +159,43 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 // submitMigrationProposalAndVote prepares and submits a gov proposal to migrate,
 // votes YES from faucet, and waits briefly for execution.
 func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context) {
-    networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
-    s.Require().NoError(err)
+	networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
 
-    conn, err := grpc.Dial(networkInfo.External.GRPCAddress(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-    s.Require().NoError(err)
-    defer conn.Close()
+	conn, err := grpc.Dial(networkInfo.External.GRPCAddress(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	s.Require().NoError(err)
+	defer conn.Close()
 
 	curHeight, err := s.chain.Height(ctx)
 	s.Require().NoError(err)
 	// Schedule migration sufficiently in the future to allow proposal
 	// submission, deposits, and validator votes to complete.
-    migrateAt := uint64(curHeight + 30)
-    s.migrationHeight = migrateAt
+	migrateAt := uint64(curHeight + 30)
+	s.migrationHeight = migrateAt
 
 	faucet := s.chain.GetFaucetWallet()
 	proposer := faucet.GetFormattedAddress()
 
-    // Build sequencer pubkey Any from node-0 priv_validator_key.json to ensure a proper SDK pubkey is provided
-    node0 := s.chain.GetNodes()[0].(*cosmos.ChainNode)
-    keyJSONBytes, err := node0.ReadFile(ctx, "config/priv_validator_key.json")
-    s.Require().NoError(err)
-    var pvKey cmprivval.FilePVKey
-    s.Require().NoError(cmtjson.Unmarshal(keyJSONBytes, &pvKey))
-    sdkPk := &ed25519sdk.PubKey{Key: pvKey.PubKey.Bytes()}
-    seqAny, err := codectypes.NewAnyWithValue(sdkPk)
-    s.Require().NoError(err)
+	// Build sequencer pubkey Any from node-0 priv_validator_key.json to ensure a proper SDK pubkey is provided
+	node0 := s.chain.GetNodes()[0].(*cosmos.ChainNode)
+	keyJSONBytes, err := node0.ReadFile(ctx, "config/priv_validator_key.json")
+	s.Require().NoError(err)
+	var pvKey cmprivval.FilePVKey
+	s.Require().NoError(cmtjson.Unmarshal(keyJSONBytes, &pvKey))
+	sdkPk := &ed25519sdk.PubKey{Key: pvKey.PubKey.Bytes()}
 
-    msg := &migrationmngrtypes.MsgMigrateToEvolve{
-        Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-        BlockHeight: migrateAt,
-        Sequencer: migrationmngrtypes.Sequencer{
-            Name:            "sequencer-node-1",
-            ConsensusPubkey: seqAny,
-        },
-        Attesters: nil,
-    }
+	seqAny, err := codectypes.NewAnyWithValue(sdkPk)
+	s.Require().NoError(err)
+
+	msg := &migrationmngrtypes.MsgMigrateToEvolve{
+		Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		BlockHeight: migrateAt,
+		Sequencer: migrationmngrtypes.Sequencer{
+			Name:            "sequencer-node-1",
+			ConsensusPubkey: seqAny,
+		},
+		Attesters: nil,
+	}
 
 	deposit := sdk.NewCoins(sdk.NewInt64Coin("stake", 1_000_000))
 	propMsg, err := govv1.NewMsgSubmitProposal(
@@ -302,35 +303,35 @@ func (s *MigrationTestSuite) voteYesAllValidators(ctx context.Context, proposalI
 // height threshold and then verifies that block production halts shortly after.
 // The test intends for the crash/halt, so this passes when halt is observed.
 func (s *MigrationTestSuite) waitForMigrationHalt(ctx context.Context) {
-    // Expected halt height (no IBC): the chain should stop at migrationHeight.
-    // We wait until the chain reaches migrationHeight, then assert it does not
-    // proceed past that height.
-    expected := int64(s.migrationHeight)
+	// Expected halt height (no IBC): the chain should stop at migrationHeight.
+	// We wait until the chain reaches migrationHeight, then assert it does not
+	// proceed past that height.
+	expected := int64(s.migrationHeight)
 
-    // Wait until the chain reaches the expected height (or timeout).
-    reachDeadline := time.Now().Add(2 * time.Minute)
-    for time.Now().Before(reachDeadline) {
-        h, err := s.chain.Height(ctx)
-        if err == nil && h >= expected {
-            break
-        }
-        time.Sleep(1 * time.Second)
-    }
+	// Wait until the chain reaches the expected height (or timeout).
+	reachDeadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(reachDeadline) {
+		h, err := s.chain.Height(ctx)
+		if err == nil && h >= expected {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
 
-    // Once reached, ensure it does not proceed past expected.
-    // Accept RPC failures here as a sign of halt; only fail if we observe
-    // a height strictly greater than expected within the window.
-    holdDeadline := time.Now().Add(15 * time.Second)
-    for time.Now().Before(holdDeadline) {
-        h, err := s.chain.Height(ctx)
-        if err != nil {
-            // Treat RPC error as acceptable (node halted)
-            time.Sleep(500 * time.Millisecond)
-            continue
-        }
-        s.Require().LessOrEqual(h, expected, "chain progressed past expected halt height")
-        time.Sleep(500 * time.Millisecond)
-    }
+	// Once reached, ensure it does not proceed past expected.
+	// Accept RPC failures here as a sign of halt; only fail if we observe
+	// a height strictly greater than expected within the window.
+	holdDeadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(holdDeadline) {
+		h, err := s.chain.Height(ctx)
+		if err != nil {
+			// Treat RPC error as acceptable (node halted)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		s.Require().LessOrEqual(h, expected, "chain progressed past expected halt height")
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context) {
