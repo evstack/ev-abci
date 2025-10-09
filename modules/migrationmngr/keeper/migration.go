@@ -9,7 +9,6 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/evstack/ev-abci/modules/migrationmngr/types"
 )
 
@@ -23,9 +22,8 @@ func (k Keeper) migrateNow(
 	migrationData types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-	// Unpack sequencer pubkey into concrete type
-	var seqPK cryptotypes.PubKey
-	if err := k.cdc.UnpackAny(migrationData.Sequencer.ConsensusPubkey, &seqPK); err != nil || seqPK == nil {
+	// ensure sequencer pubkey Any is unpacked and cached for TmConsPublicKey() to work correctly
+	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
 	}
 	switch len(migrationData.Attesters) {
@@ -77,7 +75,9 @@ func migrateToSequencer(
 			// sequencer is already in validator set, skip removal
 			continue
 		}
-		initialValUpdates = append(initialValUpdates, abci.ValidatorUpdate{PubKey: vpk, Power: 0})
+		// use ABCIValidatorUpdateZero() to get the proper CometBFT representation
+		// this ensures the pubkey bytes match what CometBFT expects
+		initialValUpdates = append(initialValUpdates, val.ABCIValidatorUpdateZero())
 	}
 
 	return append(initialValUpdates, sequencerUpdate), nil

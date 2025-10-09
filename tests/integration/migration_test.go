@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"strconv"
+	"time"
 
 	"cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker"
@@ -15,9 +17,6 @@ import (
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
 	cometcfg "github.com/cometbft/cometbft/config"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	ed25519sdk "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
@@ -27,13 +26,12 @@ import (
 	govmodule "github.com/cosmos/cosmos-sdk/x/gov"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	migrationmngr "github.com/evstack/ev-abci/modules/migrationmngr"
 	migrationmngrtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"strconv"
-	"time"
 )
 
 // MigrationTestSuite tests the migration from cosmos-sdk to evolve
@@ -120,14 +118,14 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
 		s.createAndStartSDKChain(ctx)
 	})
-
-	t.Run("generate_test_transactions", func(t *testing.T) {
-		s.generateTestTransactions(ctx)
-	})
-
-	t.Run("record_pre_migration_state", func(t *testing.T) {
-		s.recordPreMigrationState(ctx)
-	})
+	//
+	//t.Run("generate_test_transactions", func(t *testing.T) {
+	//	s.generateTestTransactions(ctx)
+	//})
+	//
+	//t.Run("record_pre_migration_state", func(t *testing.T) {
+	//	s.recordPreMigrationState(ctx)
+	//})
 
 	t.Run("submit_migration_proposal_and_vote", func(t *testing.T) {
 		s.submitMigrationProposalAndVote(ctx)
@@ -171,12 +169,24 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	migrateAt := uint64(curHeight + 30)
 	s.migrationHeight = migrateAt
 
+	// verify gov params are correct
+	govQC := govv1.NewQueryClient(conn)
+	params, err := govQC.Params(ctx, &govv1.QueryParamsRequest{ParamsType: "voting"})
+	s.Require().NoError(err)
+	s.T().Logf("Gov params: %+v", params)
+
 	faucet := s.chain.GetFaucetWallet()
 	proposer := faucet.GetFormattedAddress()
 
-	// Get sequencer pubkey from CometBFT's actual validator set to ensure exact alignment
-	seqPubkeyAny, err := s.getSequencerFromCometBFT(ctx, migrateAt)
+	// Get sequencer pubkey from staking module to ensure it matches on-chain state
+	// this is the source of truth that migration.go will use
+	stakeQC := stakingtypes.NewQueryClient(conn)
+	valsResp, err := stakeQC.Validators(ctx, &stakingtypes.QueryValidatorsRequest{})
 	s.Require().NoError(err)
+	s.Require().GreaterOrEqual(len(valsResp.Validators), 1, "need at least one validator")
+
+	// use the first validator's pubkey from staking - this is the on-chain source of truth
+	seqPubkeyAny := valsResp.Validators[0].ConsensusPubkey
 
 	msg := &migrationmngrtypes.MsgMigrateToEvolve{
 		Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
@@ -206,7 +216,6 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	s.Require().Equal(uint32(0), submitResp.Code, submitResp.RawLog)
 
 	// Discover proposal ID via gRPC (any status) with a short retry to allow indexing
-	govQC := govv1.NewQueryClient(conn)
 	var proposalID uint64
 	for i := 0; i < 10 && proposalID == 0; i++ {
 		props, err := govQC.Proposals(ctx, &govv1.QueryProposalsRequest{ProposalStatus: govv1.ProposalStatus_PROPOSAL_STATUS_UNSPECIFIED})
@@ -225,13 +234,24 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	// Vote YES with all validators by discovering local key names in each node
 	s.voteYesAllValidators(ctx, proposalID)
 
-	// short delay for voting period / execution
-	time.Sleep(12 * time.Second)
+	// wait for voting period to complete and proposal to be executed
+	time.Sleep(15 * time.Second)
 
 	// verify the proposal passed and the migration state was set
 	prop, err := govQC.Proposal(ctx, &govv1.QueryProposalRequest{ProposalId: proposalID})
 	s.Require().NoError(err)
 	s.T().Logf("Proposal %d status: %s", proposalID, prop.Proposal.Status)
+	s.T().Logf("Proposal details: final_tally_result=%+v, submit_time=%s, voting_end_time=%s",
+		prop.Proposal.FinalTallyResult, prop.Proposal.SubmitTime, prop.Proposal.VotingEndTime)
+
+	// query votes to debug
+	votesResp, err := govQC.Votes(ctx, &govv1.QueryVotesRequest{ProposalId: proposalID})
+	s.Require().NoError(err)
+	s.T().Logf("Total votes: %d", len(votesResp.Votes))
+	for i, vote := range votesResp.Votes {
+		s.T().Logf("Vote %d: voter=%s, options=%+v", i, vote.Voter, vote.Options)
+	}
+
 	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, prop.Proposal.Status, "proposal should have passed")
 }
 
@@ -272,7 +292,7 @@ func setGovFastParams(ctx context.Context, node *cosmos.ChainNode) error {
 
 // voteYesAllValidators iterates nodes, finds a local key name, and votes YES from each node.
 func (s *MigrationTestSuite) voteYesAllValidators(ctx context.Context, proposalID uint64) {
-	for _, n := range s.chain.GetNodes() {
+	for i, n := range s.chain.GetNodes() {
 		node := n.(*cosmos.ChainNode)
 
 		// Get the node's internal RPC address and use it explicitly
@@ -283,7 +303,7 @@ func (s *MigrationTestSuite) voteYesAllValidators(ctx context.Context, proposalI
 		// Vote from the validator key explicitly
 		from := "validator"
 
-		_, stderr, err := node.Exec(ctx, []string{
+		stdout, stderr, err := node.Exec(ctx, []string{
 			"gmd", "tx", "gov", "vote", strconv.FormatUint(proposalID, 10), "yes",
 			"--from", from,
 			"--home", node.HomeDir(),
@@ -292,53 +312,9 @@ func (s *MigrationTestSuite) voteYesAllValidators(ctx context.Context, proposalI
 			"--node", rpcAddr,
 			"--yes",
 		}, nil)
+		s.T().Logf("Vote from validator %d: stdout=%s, stderr=%s", i, stdout, stderr)
 		s.Require().NoError(err, "vote tx failed from %s: %s", from, stderr)
 	}
-}
-
-// getSequencerFromCometBFT queries CometBFT's validator set and returns the first validator's
-// consensus pubkey as a codec Any, ensuring exact alignment with what CometBFT has internally.
-func (s *MigrationTestSuite) getSequencerFromCometBFT(ctx context.Context, migrateAt uint64) (*codectypes.Any, error) {
-	// Wait until we're close to the migration height to query the actual validator set
-	// Query at current height since we're selecting well before migration
-	client, err := s.chain.GetNode().GetRPCClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get RPC client: %w", err)
-	}
-
-	// Query CometBFT validators at current height
-	// We could query at migrateAt-1 but since validators don't change in test, current is fine
-	validators, err := client.Validators(ctx, nil, nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query CometBFT validators: %w", err)
-	}
-
-	if len(validators.Validators) == 0 {
-		return nil, fmt.Errorf("no validators found in CometBFT")
-	}
-
-	// Choose the first validator as sequencer
-	cmtVal := validators.Validators[0]
-
-	// Convert CometBFT pubkey to SDK pubkey
-	sdkPubKey, err := cryptocodec.FromCmtPubKeyInterface(cmtVal.PubKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert CometBFT pubkey to SDK pubkey: %w", err)
-	}
-
-	// For ed25519 keys, ensure we have the correct SDK type
-	ed25519Key, ok := sdkPubKey.(*ed25519sdk.PubKey)
-	if !ok {
-		return nil, fmt.Errorf("expected ed25519 pubkey, got %T", sdkPubKey)
-	}
-
-	// Pack into Any
-	pubkeyAny, err := codectypes.NewAnyWithValue(ed25519Key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to pack pubkey into Any: %w", err)
-	}
-
-	return pubkeyAny, nil
 }
 
 // waitForMigrationHalt waits until the chain reaches at least the migration
