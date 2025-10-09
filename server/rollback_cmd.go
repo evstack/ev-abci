@@ -144,7 +144,7 @@ The application also rolls back to height n - 1. If a --height flag is specified
 			if syncNode {
 				fmt.Println("Restart the node with the `--clear-cache` flag")
 			}
-			return nil
+			return errs
 		},
 	}
 
