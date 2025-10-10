@@ -18,7 +18,7 @@ RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 WORKDIR /workspace
 
 # Scaffold a plain Cosmos SDK chain
-RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm --minimal
 
 WORKDIR /workspace/gm
 

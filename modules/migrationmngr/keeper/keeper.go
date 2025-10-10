@@ -121,25 +121,24 @@ func (k Keeper) IsMigrating(ctx context.Context) (start, end uint64, ok bool) {
 // isIBCEnabled checks if IBC is enabled on the chain.
 // In order to not import the IBC module, we only check if the IBC store exists,
 // but not the ibc params. This should be sufficient for our use case.
-func (k Keeper) isIBCEnabled(ctx context.Context) (enabled bool) {
-	// TODO: temporarily test the non-ibc case
-	return false
-	//if k.ibcStoreKey == nil {
-	//	return false
-	//}
-	//
-	//sdkCtx := sdk.UnwrapSDKContext(ctx)
-	//
-	//ms := sdkCtx.MultiStore().CacheMultiStore()
-	//defer func() {
-	//	if r := recover(); r != nil {
-	//		// If we panic, it means the store does not exist, so IBC is not enabled.
-	//		enabled = false
-	//	}
-	//}()
-	//ms.GetKVStore(k.ibcStoreKey())
-	//
-	//enabled = true // has not panicked, so store exists
-	//
-	//return
+func (k Keeper) isIBCEnabled(ctx context.Context) bool {
+	enabled := true
+
+	if k.ibcStoreKey == nil {
+		return false
+	}
+
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	ms := sdkCtx.MultiStore().CacheMultiStore()
+	defer func() {
+		if r := recover(); r != nil {
+			// If we panic, it means the store does not exist, so IBC is not enabled.
+			enabled = false
+		}
+	}()
+	ms.GetKVStore(k.ibcStoreKey())
+
+	// has not panicked, so store exists
+	return enabled
 }
