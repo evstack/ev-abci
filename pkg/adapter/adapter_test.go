@@ -117,7 +117,10 @@ func TestExecuteFiresEvents(t *testing.T) {
 				Signer:    signer,
 				Signature: sig,
 			}
-			require.NoError(t, adapter.RollkitStore.SaveBlockData(ctx, signedHeader, &types.Data{Txs: make(types.Txs, 0)}, &sigT))
+			batch, err := adapter.RollkitStore.NewBatch(ctx)
+			require.NoError(t, err)
+			require.NoError(t, batch.SaveBlockData(signedHeader, &types.Data{Txs: make(types.Txs, 0)}, &sigT))
+			require.NoError(t, batch.Commit())
 			require.NoError(t, adapter.Store.SaveState(ctx, execstore.TestingStateFixture()))
 
 			// when
