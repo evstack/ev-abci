@@ -234,14 +234,14 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	// Vote YES with all validators by discovering local key names in each node
 	s.voteYesAllValidators(ctx, proposalID)
 
-	// wait a moment to ensure vote transactions are included in blocks
-	// with ~2s block time and 3 validators, this gives enough time for all votes to be processed
-	time.Sleep(6 * time.Second)
+	// Don't sleep here - the voting period is only 10s and we need votes to be
+	// included in blocks DURING the voting period. Instead, immediately start
+	// polling for the proposal status and let the voting period complete naturally.
 
 	// wait for the proposal to finish voting period and be executed
-	// poll every second for up to 30 seconds
+	// poll frequently to allow votes to be counted during the voting period
 	var finalProp *govv1.QueryProposalResponse
-	err = wait.ForCondition(ctx, time.Minute*2, time.Second*5, func() (bool, error) {
+	err = wait.ForCondition(ctx, time.Minute*2, time.Second*1, func() (bool, error) {
 		prop, err := govQC.Proposal(ctx, &govv1.QueryProposalRequest{ProposalId: proposalID})
 		if err != nil {
 			return false, err

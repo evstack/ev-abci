@@ -11,7 +11,7 @@ import (
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/log"
-	"cosmossdk.io/store"
+	sdkstore "cosmossdk.io/store"
 	"cosmossdk.io/store/metrics"
 	storetypes "cosmossdk.io/store/types"
 	goheaderstore "github.com/celestiaorg/go-header/store"
@@ -467,19 +467,6 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	}
 	defer func() { _ = appDB.Close() }()
 
-	// Debug: print application DB stats, if available, to help diagnose store/version issues.
-	if stats := appDB.Stats(); stats != nil {
-		fmt.Println("Debug: application.db stats:")
-		for k, v := range stats {
-			// Avoid dumping excessively long values
-			val := v
-			if len(val) > 2048 {
-				val = val[:2048] + "..."
-			}
-			fmt.Printf("  %s: %s\n", k, val)
-		}
-	}
-
 	storeKey := storetypes.NewKVStoreKey(migrationmngrtypes.ModuleName)
 
 	encCfg := moduletestutil.MakeTestEncodingConfig(migrationmngr.AppModuleBasic{})
@@ -491,40 +478,13 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	)
 
 	// create context and commit multi-store
-	// note: LoadLatestVersion loads the last committed version, which may be LastBlockHeight-1
-	// if the chain halted in PreBlock before committing LastBlockHeight
-	//
-	// IMPORTANT: We mount ONLY the migrationmngr store key. LoadLatestVersion will try to load
-	// the latest version from the IAVL tree metadata for this specific store key.
-	// If the migrationmngr module has never written data, this will fail.
-	cms := store.NewCommitMultiStore(appDB, log.NewNopLogger(), metrics.NewNoOpMetrics())
+	cms := sdkstore.NewCommitMultiStore(appDB, log.NewNopLogger(), metrics.NewNoOpMetrics())
 	cms.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, appDB)
-
-	// Try to load the latest version - this may fail if the migrationmngr store doesn't exist
 	if err := cms.LoadLatestVersion(); err != nil {
 		return nil, fmt.Errorf("failed to load latest version of commit multi store: %w", err)
 	}
-
-	// Use the actual committed version from the store, not LastBlockHeight which may not be committed
-	committedVersion := cms.LastCommitID().Version
-	// Debug visibility: print both CometBFT last block height and store committed version
-	fmt.Printf("Debug: CometBFT last block height=%d, store committed version=%d\n", cometBFTState.LastBlockHeight, committedVersion)
-
-	// Additional debug: check if we can access the IAVL store directly
-	kvStore := cms.GetKVStore(storeKey)
-	fmt.Printf("Debug: KVStore type: %T\n", kvStore)
-
-	// Try to manually check what's in the store
-	iter := kvStore.Iterator(nil, nil)
-	defer iter.Close()
-	keyCount := 0
-	for ; iter.Valid(); iter.Next() {
-		keyCount++
-		fmt.Printf("Debug: Found key in store: %s\n", string(iter.Key()))
-	}
-	fmt.Printf("Debug: Total keys found in migrationmngr store: %d\n", keyCount)
 	ctx := sdk.NewContext(cms, cmtproto.Header{
-		Height:  committedVersion,
+		Height:  int64(cometBFTState.LastBlockHeight),
 		ChainID: cometBFTState.ChainID,
 		Time:    cometBFTState.LastBlockTime,
 	}, false, log.NewNopLogger())

@@ -51,9 +51,22 @@ func (k Keeper) migrateNow(
 	// set new sequencer in the store
 	// it will be used by the evolve migration command when using attesters
 	seq := migrationData.Sequencer
+	k.Logger(ctx).Info("Storing sequencer in k.Sequencer",
+		"name", seq.Name,
+		"consensus_pubkey", seq.ConsensusPubkey,
+		"consensus_pubkey_nil", seq.ConsensusPubkey == nil,
+	)
+	if seq.ConsensusPubkey != nil {
+		k.Logger(ctx).Info("Sequencer ConsensusPubkey details",
+			"type_url", seq.ConsensusPubkey.TypeUrl,
+			"value_len", len(seq.ConsensusPubkey.Value),
+			"cached_value", seq.ConsensusPubkey.GetCachedValue(),
+		)
+	}
 	if err := k.Sequencer.Set(ctx, seq); err != nil {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to set sequencer: %v", err)
 	}
+	k.Logger(ctx).Info("Successfully stored sequencer in k.Sequencer")
 
 	return initialValUpdates, nil
 }
