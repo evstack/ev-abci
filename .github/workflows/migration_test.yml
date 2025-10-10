@@ -2,17 +2,17 @@ name: Cosmos SDK to Evolve Migration Test
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write   # needed for GHCR push
+  packages: write # needed for GHCR push
 
 env:
-  EVNODE_VERSION: "v1.0.0-beta.6"
-  IGNITE_VERSION: "v29.4.0"
+  EVNODE_VERSION: "v1.0.0-beta.7"
+  IGNITE_VERSION: "v29.5.0"
   IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
   EVOLVE_IMAGE_REPO: "ghcr.io/evstack/evolve-abci-gm"
   COSMOS_SDK_IMAGE_REPO: "ghcr.io/evstack/cosmos-sdk-gm"
@@ -74,7 +74,6 @@ jobs:
           tags: ${{ env.COSMOS_SDK_IMAGE_REPO }}:${{ needs.determine-tag.outputs.image_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
 
   docker-build-evolve-image:
     name: Build Evolve Docker Image

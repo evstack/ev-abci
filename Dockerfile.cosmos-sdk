@@ -7,7 +7,7 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV IGNITE_VERSION=v29.3.1
+ENV IGNITE_VERSION=v29.5.0
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
