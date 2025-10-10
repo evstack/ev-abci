@@ -46,9 +46,9 @@ func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error
 			k.Logger(ctx).Error("failed to remove migration state", "error", err)
 		}
 
-		// Panic to halt the chain - this is the expected behavior for graceful chain halts
-		// The node operator will see this message and know to switch to the new binary
-		panic("MIGRATE: chain migration to evolve is complete. Switch to the evolve binary and run 'gmd evolve-migrate' to complete the migration.")
+		// Return error to halt the chain - this causes all validators to halt deterministically
+		// The node operator will see this error message and know to switch to the new binary
+		return nil, sdkerrors.ErrLogic.Wrap("MIGRATE: chain migration to evolve is complete. Switch to the evolve binary and run 'gmd evolve-migrate' to complete the migration.")
 	}
 
 	return &sdk.ResponsePreBlock{}, nil

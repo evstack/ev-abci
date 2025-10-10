@@ -118,38 +118,38 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
 		s.createAndStartSDKChain(ctx)
 	})
-	//
-	//t.Run("generate_test_transactions", func(t *testing.T) {
-	//	s.generateTestTransactions(ctx)
-	//})
-	//
-	//t.Run("record_pre_migration_state", func(t *testing.T) {
-	//	s.recordPreMigrationState(ctx)
-	//})
+
+	t.Run("generate_test_transactions", func(t *testing.T) {
+		s.generateTestTransactions(ctx)
+	})
+
+	t.Run("record_pre_migration_state", func(t *testing.T) {
+		s.recordPreMigrationState(ctx)
+	})
 
 	t.Run("submit_migration_proposal_and_vote", func(t *testing.T) {
 		s.submitMigrationProposalAndVote(ctx)
 	})
 
-	//t.Run("halt_wait", func(t *testing.T) {
-	//	s.waitForMigrationHalt(ctx)
-	//})
-	//
-	//t.Run("stop_sdk_chain", func(t *testing.T) {
-	//	s.stopChainPreservingVolumes(ctx)
-	//})
-	//
-	//t.Run("setup_da_network", func(t *testing.T) {
-	//	s.setupDANetwork(ctx)
-	//})
-	//
-	//t.Run("migrate_chain", func(t *testing.T) {
-	//	s.recreateChainAndPerformMigration(ctx)
-	//})
-	//
-	//t.Run("validate_migration_success", func(t *testing.T) {
-	//	s.validateMigrationSuccess(ctx)
-	//})
+	t.Run("halt_wait", func(t *testing.T) {
+		s.waitForMigrationHalt(ctx)
+	})
+
+	t.Run("stop_sdk_chain", func(t *testing.T) {
+		s.stopChainPreservingVolumes(ctx)
+	})
+
+	t.Run("setup_da_network", func(t *testing.T) {
+		s.setupDANetwork(ctx)
+	})
+
+	t.Run("migrate_chain", func(t *testing.T) {
+		s.recreateChainAndPerformMigration(ctx)
+	})
+
+	t.Run("validate_migration_success", func(t *testing.T) {
+		s.validateMigrationSuccess(ctx)
+	})
 }
 
 // submitMigrationProposalAndVote prepares and submits a gov proposal to migrate,
