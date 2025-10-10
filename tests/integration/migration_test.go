@@ -234,6 +234,10 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	// Vote YES with all validators by discovering local key names in each node
 	s.voteYesAllValidators(ctx, proposalID)
 
+	// wait a moment to ensure vote transactions are included in blocks
+	// with ~2s block time and 3 validators, this gives enough time for all votes to be processed
+	time.Sleep(6 * time.Second)
+
 	// wait for the proposal to finish voting period and be executed
 	// poll every second for up to 30 seconds
 	var finalProp *govv1.QueryProposalResponse

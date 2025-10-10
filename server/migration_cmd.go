@@ -111,12 +111,18 @@ After migration, start the node normally - it will automatically detect and use 
 				return err
 			}
 
+			// Track whether sync stores were started
+			var syncStoresStarted bool
+
 			// Ensure all stores are stopped/closed in the right order on any exit path.
 			// Order matters: stop header/data sync stores first, then close rollkit store,
 			// then close Comet stores.
 			defer func() {
-				_ = rollkitStores.headerSyncStore.Stop(ctx)
-				_ = rollkitStores.dataSyncStore.Stop(ctx)
+				// Only stop sync stores if they were started
+				if syncStoresStarted {
+					_ = rollkitStores.headerSyncStore.Stop(ctx)
+					_ = rollkitStores.dataSyncStore.Stop(ctx)
+				}
 				_ = rollkitStores.rollkitStore.Close()
 				_ = cometBlockStore.Close()
 				_ = cometStateStore.Close()
@@ -209,6 +215,8 @@ After migration, start the node normally - it will automatically detect and use 
 			if err := rollkitStores.dataSyncStore.Start(ctx); err != nil {
 				return fmt.Errorf("failed to start data sync store: %w", err)
 			}
+			// Mark that sync stores were started successfully
+			syncStoresStarted = true
 
 			currentSyncHeight := rollkitStores.headerSyncStore.Height()
 			if currentSyncHeight == 0 {
@@ -470,13 +478,18 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	)
 
 	// create context and commit multi-store
+	// note: LoadLatestVersion loads the last committed version, which may be LastBlockHeight-1
+	// if the chain halted in PreBlock before committing LastBlockHeight
 	cms := store.NewCommitMultiStore(appDB, log.NewNopLogger(), metrics.NewNoOpMetrics())
 	cms.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, appDB)
 	if err := cms.LoadLatestVersion(); err != nil {
 		return nil, fmt.Errorf("failed to load latest version of commit multi store: %w", err)
 	}
+
+	// Use the actual committed version from the store, not LastBlockHeight which may not be committed
+	committedVersion := cms.LastCommitID().Version
 	ctx := sdk.NewContext(cms, cmtproto.Header{
-		Height:  int64(cometBFTState.LastBlockHeight),
+		Height:  committedVersion,
 		ChainID: cometBFTState.ChainID,
 		Time:    cometBFTState.LastBlockTime,
 	}, false, log.NewNopLogger())
