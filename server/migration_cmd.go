@@ -467,6 +467,19 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	}
 	defer func() { _ = appDB.Close() }()
 
+	// Debug: print application DB stats, if available, to help diagnose store/version issues.
+	if stats := appDB.Stats(); stats != nil {
+		fmt.Println("Debug: application.db stats:")
+		for k, v := range stats {
+			// Avoid dumping excessively long values
+			val := v
+			if len(val) > 2048 {
+				val = val[:2048] + "..."
+			}
+			fmt.Printf("  %s: %s\n", k, val)
+		}
+	}
+
 	storeKey := storetypes.NewKVStoreKey(migrationmngrtypes.ModuleName)
 
 	encCfg := moduletestutil.MakeTestEncodingConfig(migrationmngr.AppModuleBasic{})
@@ -488,6 +501,8 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 
 	// Use the actual committed version from the store, not LastBlockHeight which may not be committed
 	committedVersion := cms.LastCommitID().Version
+	// Debug visibility: print both CometBFT last block height and store committed version
+	fmt.Printf("Debug: CometBFT last block height=%d, store committed version=%d\n", cometBFTState.LastBlockHeight, committedVersion)
 	ctx := sdk.NewContext(cms, cmtproto.Header{
 		Height:  committedVersion,
 		ChainID: cometBFTState.ChainID,
