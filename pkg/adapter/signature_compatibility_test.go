@@ -98,8 +98,8 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 	}
 
 	batch, err := storeOnlyAdapter.RollkitStore.NewBatch(context.Background())
-	err = batch.SaveBlockData(signedHeader1, &types.Data{}, &types.Signature{})
 	require.NoError(t, err)
+	require.NoError(t, batch.SaveBlockData(signedHeader1, &types.Data{}, &types.Signature{}))
 	require.NoError(t, batch.Commit())
 
 	// Generate and save BlockID for height 2
