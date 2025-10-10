@@ -493,8 +493,14 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	// create context and commit multi-store
 	// note: LoadLatestVersion loads the last committed version, which may be LastBlockHeight-1
 	// if the chain halted in PreBlock before committing LastBlockHeight
+	//
+	// IMPORTANT: We mount ONLY the migrationmngr store key. LoadLatestVersion will try to load
+	// the latest version from the IAVL tree metadata for this specific store key.
+	// If the migrationmngr module has never written data, this will fail.
 	cms := store.NewCommitMultiStore(appDB, log.NewNopLogger(), metrics.NewNoOpMetrics())
 	cms.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, appDB)
+
+	// Try to load the latest version - this may fail if the migrationmngr store doesn't exist
 	if err := cms.LoadLatestVersion(); err != nil {
 		return nil, fmt.Errorf("failed to load latest version of commit multi store: %w", err)
 	}
@@ -503,6 +509,20 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	committedVersion := cms.LastCommitID().Version
 	// Debug visibility: print both CometBFT last block height and store committed version
 	fmt.Printf("Debug: CometBFT last block height=%d, store committed version=%d\n", cometBFTState.LastBlockHeight, committedVersion)
+
+	// Additional debug: check if we can access the IAVL store directly
+	kvStore := cms.GetKVStore(storeKey)
+	fmt.Printf("Debug: KVStore type: %T\n", kvStore)
+
+	// Try to manually check what's in the store
+	iter := kvStore.Iterator(nil, nil)
+	defer iter.Close()
+	keyCount := 0
+	for ; iter.Valid(); iter.Next() {
+		keyCount++
+		fmt.Printf("Debug: Found key in store: %s\n", string(iter.Key()))
+	}
+	fmt.Printf("Debug: Total keys found in migrationmngr store: %d\n", keyCount)
 	ctx := sdk.NewContext(cms, cmtproto.Header{
 		Height:  committedVersion,
 		ChainID: cometBFTState.ChainID,
