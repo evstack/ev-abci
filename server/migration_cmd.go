@@ -3,31 +3,21 @@ package server
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"cosmossdk.io/collections"
-	"cosmossdk.io/log"
-	sdkstore "cosmossdk.io/store"
-	"cosmossdk.io/store/metrics"
-	storetypes "cosmossdk.io/store/types"
 	goheaderstore "github.com/celestiaorg/go-header/store"
 	cmtdbm "github.com/cometbft/cometbft-db"
 	cometbftcmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/state"
 	cmtstore "github.com/cometbft/cometbft/store"
 	cmttypes "github.com/cometbft/cometbft/types"
 	dbm "github.com/cosmos/cosmos-db"
-	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/runtime"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	ds "github.com/ipfs/go-datastore"
 	ktds "github.com/ipfs/go-datastore/keytransform"
@@ -467,34 +457,58 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	}
 	defer func() { _ = appDB.Close() }()
 
-	storeKey := storetypes.NewKVStoreKey(migrationmngrtypes.ModuleName)
-
 	encCfg := moduletestutil.MakeTestEncodingConfig(migrationmngr.AppModuleBasic{})
-	sequencerCollection := collections.NewItem(
-		collections.NewSchemaBuilder(runtime.NewKVStoreService(storeKey)),
-		migrationmngrtypes.SequencerKey,
-		"sequencer",
-		codec.CollValue[migrationmngrtypes.Sequencer](encCfg.Codec),
-	)
 
-	// create context and commit multi-store
-	cms := sdkstore.NewCommitMultiStore(appDB, log.NewNopLogger(), metrics.NewNoOpMetrics())
-	cms.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, appDB)
-	if err := cms.LoadLatestVersion(); err != nil {
-		return nil, fmt.Errorf("failed to load latest version of commit multi store: %w", err)
-	}
-	ctx := sdk.NewContext(cms, cmtproto.Header{
-		Height:  int64(cometBFTState.LastBlockHeight),
-		ChainID: cometBFTState.ChainID,
-		Time:    cometBFTState.LastBlockTime,
-	}, false, log.NewNopLogger())
+	// The migrationmngr module data is stored with the prefix: s/k:migrationmngr/
+	// Collections library adds 0x66 ('f') prefix for Item type collections
+	// For the Sequencer collection, the full key is: s/k:migrationmngr/ + 0x66 + SequencerKey
+	modulePrefix := fmt.Sprintf("s/k:%s/", migrationmngrtypes.ModuleName)
 
-	sequencer, err := sequencerCollection.Get(ctx)
-	if errors.Is(err, collections.ErrNotFound) {
-		return nil, fmt.Errorf("sequencer not found in migrationmngr state, ensure the module is initialized and sequencer is set")
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to get sequencer from migrationmngr state: %w", err)
+	// Collections library uses 0x66 ('f') as a deterministic prefix for Item types
+	collectionsItemPrefix := byte(0x66)
+
+	// Build the full key: module prefix + collections Item prefix + sequencer key
+	fullKey := append([]byte(modulePrefix), collectionsItemPrefix)
+	fullKey = append(fullKey, migrationmngrtypes.SequencerKey...)
+
+	fmt.Printf("DEBUG: Looking for sequencer at key: %q (hex: %x)\n", string(fullKey), fullKey)
+
+	// List all keys with the migrationmngr prefix to see what's actually there
+	fmt.Printf("DEBUG: Listing all keys with prefix %q\n", modulePrefix)
+	iter, err := appDB.Iterator([]byte(modulePrefix), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create iterator: %w", err)
 	}
+	keyCount := 0
+	for ; iter.Valid() && keyCount < 10; iter.Next() {
+		key := iter.Key()
+		if !bytes.HasPrefix(key, []byte(modulePrefix)) {
+			break
+		}
+		keyCount++
+		fmt.Printf("  Key[%d]: %q (hex: %x), value length: %d\n", keyCount, string(key), key, len(iter.Value()))
+	}
+	iter.Close()
+	fmt.Printf("DEBUG: Found %d keys with migrationmngr prefix\n", keyCount)
+
+	// Read directly from the database
+	sequencerBytes, err := appDB.Get(fullKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sequencer from database: %w", err)
+	}
+	if len(sequencerBytes) == 0 {
+		return nil, fmt.Errorf("sequencer not found in migrationmngr state at key %q", string(fullKey))
+	}
+
+	fmt.Printf("DEBUG: Found sequencer data, length: %d bytes\n", len(sequencerBytes))
+
+	// Unmarshal the sequencer
+	var sequencer migrationmngrtypes.Sequencer
+	if err := encCfg.Codec.Unmarshal(sequencerBytes, &sequencer); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal sequencer: %w", err)
+	}
+
+	fmt.Printf("DEBUG: Sequencer unmarshaled: name=%s\n", sequencer.Name)
 
 	if err := sequencer.UnpackInterfaces(encCfg.InterfaceRegistry); err != nil {
 		return nil, fmt.Errorf("failed to unpack sequencer interfaces: %w", err)

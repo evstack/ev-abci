@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -166,8 +167,10 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	s.Require().NoError(err)
 	// Schedule migration sufficiently in the future to allow proposal
 	// submission, deposits, and validator votes to complete.
+	// With 10s voting period + time for votes, we need at least 15-20 blocks
 	migrateAt := uint64(curHeight + 30)
 	s.migrationHeight = migrateAt
+	s.T().Logf("Current height: %d, Migration scheduled for height: %d", curHeight, migrateAt)
 
 	// verify gov params are correct
 	govQC := govv1.NewQueryClient(conn)
@@ -198,7 +201,13 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 		Attesters: nil,
 	}
 
-	deposit := sdk.NewCoins(sdk.NewInt64Coin("stake", 1_000_000))
+	s.T().Logf("Migration message: Authority=%s, BlockHeight=%d, Sequencer.Name=%s",
+		msg.Authority, msg.BlockHeight, msg.Sequencer.Name)
+
+	// Use a much larger deposit to ensure proposal enters voting period immediately
+	deposit := sdk.NewCoins(sdk.NewInt64Coin("stake", 10_000_000_000))
+	s.T().Logf("Proposal deposit: %s", deposit.String())
+
 	propMsg, err := govv1.NewMsgSubmitProposal(
 		[]sdk.Msg{msg},
 		deposit,
@@ -212,6 +221,8 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 
 	bc := cosmos.NewBroadcaster(s.chain)
 	submitResp, err := bc.BroadcastMessages(ctx, faucet, propMsg)
+	s.T().Logf("Proposal submission response: Code=%d, RawLog=%s, TxHash=%s",
+		submitResp.Code, submitResp.RawLog, submitResp.TxHash)
 	s.Require().NoError(err, submitResp.RawLog)
 	s.Require().Equal(uint32(0), submitResp.Code, submitResp.RawLog)
 
@@ -230,6 +241,12 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 		}
 	}
 	s.Require().True(proposalID > 0, "no proposals found after submission")
+
+	// Check proposal status immediately after submission
+	propCheck, err := govQC.Proposal(ctx, &govv1.QueryProposalRequest{ProposalId: proposalID})
+	s.Require().NoError(err)
+	s.T().Logf("Proposal %d status after submission: %s", proposalID, propCheck.Proposal.Status)
+	s.T().Logf("Voting starts: %s, ends: %s", propCheck.Proposal.VotingStartTime, propCheck.Proposal.VotingEndTime)
 
 	// Vote YES with all validators by discovering local key names in each node
 	s.voteYesAllValidators(ctx, proposalID)
@@ -289,7 +306,7 @@ func setGovFastParams(ctx context.Context, node *cosmos.ChainNode) error {
 			return
 		}
 		if params, ok := govState["params"].(map[string]interface{}); ok {
-			params["voting_period"] = "10s"
+			params["voting_period"] = "60s" // increased from 10s to give more time for votes
 			params["max_deposit_period"] = "10s"
 			params["min_deposit"] = []map[string]interface{}{{"denom": "stake", "amount": "1"}}
 			params["quorum"] = "0.000000000000000000"
@@ -302,7 +319,7 @@ func setGovFastParams(ctx context.Context, node *cosmos.ChainNode) error {
 			dp["max_deposit_period"] = "10s"
 		}
 		if vp, ok := govState["voting_params"].(map[string]interface{}); ok {
-			vp["voting_period"] = "10s"
+			vp["voting_period"] = "60s" // increased from 10s
 		}
 		if tp, ok := govState["tally_params"].(map[string]interface{}); ok {
 			tp["quorum"] = "0.000000000000000000"
@@ -333,10 +350,26 @@ func (s *MigrationTestSuite) voteYesAllValidators(ctx context.Context, proposalI
 			"--keyring-backend", "test",
 			"--node", rpcAddr,
 			"--yes",
+			"--broadcast-mode", "sync", // wait for tx to be included in a block
+			"--output", "json",
 		}, nil)
-		s.T().Logf("Vote from validator %d: stdout=%s, stderr=%s", i, stdout, stderr)
+		s.T().Logf("Vote from validator %d:", i)
+		s.T().Logf("  stdout=%s", stdout)
+		s.T().Logf("  stderr=%s", stderr)
+
 		s.Require().NoError(err, "vote tx failed from %s: %s", from, stderr)
+		// Check if the vote transaction succeeded (code 0)
+		if !bytes.Contains([]byte(stdout), []byte(`"code":0`)) {
+			s.T().Fatalf("Vote tx did not succeed: %s", stdout)
+		}
+
+		// Give a moment for the vote to be included in a block
+		time.Sleep(500 * time.Millisecond)
 	}
+
+	// Give extra time for all votes to be included
+	s.T().Log("Waiting for votes to be included in blocks...")
+	time.Sleep(2 * time.Second)
 }
 
 // waitForMigrationHalt waits until the chain reaches at least the migration
