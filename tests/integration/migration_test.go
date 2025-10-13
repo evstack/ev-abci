@@ -18,6 +18,7 @@ import (
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
 	cometcfg "github.com/cometbft/cometbft/config"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
@@ -181,15 +182,35 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	faucet := s.chain.GetFaucetWallet()
 	proposer := faucet.GetFormattedAddress()
 
-	// Get sequencer pubkey from staking module to ensure it matches on-chain state
-	// this is the source of truth that migration.go will use
+	// Determine the intended sequencer to align with the node that will run
+	// in aggregator mode (validator index 0 when we restart as evolve).
+	// We fetch the operator (valoper) address from the first validator node's keyring,
+	// then find the matching validator on-chain to get its consensus pubkey Any.
 	stakeQC := stakingtypes.NewQueryClient(conn)
 	valsResp, err := stakeQC.Validators(ctx, &stakingtypes.QueryValidatorsRequest{})
 	s.Require().NoError(err)
 	s.Require().GreaterOrEqual(len(valsResp.Validators), 1, "need at least one validator")
 
-	// use the first validator's pubkey from staking - this is the on-chain source of truth
-	seqPubkeyAny := valsResp.Validators[0].ConsensusPubkey
+	// Query valoper address from the first validator node
+	val0 := s.chain.GetNode()
+	stdout, stderr, err := val0.Exec(ctx, []string{
+		"gmd", "keys", "show", "--address", "validator",
+		"--home", val0.HomeDir(),
+		"--keyring-backend", "test",
+		"--bech", "val",
+	}, nil)
+	s.Require().NoError(err, "failed to get valoper address from node 0: %s", stderr)
+	val0Oper := string(bytes.TrimSpace(stdout))
+
+	// Find matching validator by operator address and use its consensus pubkey Any
+	var seqPubkeyAny *codectypes.Any
+	for _, v := range valsResp.Validators {
+		if v.OperatorAddress == val0Oper {
+			seqPubkeyAny = v.ConsensusPubkey
+			break
+		}
+	}
+	s.Require().NotNil(seqPubkeyAny, "could not find validator matching val-0 operator address %s", val0Oper)
 
 	msg := &migrationmngrtypes.MsgMigrateToEvolve{
 		Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
