@@ -82,7 +82,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	t := s.T()
 
 	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
-		s.createAndStartSDKChain(ctx)
+		s.createAndStartSDKChain(ctx, 1)
 	})
 
 	t.Run("generate_test_transactions", func(t *testing.T) {
@@ -102,7 +102,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	})
 
 	t.Run("migrate_chain", func(t *testing.T) {
-		s.recreateChainAndPerformMigration(ctx)
+		s.recreateChainAndPerformMigration(ctx, 1)
 	})
 
 	t.Run("validate_migration_success", func(t *testing.T) {
@@ -118,7 +118,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 	t := s.T()
 
 	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
-		s.createAndStartSDKChain(ctx)
+		s.createAndStartSDKChain(ctx, 3)
 	})
 
 	t.Run("generate_test_transactions", func(t *testing.T) {
@@ -146,7 +146,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 	})
 
 	t.Run("migrate_chain", func(t *testing.T) {
-		s.recreateChainAndPerformMigration(ctx)
+		s.recreateChainAndPerformMigration(ctx, 3)
 	})
 
 	t.Run("validate_migration_success", func(t *testing.T) {
@@ -451,8 +451,8 @@ func (s *MigrationTestSuite) waitForMigrationHalt(ctx context.Context) {
 	s.Require().FailNowf("chain did not halt within expected window", "last height=%d (min expected=%d)", last, minExpected)
 }
 
-func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context) {
-	s.chain = s.createCosmosSDKChain(ctx)
+func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context, numNodes int) {
+	s.chain = s.createCosmosSDKChain(ctx, numNodes)
 	s.Require().NotNil(s.chain)
 
 	err := s.chain.Start(ctx)
@@ -528,7 +528,7 @@ func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
 }
 
 // recreateChainAndPerformMigration recreates the chain with evolve image and DA config, reusing existing volumes
-func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Context) {
+func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Context, numNodes int) {
 	s.T().Log("Recreating chain with evolve image...")
 
 	// get DA connection details
@@ -542,7 +542,7 @@ func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Contex
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
 
 	// recreate using same builder config as createCosmosSDKChain but with evolve image and DA config
-	evolveChain := s.createEvolveChain(ctx, authToken, daAddress)
+	evolveChain := s.createEvolveChain(ctx, authToken, daAddress, numNodes)
 
 	s.performMigration(ctx, evolveChain)
 	s.T().Log("Migration command completed successfully")
@@ -572,7 +572,7 @@ func (s *MigrationTestSuite) validateMigrationSuccess(ctx context.Context) {
 }
 
 // getCosmosChainBuilder returns a chain builder for cosmos-sdk chain
-func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
+func (s *MigrationTestSuite) getCosmosChainBuilder(numNodes int) *cosmos.ChainBuilder {
 	// Include gov + migrationmngr so client-side encoding can marshal
 	// gov v1 MsgSubmitProposal and migrationmngr MsgMigrateToEvolve
 	testEncCfg := testutil.MakeTestEncodingConfig(
@@ -581,6 +581,12 @@ func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
 		govmodule.AppModuleBasic{},
 		migrationmngr.AppModuleBasic{},
 	)
+
+	var nodes []cosmos.ChainNodeConfig
+	for i := 0; i < numNodes; i++ {
+		nodes = append(nodes, cosmos.NewChainNodeConfigBuilder().Build())
+	}
+
 	return cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getCosmosSDKAppContainer()).
@@ -599,60 +605,51 @@ func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
 					cfg.TxIndex.Indexer = "kv"
 				})
 			}).
-		WithNodes(
-			cosmos.NewChainNodeConfigBuilder().Build(),
-			cosmos.NewChainNodeConfigBuilder().Build(),
-			cosmos.NewChainNodeConfigBuilder().Build(),
-		)
+		WithNodes(nodes...)
 }
 
 // createCosmosSDKChain creates a cosmos-sdk chain without evolve modules
-func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *cosmos.Chain {
-	cosmosChain, err := s.getCosmosChainBuilder().Build(ctx)
+func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context, numNodes int) *cosmos.Chain {
+	cosmosChain, err := s.getCosmosChainBuilder(numNodes).Build(ctx)
 	s.Require().NoError(err)
 	return cosmosChain
 }
 
 // createEvolveChain creates a chain with evolve chain which alligns with the existing cosmos sdk chain.
 // the image is changed, and initialization is skipped as we are reusing existing volumes.
-func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, daAddress string) *cosmos.Chain {
-	evolveChain, err := s.getCosmosChainBuilder().
+func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, daAddress string, numNodes int) *cosmos.Chain {
+	sequencer := cosmos.NewChainNodeConfigBuilder().
+		WithAdditionalStartArgs(
+			"--evnode.node.aggregator",
+			"--evnode.signer.passphrase", "12345678",
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			"--log_level", "*:info",
+		).
+		Build()
+
+	nodeConfigs := []cosmos.ChainNodeConfig{sequencer}
+	for i := 1; i < numNodes; i++ {
+		nodeConfigs = append(nodeConfigs, cosmos.NewChainNodeConfigBuilder().WithAdditionalStartArgs(
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--log_level", "*:debug",
+		).Build())
+	}
+
+	evolveChain, err := s.getCosmosChainBuilder(numNodes).
 		WithImage(getEvolveAppContainer()).
 		WithSkipInit(true). // skip initalization as we have already done that previously when it was an sdk chain..
-		WithNodes(
-			cosmos.NewChainNodeConfigBuilder().
-				WithAdditionalStartArgs(
-					"--evnode.node.aggregator",
-					"--evnode.signer.passphrase", "12345678",
-					"--evnode.da.address", daAddress,
-					"--evnode.da.gas_price", "0.000001",
-					"--evnode.da.auth_token", authToken,
-					"--evnode.rpc.address", "0.0.0.0:7331",
-					"--evnode.da.namespace", "ev-header",
-					"--evnode.da.data_namespace", "ev-data",
-					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-					"--log_level", "*:info",
-				).
-				Build(),
-			cosmos.NewChainNodeConfigBuilder().WithAdditionalStartArgs(
-				"--evnode.da.address", daAddress,
-				"--evnode.da.gas_price", "0.000001",
-				"--evnode.da.auth_token", authToken,
-				"--evnode.rpc.address", "0.0.0.0:7331",
-				"--evnode.da.namespace", "ev-header",
-				"--evnode.da.data_namespace", "ev-data",
-				"--log_level", "*:debug",
-			).Build(),
-			cosmos.NewChainNodeConfigBuilder().WithAdditionalStartArgs(
-				"--evnode.da.address", daAddress,
-				"--evnode.da.gas_price", "0.000001",
-				"--evnode.da.auth_token", authToken,
-				"--evnode.rpc.address", "0.0.0.0:7331",
-				"--evnode.da.namespace", "ev-header",
-				"--evnode.da.data_namespace", "ev-data",
-				"--log_level", "*:debug",
-			).Build(),
-		).
+		WithNodes(nodeConfigs...).
 		Build(ctx)
 	s.Require().NoError(err)
 	return evolveChain
