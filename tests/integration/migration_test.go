@@ -652,12 +652,13 @@ func (s *MigrationTestSuite) recordTestTransaction(ctx context.Context, fromWall
 
 // performMigration runs the migration command on the given chain node.
 func (s *MigrationTestSuite) performMigration(ctx context.Context, chain *cosmos.Chain) {
-	_, stderr, err := chain.GetNode().Exec(ctx, []string{
-		"gmd", "evolve-migrate",
-		"--home", chain.GetNode().HomeDir(),
-	}, nil)
-
-	s.Require().NoError(err, "migration command failed: %s", stderr)
+	for _, node := range chain.GetNodes() {
+		_, stderr, err := node.Exec(ctx, []string{
+			"gmd", "evolve-migrate",
+			"--home", chain.GetNode().HomeDir(),
+		}, nil)
+		s.Require().NoError(err, "migration command failed: %s", stderr)
+	}
 }
 
 // validateOldTransactions verifies old transactions are still accessible
