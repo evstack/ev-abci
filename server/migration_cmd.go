@@ -18,6 +18,8 @@ import (
 	cmtstore "github.com/cometbft/cometbft/store"
 	cmttypes "github.com/cometbft/cometbft/types"
 	dbm "github.com/cosmos/cosmos-db"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	ds "github.com/ipfs/go-datastore"
 	ktds "github.com/ipfs/go-datastore/keytransform"
@@ -459,6 +461,9 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 
 	encCfg := moduletestutil.MakeTestEncodingConfig(migrationmngr.AppModuleBasic{})
 
+	// Register crypto types so UnpackInterfaces can properly decode the consensus pubkey
+	cryptocodec.RegisterInterfaces(encCfg.InterfaceRegistry)
+
 	// The migrationmngr module data is stored with the prefix: s/k:migrationmngr/
 	// Collections library adds 0x66 ('f') prefix for Item type collections
 	// For the Sequencer collection, the full key is: s/k:migrationmngr/ + 0x66 + SequencerKey
@@ -501,14 +506,25 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	}
 
 	fmt.Printf("DEBUG: Found sequencer data, length: %d bytes\n", len(sequencerBytes))
+	fmt.Printf("DEBUG: First 50 bytes (hex): %x\n", sequencerBytes[:min(50, len(sequencerBytes))])
 
-	// Unmarshal the sequencer
+	// The collections library wraps values in a protobuf container with a field tag and length.
+	// First byte: field tag (e.g., 0x6a = field 13, wire type 2)
+	// Second byte: length varint
+	// We skip these 2 wrapper bytes to get to the actual Sequencer proto
+	// TODO: properly decode the varint length instead of hardcoding 2 bytes
+	if len(sequencerBytes) < 2 {
+		return nil, fmt.Errorf("sequencer bytes too short: %d", len(sequencerBytes))
+	}
+	actualProtoBytes := sequencerBytes[2:]
+
 	var sequencer migrationmngrtypes.Sequencer
-	if err := encCfg.Codec.Unmarshal(sequencerBytes, &sequencer); err != nil {
+	if err := encCfg.Codec.Unmarshal(actualProtoBytes, &sequencer); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal sequencer: %w", err)
 	}
 
-	fmt.Printf("DEBUG: Sequencer unmarshaled: name=%s\n", sequencer.Name)
+	fmt.Printf("DEBUG: Sequencer unmarshaled: name='%s'\n", sequencer.Name)
+	fmt.Printf("DEBUG: Sequencer.ConsensusPubkey nil? %v\n", sequencer.ConsensusPubkey == nil)
 
 	if err := sequencer.UnpackInterfaces(encCfg.InterfaceRegistry); err != nil {
 		return nil, fmt.Errorf("failed to unpack sequencer interfaces: %w", err)
@@ -520,10 +536,19 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 		return nil, fmt.Errorf("sequencer consensus public key is nil")
 	}
 
-	// Get the cached value which should be a crypto.PubKey
-	pubKey, ok := pubKeyAny.GetCachedValue().(crypto.PubKey)
+	fmt.Printf("DEBUG: After UnpackInterfaces - TypeUrl: %s\n", pubKeyAny.TypeUrl)
+	fmt.Printf("DEBUG: After UnpackInterfaces - CachedValue type: %T\n", pubKeyAny.GetCachedValue())
+
+	// Convert from Cosmos SDK crypto type to CometBFT crypto type
+	// The cached value is a Cosmos SDK cryptotypes.PubKey, we need CometBFT crypto.PubKey
+	sdkPubKey, ok := pubKeyAny.GetCachedValue().(cryptotypes.PubKey)
 	if !ok {
-		return nil, fmt.Errorf("failed to extract public key from sequencer")
+		return nil, fmt.Errorf("failed to get SDK pubkey from cached value, got type %T", pubKeyAny.GetCachedValue())
+	}
+
+	pubKey, err := cryptocodec.ToCmtPubKeyInterface(sdkPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert public key to CometBFT format: %w", err)
 	}
 
 	// Get the address from the public key
