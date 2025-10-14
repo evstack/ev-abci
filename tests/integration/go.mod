@@ -3,7 +3,7 @@ module github.com/evstack/ev-abci/tests/integration
 go 1.24.6
 
 require (
-	github.com/celestiaorg/tastora v0.7.0
+	github.com/celestiaorg/tastora v0.7.2
 	github.com/moby/moby v27.5.1+incompatible
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0 // indirect
@@ -225,7 +225,6 @@ require (
 
 replace (
 	cosmossdk.io/x/upgrade => github.com/celestiaorg/cosmos-sdk/x/upgrade v0.1.0
-	github.com/celestiaorg/tastora => ../../../../celestiaorg/tastora
 	github.com/cometbft/cometbft => github.com/celestiaorg/celestia-core v0.39.4
 	github.com/cosmos/cosmos-sdk => github.com/celestiaorg/cosmos-sdk v0.51.2
 	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2

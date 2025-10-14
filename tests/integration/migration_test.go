@@ -134,7 +134,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSucce
 		s.submitMigrationProposalAndVote(ctx)
 	})
 
-	t.Run("halt_wait", func(t *testing.T) {
+	t.Run("wait_for_halt", func(t *testing.T) {
 		s.waitForMigrationHalt(ctx)
 	})
 
@@ -237,62 +237,32 @@ func (s *MigrationTestSuite) getSequencerPubKey(ctx context.Context, conn *grpc.
 	return seqPubkeyAny
 }
 
-// waitForMigrationHalt waits until the chain reaches at least the migration
-// height threshold and then verifies that block production halts shortly after.
-// The test intends for the crash/halt, so this passes when halt is observed.
+// waitForMigrationHalt waits until the chain reaches the halt height
+// and verifies that block production stops.
 func (s *MigrationTestSuite) waitForMigrationHalt(ctx context.Context) {
-	// Minimum height at which halt can occur in non-IBC mode.
-	minExpected := int64(s.migrationHeight + 2)
+	haltHeight := int64(s.migrationHeight + 2)
 
-	// Wait until we reach at least the minimum expected height.
-	reachDeadline := time.Now().Add(2 * time.Minute)
-	var baseline int64 = -1
-	for time.Now().Before(reachDeadline) {
-		h, err := s.chain.Height(ctx)
-		if err == nil && h >= minExpected {
-			baseline = h
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
-	s.Require().True(baseline >= minExpected, "chain did not reach minimum expected halt height")
-
-	// After reaching the baseline, be lenient: allow height to move a little,
-	// but require it to stop increasing for a sustained window (5s) within
-	// an overall timeout (20s).
-	overallDeadline := time.Now().Add(20 * time.Second)
-	stableSince := time.Time{}
-	last := baseline
-
-	for time.Now().Before(overallDeadline) {
+	// wait until we reach the halt height
+	err := wait.ForCondition(ctx, 2*time.Minute, 5*time.Second, func() (bool, error) {
 		h, err := s.chain.Height(ctx)
 		if err != nil {
-			// Treat RPC errors as a signal of halt progress; count as stable.
-			if stableSince.IsZero() {
-				stableSince = time.Now()
-			}
-		} else {
-			if h > last {
-				// Height moved; reset stability timer and advance baseline.
-				last = h
-				stableSince = time.Time{}
-			} else {
-				// Height did not move.
-				if stableSince.IsZero() {
-					stableSince = time.Now()
-				}
-			}
+			return false, err
 		}
+		return h >= haltHeight, nil
+	})
+	s.Require().NoError(err, "chain did not reach halt height %d", haltHeight)
 
-		if !stableSince.IsZero() && time.Since(stableSince) >= 5*time.Second {
-			// Consider halted: height remained stable for 5s.
-			return
-		}
+	baseline, err := s.chain.Height(ctx)
+	s.Require().NoError(err)
 
-		time.Sleep(500 * time.Millisecond)
+	// wait longer than a block time to ensure halt
+	time.Sleep(10 * time.Second)
+
+	// verify height hasn't increased
+	current, err := s.chain.Height(ctx)
+	if err == nil {
+		s.Require().Equal(baseline, current, "chain did not halt, height increased from %d to %d", baseline, current)
 	}
-
-	s.Require().FailNowf("chain did not halt within expected window", "last height=%d (min expected=%d)", last, minExpected)
 }
 
 func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context, numNodes int) {
