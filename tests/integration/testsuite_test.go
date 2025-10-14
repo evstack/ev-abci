@@ -419,6 +419,23 @@ func setDAStartHeight(daStartHeight string) func(context.Context, *cosmos.ChainN
 		})
 	}
 }
+func setDAStartHeightEV(daStartHeight string) func(context.Context, *cosmos.ChainNode) error {
+	return func(ctx context.Context, node *cosmos.ChainNode) error {
+		daHeight, err := strconv.ParseUint(daStartHeight, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse da start height: %w", err)
+		}
+
+		return config.Modify(ctx, node, "config/genesis.json", func(genDoc *map[string]interface{}) {
+			evolveGenesis, ok := (*genDoc)["evolve"].(map[string]interface{})
+			if !ok {
+				return
+			}
+
+			evolveGenesis["da_start_height"] = daHeight
+		})
+	}
+}
 
 // addSingleSequencer modifies the genesis file to ensure single sequencer setup
 func addSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {

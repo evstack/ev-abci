@@ -111,6 +111,17 @@ After migration, start the node normally - it will automatically detect and use 
 				return err
 			}
 
+			// Ensure all stores are stopped/closed in the right order on any exit path.
+			// Order matters: stop header/data sync stores first, then close rollkit store,
+			// then close Comet stores.
+			defer func() {
+				_ = rollkitStores.headerSyncStore.Stop(ctx)
+				_ = rollkitStores.dataSyncStore.Stop(ctx)
+				_ = rollkitStores.rollkitStore.Close()
+				_ = cometBlockStore.Close()
+				_ = cometStateStore.Close()
+			}()
+
 			// save current CometBFT state to the ABCI exec store
 			if err = rollkitStores.abciExecStore.SaveState(ctx, &cometBFTstate); err != nil {
 				return fmt.Errorf("failed to save CometBFT state to ABCI exec store: %w", err)
@@ -126,21 +137,21 @@ After migration, start the node normally - it will automatically detect and use 
 				return err
 			}
 
-			if err = rollkitStores.rollkitStore.UpdateState(ctx, rollkitState); err != nil {
-				return fmt.Errorf("failed to update evolve state: %w", err)
-			}
-
 			// create minimal rollkit genesis file for future startups
 			if err := createRollkitMigrationGenesis(config.RootDir, cometBFTstate); err != nil {
 				return fmt.Errorf("failed to create evolve migration genesis: %w", err)
 			}
 
-			cmd.Println("Created ev_genesis.json.json for migration - the node will use this on subsequent startups")
+			cmd.Println("Created ev_genesis.json for migration - the node will use this on subsequent startups")
 
 			// migrate all the blocks from the CometBFT block store to the evolve store
 			// the migration is done in reverse order, starting from the last block
 			missedBlocks := make(map[int64]bool)
-			initSyncStores := true
+
+			batch, err := rollkitStores.rollkitStore.NewBatch(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create batch: %w", err)
+			}
 
 			for height := lastBlockHeight; height > 0; height-- {
 				cmd.Printf("Migrating block %d...\n", height)
@@ -159,26 +170,21 @@ After migration, start the node normally - it will automatically detect and use 
 
 				header, data, signature := cometBlockToRollkit(block)
 
-				if err = rollkitStores.rollkitStore.SaveBlockData(ctx, header, data, &signature); err != nil {
+				if err = batch.SaveBlockData(header, data, &signature); err != nil {
 					return fmt.Errorf("failed to save block data: %w", err)
 				}
 
-				// set last data in sync stores
-				if initSyncStores {
-					if err := rollkitStores.headerSyncStore.Start(ctx); err != nil {
-						return fmt.Errorf("failed to start header sync store: %w", err)
-					}
-					if err = rollkitStores.headerSyncStore.Append(ctx, header); err != nil {
-						return fmt.Errorf("failed to initialize header sync store: %w", err)
-					}
-					if err := rollkitStores.dataSyncStore.Start(ctx); err != nil {
-						return fmt.Errorf("failed to start data sync store: %w", err)
-					}
-					if err = rollkitStores.dataSyncStore.Append(ctx, data); err != nil {
-						return fmt.Errorf("failed to initialize data sync store: %w", err)
-					}
-
-					initSyncStores = false
+				// Save BlockID for this height so execution can build last commit post-migration
+				blockParts, err := block.MakePartSet(cmttypes.BlockPartSizeBytes)
+				if err != nil {
+					return fmt.Errorf("failed to build part set for block %d: %w", height, err)
+				}
+				blockID := cmttypes.BlockID{
+					Hash:          block.Header.Hash(),
+					PartSetHeader: blockParts.Header(),
+				}
+				if err := rollkitStores.abciExecStore.SaveBlockID(ctx, uint64(block.Height), &blockID); err != nil {
+					return fmt.Errorf("failed to save BlockID for height %d: %w", height, err)
 				}
 
 				// Only save extended commit info if vote extensions are enabled
@@ -192,12 +198,46 @@ After migration, start the node normally - it will automatically detect and use 
 			}
 
 			// set the last height in the Rollkit store
-			if err = rollkitStores.rollkitStore.SetHeight(ctx, uint64(lastBlockHeight)); err != nil {
+			if err = batch.SetHeight(uint64(lastBlockHeight)); err != nil {
 				return fmt.Errorf("failed to set last height in Evolve store: %w", err)
 			}
 
+			// persist the rollkit state at the after SetHeight is called.
+			if err = batch.UpdateState(rollkitState); err != nil {
+				return fmt.Errorf("failed to update evolve state at height %d: %w", lastBlockHeight, err)
+			}
+
+			if err = batch.Commit(); err != nil {
+				return fmt.Errorf("failed to commit batch: %w", err)
+			}
+
+			cmd.Println("Seeding sync stores head with latest migrated header/data ...")
+			if err := rollkitStores.headerSyncStore.Start(ctx); err != nil {
+				return fmt.Errorf("failed to start header sync store: %w", err)
+			}
+			if err := rollkitStores.dataSyncStore.Start(ctx); err != nil {
+				return fmt.Errorf("failed to start data sync store: %w", err)
+			}
+
+			currentSyncHeight := rollkitStores.headerSyncStore.Height()
+			if currentSyncHeight == 0 {
+				header, data, err := rollkitStores.rollkitStore.GetBlockData(ctx, uint64(lastBlockHeight))
+				if err != nil {
+					return fmt.Errorf("failed to get block data for seeding sync stores at height %d: %w", lastBlockHeight, err)
+				}
+				if err := rollkitStores.headerSyncStore.Append(ctx, header); err != nil {
+					return fmt.Errorf("failed to append header to sync store at height %d: %w", lastBlockHeight, err)
+				}
+				if err := rollkitStores.dataSyncStore.Append(ctx, data); err != nil {
+					return fmt.Errorf("failed to append data to sync store at height %d: %w", lastBlockHeight, err)
+				}
+				cmd.Printf("Seeded sync stores head at height %d\n", lastBlockHeight)
+			} else {
+				cmd.Println("Sync stores already initialized. Skipping seeding")
+			}
+			// Defer cleanup above will stop/close stores in correct order
 			cmd.Println("Migration completed successfully")
-			return errors.Join(rollkitStores.rollkitStore.Close(), cometBlockStore.Close(), cometStateStore.Close())
+			return nil
 		},
 	}
 
