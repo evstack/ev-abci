@@ -30,7 +30,7 @@ func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error
 	currentHeight := uint64(sdkCtx.BlockHeight())
 	shouldHalt := end > 0 && currentHeight == end+1
 
-	k.Logger(ctx).Info("PreBlock migration check",
+	k.Logger(ctx).Debug("PreBlock migration check",
 		"height", currentHeight,
 		"start", start,
 		"end", end,
@@ -46,8 +46,8 @@ func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error
 			k.Logger(ctx).Error("failed to remove migration state", "error", err)
 		}
 
-		// Return error to halt the chain - this causes all validators to halt deterministically
-		// The node operator will see this error message and know to switch to the new binary
+		// return error to halt the chain,this causes all validators to halt
+		// the node operator will see this error message and know to switch to the new binary
 		return nil, sdkerrors.ErrLogic.Wrap("MIGRATE: chain migration to evolve is complete. Switch to the evolve binary and run 'gmd evolve-migrate' to complete the migration.")
 	}
 

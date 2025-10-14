@@ -2,22 +2,23 @@ FROM golang:1.24-alpine AS ignite-builder
 
 # Install dependencies needed for ignite and building
 RUN apk add --no-cache \
-    libc6-compat \
-    curl \
-    bash \
-    git
+libc6-compat \
+curl \
+bash \
+git
 
 # Set environment variables
 ENV IGNITE_VERSION=v29.4.0
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
-# Install evolve app templates globally so `ignite evolve` subcommands are available
+# Install evolve app templates globally so ignite evolve subcommands are available
 #RUN ignite app install -g github.com/ignite/apps/evolve@main
 
 WORKDIR /workspace
 
 # Scaffold a plain Cosmos SDK chain
+
 RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm # --minimal
 
 WORKDIR /workspace/gm
@@ -25,8 +26,13 @@ WORKDIR /workspace/gm
 RUN ignite app install -g github.com/chatton/apps/evolve@main
 
 # Add only the evolve migrate command (do not scaffold full evolve integration)
-# Use the migrate subcommand exposed by the evolve app
 RUN ignite evolve add --start=false --migrate
+
+RUN ls -la
+RUN ls -la app
+# Patch out IBC registration (comment out the call and its error handling)
+#RUN #sed -i '/registerIBCModules(appOpts)/,+2 s/^/// /' app/app.go
+RUN sed -i '/registerIBCModules(appOpts)/,/^[[:space:]]*}/ s/^/// /' app/app.go
 
 # Build the Cosmos SDK binary
 RUN ignite chain build --skip-proto
@@ -38,7 +44,7 @@ RUN apk add --no-cache ca-certificates
 
 # create non-root user
 RUN addgroup -g 10001 -S gm && \
-    adduser -u 10001 -S gm -G gm
+adduser -u 10001 -S gm -G gm
 
 WORKDIR /home/gm
 

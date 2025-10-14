@@ -67,14 +67,13 @@ func (s *MigrationTestSuite) SetupTest() {
 	s.testWallets = []*types.Wallet{}
 }
 
-//func (s *MigrationTestSuite) TearDownTest() {
-//	if s.chain != nil {
-//		s.T().Log("tearing down chain...")
-//		if err := s.chain.Remove(context.Background()); err != nil {
-//			s.T().Logf("failed to remove chain: %s", err)
-//		}
-//	}
-//}
+func (s *MigrationTestSuite) TearDownTest() {
+	if s.chain != nil {
+		if err := s.chain.Remove(context.Background()); err != nil {
+			s.T().Logf("failed to remove chain: %s", err)
+		}
+	}
+}
 
 // TestCosmosToEvolveMigration tests the complete migration workflow
 func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
@@ -160,9 +159,11 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
 	s.Require().NoError(err)
 
-	conn, err := grpc.Dial(networkInfo.External.GRPCAddress(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(networkInfo.External.GRPCAddress(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	s.Require().NoError(err)
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	curHeight, err := s.chain.Height(ctx)
 	s.Require().NoError(err)
@@ -172,12 +173,6 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	migrateAt := uint64(curHeight + 30)
 	s.migrationHeight = migrateAt
 	s.T().Logf("Current height: %d, Migration scheduled for height: %d", curHeight, migrateAt)
-
-	// verify gov params are correct
-	govQC := govv1.NewQueryClient(conn)
-	params, err := govQC.Params(ctx, &govv1.QueryParamsRequest{ParamsType: "voting"})
-	s.Require().NoError(err)
-	s.T().Logf("Gov params: %+v", params)
 
 	faucet := s.chain.GetFaucetWallet()
 	proposer := faucet.GetFormattedAddress()
@@ -240,79 +235,9 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	)
 	s.Require().NoError(err)
 
-	bc := cosmos.NewBroadcaster(s.chain)
-	submitResp, err := bc.BroadcastMessages(ctx, faucet, propMsg)
-	s.T().Logf("Proposal submission response: Code=%d, RawLog=%s, TxHash=%s",
-		submitResp.Code, submitResp.RawLog, submitResp.TxHash)
-	s.Require().NoError(err, submitResp.RawLog)
-	s.Require().Equal(uint32(0), submitResp.Code, submitResp.RawLog)
-
-	// Discover proposal ID via gRPC (any status) with a short retry to allow indexing
-	var proposalID uint64
-	for i := 0; i < 10 && proposalID == 0; i++ {
-		props, err := govQC.Proposals(ctx, &govv1.QueryProposalsRequest{ProposalStatus: govv1.ProposalStatus_PROPOSAL_STATUS_UNSPECIFIED})
-		s.Require().NoError(err)
-		for _, p := range props.Proposals {
-			if p.Id > proposalID {
-				proposalID = p.Id
-			}
-		}
-		if proposalID == 0 {
-			time.Sleep(1 * time.Second)
-		}
-	}
-	s.Require().True(proposalID > 0, "no proposals found after submission")
-
-	// Check proposal status immediately after submission
-	propCheck, err := govQC.Proposal(ctx, &govv1.QueryProposalRequest{ProposalId: proposalID})
+	prop, err := s.chain.SubmitAndVoteOnGovV1Proposal(ctx, propMsg, govv1.VoteOption_VOTE_OPTION_YES)
 	s.Require().NoError(err)
-	s.T().Logf("Proposal %d status after submission: %s", proposalID, propCheck.Proposal.Status)
-	s.T().Logf("Voting starts: %s, ends: %s", propCheck.Proposal.VotingStartTime, propCheck.Proposal.VotingEndTime)
-
-	// Vote YES with all validators by discovering local key names in each node
-	s.voteYesAllValidators(ctx, proposalID)
-
-	// Don't sleep here - the voting period is only 10s and we need votes to be
-	// included in blocks DURING the voting period. Instead, immediately start
-	// polling for the proposal status and let the voting period complete naturally.
-
-	// wait for the proposal to finish voting period and be executed
-	// poll frequently to allow votes to be counted during the voting period
-	var finalProp *govv1.QueryProposalResponse
-	err = wait.ForCondition(ctx, time.Minute*2, time.Second*1, func() (bool, error) {
-		prop, err := govQC.Proposal(ctx, &govv1.QueryProposalRequest{ProposalId: proposalID})
-		if err != nil {
-			return false, err
-		}
-
-		s.T().Logf("Proposal %d status: %s (checking...)", proposalID, prop.Proposal.Status)
-
-		// keep waiting while in deposit or voting period
-		if prop.Proposal.Status == govv1.ProposalStatus_PROPOSAL_STATUS_DEPOSIT_PERIOD ||
-			prop.Proposal.Status == govv1.ProposalStatus_PROPOSAL_STATUS_VOTING_PERIOD {
-			return false, nil
-		}
-
-		// proposal is in a final state (passed, rejected, or failed)
-		finalProp = prop
-		return true, nil
-	})
-	s.Require().NoError(err, "timeout waiting for proposal to reach final state")
-
-	// log proposal details for debugging
-	s.T().Logf("Proposal %d final status: %s", proposalID, finalProp.Proposal.Status)
-	s.T().Logf("Proposal details: final_tally_result=%+v, submit_time=%s, voting_end_time=%s",
-		finalProp.Proposal.FinalTallyResult, finalProp.Proposal.SubmitTime, finalProp.Proposal.VotingEndTime)
-
-	// query votes to debug
-	votesResp, err := govQC.Votes(ctx, &govv1.QueryVotesRequest{ProposalId: proposalID})
-	s.Require().NoError(err)
-	s.T().Logf("Total votes: %d", len(votesResp.Votes))
-	for i, vote := range votesResp.Votes {
-		s.T().Logf("Vote %d: voter=%s, options=%+v", i, vote.Voter, vote.Options)
-	}
-
-	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, finalProp.Proposal.Status, "proposal should have passed")
+	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, prop.Status, "proposal did not pass")
 }
 
 // setGovFastParams reduces gov timings/thresholds for test speed.
