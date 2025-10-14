@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package evabci.network.v1;
+
+option go_package = "github.com/evstack/ev-abci/modules/network/types";
+
+import "google/protobuf/any.proto";
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+
+// AttesterInfo stores information about an attester
+message AttesterInfo {
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+
+  // validator is the address of the attester
+  string validator = 1 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+  
+  // pubkey is the consensus public key of the attester
+  google.protobuf.Any pubkey = 2 [(cosmos_proto.accepts_interface) = "cosmos.crypto.PubKey"];
+  
+  // joined_height is the height at which the attester joined
+  int64 joined_height = 3;
+}

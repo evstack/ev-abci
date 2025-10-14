@@ -33,6 +33,7 @@ type Environment struct {
 	Logger       cmtlog.Logger
 	RPCConfig    cmtcfg.RPCConfig
 	EVNodeConfig config.Config
+	AttesterMode bool
 }
 
 func validateSkipCount(page, perPage int) int {

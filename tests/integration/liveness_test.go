@@ -53,6 +53,10 @@ func queryBankBalance(ctx context.Context, grpcAddress string, walletAddress str
 // TestLivenessWithCelestiaDA tests the liveness of rollkit with Celestia DA
 func (s *DockerIntegrationTestSuite) TestLivenessWithCelestiaDA() {
 	ctx := context.Background()
+	
+	s.evolveChain = s.CreateEvolveChain(ctx)
+	s.T().Log("Evolve chain started")
+
 	// Test block production - wait for rollkit chain to produce blocks
 	s.T().Log("Testing block production...")
 	s.Require().NoError(wait.ForBlocks(ctx, 5, s.evolveChain))

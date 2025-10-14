@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
+	cometcfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
 	cmprivval "github.com/cometbft/cometbft/privval"
@@ -30,8 +32,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
 	"github.com/moby/moby/client"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 )
 
 const (
@@ -51,12 +57,17 @@ type DockerIntegrationTestSuite struct {
 	daNetwork     *dataavailability.Network
 	evolveChain   *cosmos.Chain
 	bridgeNode    *dataavailability.Node
+	logger        *zap.Logger
 }
 
 // SetupTest initializes the Docker environment for each test
 // celestia is deployed, a single bridge node and the rollkit chain.
 func (s *DockerIntegrationTestSuite) SetupTest() {
 	ctx := context.Background()
+	s.logger = zaptest.NewLogger(s.T())
+	s.T().Cleanup(func() {
+		_ = s.logger.Sync()
+	})
 	s.dockerClient, s.networkID = docker.DockerSetup(s.T())
 
 	s.celestiaChain = s.CreateCelestiaChain(ctx)
@@ -64,14 +75,11 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 
 	s.bridgeNode = s.CreateDANetwork(ctx)
 	s.T().Log("Bridge node started")
-
-	s.evolveChain = s.CreateEvolveChain(ctx)
-	s.T().Log("Evolve chain started")
 }
 
 // CreateCelestiaChain sets up a Celestia app chain for DA and stores it in the suite
 func (s *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *cosmos.Chain {
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, transfer.AppModuleBasic{})
 	celestia, err := cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithDockerClient(s.dockerClient).
@@ -85,6 +93,42 @@ func (s *DockerIntegrationTestSuite) CreateCelestiaChain(ctx context.Context) *c
 			"--timeout-commit", "1s",
 			"--minimum-gas-prices", "0.000001utia",
 		).
+		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
+			// 1) Ensure ABCI responses and tx events are retained and indexed for Hermes
+			if err := config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
+				cfg.Storage.DiscardABCIResponses = false
+				// Enable key-value tx indexer so Hermes can query IBC packet events
+				cfg.TxIndex.Indexer = "kv"
+				// Increase RPC BroadcastTxCommit timeout to accommodate CI slowness
+				if cfg.RPC != nil {
+					cfg.RPC.TimeoutBroadcastTxCommit = 120000000000 // 120s in nanoseconds for toml marshal
+				}
+			}); err != nil {
+				return err
+			}
+			// 2) Ensure app-level index-events include IBC packet events
+			appToml, err := node.ReadFile(ctx, "config/app.toml")
+			if err != nil {
+				return err
+			}
+			var appCfg map[string]interface{}
+			if err := toml.Unmarshal(appToml, &appCfg); err != nil {
+				return err
+			}
+			appCfg["index-events"] = []string{
+				"message.action",
+				"send_packet",
+				"recv_packet",
+				"write_acknowledgement",
+				"acknowledge_packet",
+				"timeout_packet",
+			}
+			updated, err := toml.Marshal(appCfg)
+			if err != nil {
+				return err
+			}
+			return node.WriteFile(ctx, "config/app.toml", updated)
+		}).
 		WithNode(cosmos.NewChainNodeConfigBuilder().Build()).
 		Build(ctx)
 
@@ -263,7 +307,7 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, rpcAd
 }
 
 // addFollowerNode adds a follower node to the evolve chain.
-func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, daStartHeight, aggregatorPeer string) {
+func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, _, aggregatorPeer string) {
 	err := evolveChain.AddNode(ctx, cosmos.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--evnode.da.address", daAddress,
@@ -469,4 +513,35 @@ func (s *DockerIntegrationTestSuite) fundBridgeNodeWallet(ctx context.Context, b
 	daFundingAmount := sdk.NewCoins(sdk.NewCoin("utia", math.NewInt(10_000_000)))
 	err = s.sendFunds(ctx, s.celestiaChain, fundingWallet, bridgeWallet, daFundingAmount, 0)
 	s.Require().NoError(err)
+}
+
+// getDANetworkParams returns the DA network parameters useful for creating an evolve chain
+func (s *DockerIntegrationTestSuite) getDANetworkParams(ctx context.Context) (daAddress, authToken, daStartHeight string, err error) {
+	authToken, err = s.bridgeNode.GetAuthToken()
+	if err != nil {
+		return
+	}
+
+	bridgeNetworkInfo, err := s.bridgeNode.GetNetworkInfo(ctx)
+	if err != nil {
+		return
+	}
+	daAddress = fmt.Sprintf("http://%s", bridgeNetworkInfo.Internal.RPCAddress())
+
+	celestiaHeight, err := s.celestiaChain.Height(ctx)
+	if err != nil {
+		return
+	}
+	daStartHeight = fmt.Sprintf("%d", celestiaHeight)
+	return
+}
+
+var validContainerCharsRE = regexp.MustCompile(`[^a-zA-Z0-9_.-]`)
+
+// SanitizeContainerName returns name with any
+// invalid characters replaced with underscores.
+// Subtests will include slashes, and there may be other
+// invalid characters too.
+func SanitizeContainerName(name string) string {
+	return validContainerCharsRE.ReplaceAllLiteralString(name, "_")
 }

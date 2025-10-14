@@ -98,7 +98,7 @@ func NewABCIExecutor(
 	p2pClient *rollkitp2p.Client,
 	p2pMetrics *rollkitp2p.Metrics,
 	logger log.Logger,
-	cfg *cmtcfg.Config,
+	_ *cmtcfg.Config,
 	appGenesis *genutiltypes.AppGenesis,
 	opts ...Option,
 ) *Adapter {
@@ -301,7 +301,7 @@ func (a *Adapter) ExecuteTxs(
 	txs [][]byte,
 	blockHeight uint64,
 	timestamp time.Time,
-	prevStateRoot []byte,
+	_ []byte,
 ) ([]byte, uint64, error) {
 	execStart := time.Now()
 	defer func() {
@@ -479,22 +479,15 @@ func (a *Adapter) ExecuteTxs(
 		return nil, 0, fmt.Errorf("save block ID: %w", err)
 	}
 
-	if a.blockFilter.IsPublishable(ctx, int64(header.Height())) {
-		// save response before the events are fired (current behaviour in CometBFT)
-		if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
-			return nil, 0, fmt.Errorf("save block response: %w", err)
-		}
+	// TODO: are we sure we can really get a soft confirmation here? Other attesters have not yet received the block
+	//if a.blockFilter.IsPublishable(ctx, int64(header.Height())) {
+	// save response before the events are fired (current behaviour in CometBFT)
+	if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
+		return nil, 0, fmt.Errorf("save block response: %w", err)
+	}
 
-		if err := fireEvents(a.EventBus, abciBlock, currentBlockID, fbResp, validatorUpdates); err != nil {
-			return nil, 0, fmt.Errorf("fire events: %w", err)
-		}
-	} else {
-		a.stackBlockCommitEvents(currentBlockID, abciBlock, fbResp, validatorUpdates)
-		// clear events so that they are not stored with the block data at this stage.
-		fbResp.Events = nil
-		if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
-			return nil, 0, fmt.Errorf("save block response: %w", err)
-		}
+	if err := fireEvents(a.EventBus, abciBlock, currentBlockID, fbResp, validatorUpdates); err != nil {
+		return nil, 0, fmt.Errorf("fire events: %w", err)
 	}
 
 	a.Logger.Info("block executed successfully", "height", blockHeight, "appHash", fmt.Sprintf("%X", fbResp.AppHash))
@@ -576,6 +569,18 @@ func (a *Adapter) GetLastCommit(ctx context.Context, blockHeight uint64) (*cmtty
 			return nil, fmt.Errorf("get previous block ID: %w", err)
 		}
 
+		// Use the node's consensus validator address from AppGenesis instead of header.ProposerAddress.
+		// header.ProposerAddress comes from Rollkit and may not match the CometBFT validator set.
+		// Tests may skip wiring AppGenesis, so guard against nil before dereferencing.
+		var validatorAddress cmttypes.Address
+		if a.AppGenesis != nil && len(a.AppGenesis.Consensus.Validators) > 0 {
+			// Use the first validator's address (should be the node's consensus key)
+			validatorAddress = cmttypes.Address(a.AppGenesis.Consensus.Validators[0].Address)
+		} else {
+			// Fallback to header.ProposerAddress if no validators in genesis or AppGenesis is unset
+			validatorAddress = cmttypes.Address(header.ProposerAddress)
+		}
+
 		commitForPrevBlock := &cmttypes.Commit{
 			Height:  int64(header.Height()),
 			Round:   0,
@@ -583,7 +588,7 @@ func (a *Adapter) GetLastCommit(ctx context.Context, blockHeight uint64) (*cmtty
 			Signatures: []cmttypes.CommitSig{
 				{
 					BlockIDFlag:      cmttypes.BlockIDFlagCommit,
-					ValidatorAddress: cmttypes.Address(header.ProposerAddress),
+					ValidatorAddress: validatorAddress,
 					Timestamp:        header.Time(),
 					Signature:        header.Signature,
 				},
@@ -632,21 +637,6 @@ type StackedEvent struct {
 	validatorUpdates []*cmttypes.Validator
 }
 
-func (a *Adapter) stackBlockCommitEvents(
-	blockID *cmttypes.BlockID,
-	block *cmttypes.Block,
-	abciResponse *abci.ResponseFinalizeBlock,
-	validatorUpdates []*cmttypes.Validator,
-) {
-	// todo (Alex): we need this persisted to recover from restart
-	a.stackedEvents = append(a.stackedEvents, StackedEvent{
-		blockID:          blockID,
-		block:            block,
-		abciResponse:     abciResponse,
-		validatorUpdates: validatorUpdates,
-	})
-}
-
 // GetTxs calls PrepareProposal with the next height from the store and returns the transactions from the ABCI app
 func (a *Adapter) GetTxs(ctx context.Context) ([][]byte, error) {
 	getTxsStart := time.Now()
@@ -693,6 +683,7 @@ func (a *Adapter) GetTxs(ctx context.Context) ([][]byte, error) {
 }
 
 // SetFinal handles extra logic once the block has been finalized (posted to DA).
+
 // It publishes all queued events up to this height in the correct sequence, ensuring
 // that events are only emitted after consensus is achieved.
 func (a *Adapter) SetFinal(ctx context.Context, blockHeight uint64) error {

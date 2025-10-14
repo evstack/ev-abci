@@ -7,6 +7,7 @@ option go_package = "github.com/evstack/ev-abci/modules/network/types";
 import "cosmos/msg/v1/msg.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
 import "evabci/network/v1/types.proto";
 
 // Msg defines the network module's gRPC message service.
@@ -28,18 +29,21 @@ service Msg {
 
 // MsgAttest submits a signed vote for a checkpoint
 message MsgAttest {
-  option (cosmos.msg.v1.signer) = "validator";
+  option (cosmos.msg.v1.signer) = "authority";
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  // validator is the address of the validator submitting the attestation
-  string validator = 1 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+  // authority is the address of the account submitting and paying for the attestation
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+
+  // consensus_address is the consensus address of the validator attesting
+  string consensus_address = 2 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
 
   // height is the checkpoint height being attested
-  int64 height = 2;
+  int64 height = 3;
 
   // vote is the base64-encoded canonical Comet vote
-  bytes vote = 3;
+  bytes vote = 4;
 }
 
 // MsgAttestResponse is the response type for the Attest RPC
@@ -47,12 +51,18 @@ message MsgAttestResponse {}
 
 // MsgJoinAttesterSet opts a validator into the attester set
 message MsgJoinAttesterSet {
-  option (cosmos.msg.v1.signer) = "validator";
+  option (cosmos.msg.v1.signer) = "authority";
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  // validator is the address of the validator joining
-  string validator = 1 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+  // authority is the address of the account submitting and paying for the transaction
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  
+  // consensus_address is the consensus address of the validator joining the attester set
+  string consensus_address = 2 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+  
+  // pubkey is the consensus public key of the validator
+  google.protobuf.Any pubkey = 3 [(cosmos_proto.accepts_interface) = "cosmos.crypto.PubKey"];
 }
 
 // MsgJoinAttesterSetResponse is the response type for the JoinAttesterSet RPC
@@ -60,12 +70,15 @@ message MsgJoinAttesterSetResponse {}
 
 // MsgLeaveAttesterSet opts a validator out of the attester set
 message MsgLeaveAttesterSet {
-  option (cosmos.msg.v1.signer) = "validator";
+  option (cosmos.msg.v1.signer) = "authority";
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  // validator is the address of the validator leaving
-  string validator = 1 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+  // authority is the address of the account submitting and paying for the transaction
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  
+  // consensus_address is the consensus address of the validator leaving the attester set
+  string consensus_address = 2 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
 }
 
 // MsgLeaveAttesterSetResponse is the response type for the LeaveAttesterSet RPC
