@@ -1,0 +1,84 @@
+##########
+# Builder #
+##########
+FROM golang:1.24-bookworm AS builder
+
+ARG IGNITE_VERSION=latest
+ARG IGNITE_EVOLVE_APP_VERSION=main
+ARG EVNODE_VERSION=v1.0.0-beta.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl bash ca-certificates make gcc musl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Ignite CLI at requested version
+RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
+
+WORKDIR /workspace
+
+# Copy ev-abci repo (root)
+COPY . /workspace/ev-abci
+
+# Scaffold GM app and apply evolve plugin
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix celestia
+WORKDIR /workspace/gm
+RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
+RUN ignite evolve add
+
+# Inject App wiring for ev-abci network module before building
+COPY tests/integration/docker/patches/app-wiring/patch-app-wiring.sh /workspace/patch-app-wiring.sh
+RUN chmod +x /workspace/patch-app-wiring.sh && \
+    echo "===== Running network module patch =====" && \
+    bash /workspace/patch-app-wiring.sh
+
+
+# Align module versions like in CI
+RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} \
+    && go mod edit -replace github.com/evstack/ev-abci=../ev-abci \
+    && go mod tidy
+
+# Build gmd binary
+ENV GOBIN=/workspace/bin
+RUN ignite chain build --skip-proto && \
+    test -x "${GOBIN}/gmd"
+
+############
+# Runtime  #
+############
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies (include Go for Ignite operations)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl jq bash sudo netcat-openbsd golang git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create gm user and grant passwordless sudo
+RUN useradd -m -s /bin/bash gm && echo "gm ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Copy prebuilt gmd binary
+COPY --from=builder /workspace/bin/gmd /usr/local/bin/gmd
+RUN chmod +x /usr/local/bin/gmd
+
+# COPY --from=builder --chown=gm:gm /workspace/gm /home/gm/gm
+
+# Switch to gm user
+USER gm
+WORKDIR /home/gm
+
+# Set up environment
+ENV GM_HOME=/home/gm/.gm
+ENV CHAIN_ID=gm
+ENV MONIKER=gm-local
+ENV ATTESTER_MODE=false
+
+# Expose ports
+EXPOSE 26757 26756 9190 1417
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:26757/status || exit 1
+
+# Default command
+CMD ["/usr/local/bin/gmd", "start"]

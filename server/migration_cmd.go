@@ -146,6 +146,11 @@ After migration, start the node normally - it will automatically detect and use 
 			// the migration is done in reverse order, starting from the last block
 			missedBlocks := make(map[int64]bool)
 
+			batch, err := rollkitStores.rollkitStore.NewBatch(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create batch: %w", err)
+			}
+
 			for height := lastBlockHeight; height > 0; height-- {
 				cmd.Printf("Migrating block %d...\n", height)
 
@@ -163,7 +168,7 @@ After migration, start the node normally - it will automatically detect and use 
 
 				header, data, signature := cometBlockToRollkit(block)
 
-				if err = rollkitStores.rollkitStore.SaveBlockData(ctx, header, data, &signature); err != nil {
+				if err = batch.SaveBlockData(header, data, &signature); err != nil {
 					return fmt.Errorf("failed to save block data: %w", err)
 				}
 
@@ -191,13 +196,17 @@ After migration, start the node normally - it will automatically detect and use 
 			}
 
 			// set the last height in the Rollkit store
-			if err = rollkitStores.rollkitStore.SetHeight(ctx, uint64(lastBlockHeight)); err != nil {
+			if err = batch.SetHeight(uint64(lastBlockHeight)); err != nil {
 				return fmt.Errorf("failed to set last height in Evolve store: %w", err)
 			}
 
 			// persist the rollkit state at the after SetHeight is called.
-			if err = rollkitStores.rollkitStore.UpdateState(ctx, rollkitState); err != nil {
+			if err = batch.UpdateState(rollkitState); err != nil {
 				return fmt.Errorf("failed to update evolve state at height %d: %w", lastBlockHeight, err)
+			}
+
+			if err = batch.Commit(); err != nil {
+				return fmt.Errorf("failed to commit batch: %w", err)
 			}
 
 			cmd.Println("Seeding sync stores head with latest migrated header/data ...")

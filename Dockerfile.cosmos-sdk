@@ -3,23 +3,19 @@ ARG ENABLE_IBC=true
 
 # Install dependencies needed for ignite and building
 RUN apk add --no-cache \
-libc6-compat \
-curl \
-bash \
-git
+    libc6-compat \
+    curl \
+    bash \
+    git
 
 # Set environment variables
 ENV IGNITE_VERSION=v29.4.0
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
-# Install evolve app templates globally so ignite evolve subcommands are available
-#RUN ignite app install -g github.com/ignite/apps/evolve@main
-
 WORKDIR /workspace
 
 # Scaffold a plain Cosmos SDK chain
-
 RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 
 WORKDIR /workspace/gm
@@ -49,7 +45,7 @@ RUN apk add --no-cache ca-certificates
 
 # create non-root user
 RUN addgroup -g 10001 -S gm && \
-adduser -u 10001 -S gm -G gm
+    adduser -u 10001 -S gm -G gm
 
 WORKDIR /home/gm
 

@@ -190,3 +190,70 @@ func (q *queryServer) SoftConfirmationStatus(c context.Context, req *types.Query
 		QuorumFraction:  q.keeper.GetParams(ctx).QuorumFraction,
 	}, nil
 }
+
+// AttesterSignatures queries all attester signatures for a specific height
+func (q *queryServer) AttesterSignatures(c context.Context, req *types.QueryAttesterSignaturesRequest) (*types.QueryAttesterSignaturesResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
+	ctx := sdk.UnwrapSDKContext(c)
+
+	// Get all signatures for the specified height
+	signatures, err := q.keeper.GetAllSignaturesForHeight(ctx, req.Height)
+	if err != nil {
+		return nil, fmt.Errorf("get signatures for height %d: %w", req.Height, err)
+	}
+
+	// Convert to response format
+	var attesterSigs []*types.AttesterSignature
+	for validatorAddr, signature := range signatures {
+		attesterSigs = append(attesterSigs, &types.AttesterSignature{
+			ValidatorAddress: validatorAddr,
+			Signature:        signature,
+		})
+	}
+
+	return &types.QueryAttesterSignaturesResponse{
+		Signatures: attesterSigs,
+	}, nil
+}
+
+// LastAttestedHeight queries the last height that reached quorum
+func (q *queryServer) LastAttestedHeight(c context.Context, req *types.QueryLastAttestedHeightRequest) (*types.QueryLastAttestedHeightResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
+	ctx := sdk.UnwrapSDKContext(c)
+
+	height, err := q.keeper.GetLastAttestedHeight(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get last attested height: %w", err)
+	}
+
+	return &types.QueryLastAttestedHeightResponse{
+		Height: height,
+	}, nil
+}
+
+// AttesterInfo queries the attester information including public key
+func (q *queryServer) AttesterInfo(c context.Context, req *types.QueryAttesterInfoRequest) (*types.QueryAttesterInfoResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
+	ctx := sdk.UnwrapSDKContext(c)
+
+	attesterInfo, err := q.keeper.GetAttesterInfo(ctx, req.ValidatorAddress)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return nil, status.Error(codes.NotFound, "attester info not found")
+		}
+		return nil, fmt.Errorf("get attester info: %w", err)
+	}
+
+	return &types.QueryAttesterInfoResponse{
+		AttesterInfo: attesterInfo,
+	}, nil
+}

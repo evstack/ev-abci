@@ -3,6 +3,9 @@ package types
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
 )
@@ -24,15 +27,33 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgUpdateParams{},
 	)
 
+	// Register cryptographic public key types
+	registry.RegisterInterface(
+		"cosmos.crypto.PubKey",
+		(*cryptotypes.PubKey)(nil),
+		&ed25519.PubKey{},
+		&secp256k1.PubKey{},
+	)
+
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }
 
 var (
-	Amino     = codec.NewLegacyAmino()
-	ModuleCdc = codec.NewProtoCodec(cdctypes.NewInterfaceRegistry())
+	Amino = codec.NewLegacyAmino()
+	// Create a separate interface registry for this module to avoid conflicts
+	moduleInterfaceRegistry = cdctypes.NewInterfaceRegistry()
+	ModuleCdc               = codec.NewProtoCodec(moduleInterfaceRegistry)
 )
 
 func init() {
 	RegisterCodec(Amino)
+	// Only register crypto types in the module codec, not the messages
+	// Messages will be registered when the module is registered with the app
+	moduleInterfaceRegistry.RegisterInterface(
+		"cosmos.crypto.PubKey",
+		(*cryptotypes.PubKey)(nil),
+		&ed25519.PubKey{},
+		&secp256k1.PubKey{},
+	)
 	Amino.Seal()
 }

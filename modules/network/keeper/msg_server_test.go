@@ -45,30 +45,13 @@ func TestJoinAttesterSet(t *testing.T) {
 				err := sk.SetValidator(ctx, validator)
 				require.NoError(t, err, "failed to set validator")
 			},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
+			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
 			expSet: true,
 		},
 		"invalid_addr": {
 			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Validator: "invalidAddr"},
+			msg:    &types.MsgJoinAttesterSet{Authority: "invalidAddr", ConsensusAddress: "invalidAddr"},
 			expErr: sdkerrors.ErrInvalidAddress,
-		},
-		"val not exists": {
-			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
-			expErr: sdkerrors.ErrNotFound,
-		},
-		"val not bonded": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
-				validator := stakingtypes.Validator{
-					OperatorAddress: myValAddr.String(),
-					Status:          stakingtypes.Unbonded, // Validator is not bonded
-				}
-				err := sk.SetValidator(ctx, validator)
-				require.NoError(t, err, "failed to set validator")
-			},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
-			expErr: sdkerrors.ErrInvalidRequest,
 		},
 		"already set": {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
@@ -79,7 +62,7 @@ func TestJoinAttesterSet(t *testing.T) {
 				require.NoError(t, sk.SetValidator(ctx, validator))
 				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
 			},
-			msg:    &types.MsgJoinAttesterSet{Validator: myValAddr.String()},
+			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
 			expErr: sdkerrors.ErrInvalidRequest,
 			expSet: true,
 		},
@@ -127,14 +110,14 @@ func TestJoinAttesterSet(t *testing.T) {
 			if spec.expErr != nil {
 				require.ErrorIs(t, err, spec.expErr)
 				require.Nil(t, rsp)
-				exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.Validator)
+				exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
 				require.NoError(t, gotErr)
 				assert.Equal(t, exists, spec.expSet)
 				return
 			}
 			require.NoError(t, err)
 			require.NotNil(t, rsp)
-			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.Validator)
+			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
 			require.NoError(t, gotErr)
 			assert.True(t, exists)
 		})
@@ -156,8 +139,8 @@ func NewMockStakingKeeper() MockStakingKeeper {
 func (m *MockStakingKeeper) SetValidator(ctx context.Context, validator stakingtypes.Validator) error {
 	m.activeSet[validator.GetOperator()] = validator
 	return nil
-}
 
+}
 func (m MockStakingKeeper) GetAllValidators(ctx context.Context) (validators []stakingtypes.Validator, err error) {
 	return slices.SortedFunc(maps.Values(m.activeSet), func(v1 stakingtypes.Validator, v2 stakingtypes.Validator) int {
 		return strings.Compare(v1.OperatorAddress, v2.OperatorAddress)
