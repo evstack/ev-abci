@@ -85,9 +85,6 @@ func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 			if err != nil {
 				return nil, err
 			}
-		} else {
-			// subsequent blocks during migration: return empty updates
-			updates = []abci.ValidatorUpdate{}
 		}
 	} else {
 		updates, err = k.migrateOver(sdkCtx, migration, validatorSet)

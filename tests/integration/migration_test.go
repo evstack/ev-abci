@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -14,10 +13,8 @@ import (
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
-	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
-	cometcfg "github.com/cometbft/cometbft/config"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -174,7 +171,6 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	s.Require().NoError(err)
 	// Schedule migration sufficiently in the future to allow proposal
 	// submission, deposits, and validator votes to complete.
-	// With 10s voting period + time for votes, we need at least 15-20 blocks
 	migrateAt := uint64(curHeight + 30)
 	s.migrationHeight = migrateAt
 	s.T().Logf("Current height: %d, Migration scheduled for height: %d", curHeight, migrateAt)
@@ -182,16 +178,43 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	faucet := s.chain.GetFaucetWallet()
 	proposer := faucet.GetFormattedAddress()
 
+	msg := &migrationmngrtypes.MsgMigrateToEvolve{
+		Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		BlockHeight: migrateAt,
+		Sequencer: migrationmngrtypes.Sequencer{
+			Name:            "sequencer-node-1",
+			ConsensusPubkey: s.getSequencerPubKey(ctx, conn),
+		},
+	}
+
+	propMsg, err := govv1.NewMsgSubmitProposal(
+		[]sdk.Msg{msg},
+		sdk.NewCoins(sdk.NewInt64Coin("stake", 10_000_000_000)), // deposit
+		proposer,
+		"",                          // metadata
+		"Migrate to Evolve",         // title
+		"Set sequencer and migrate", // summary
+		false,                       // expedited
+	)
+	s.Require().NoError(err)
+
+	prop, err := s.chain.SubmitAndVoteOnGovV1Proposal(ctx, propMsg, govv1.VoteOption_VOTE_OPTION_YES)
+	s.Require().NoError(err)
+	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, prop.Status, "proposal did not pass")
+}
+
+// getSequencerPubKey fetches the intended sequencer's consensus pubkey Any from the chain.
+func (s *MigrationTestSuite) getSequencerPubKey(ctx context.Context, conn *grpc.ClientConn) *codectypes.Any {
 	// Determine the intended sequencer to align with the node that will run
 	// in aggregator mode (validator index 0 when we restart as evolve).
 	// We fetch the operator (valoper) address from the first validator node's keyring,
 	// then find the matching validator on-chain to get its consensus pubkey Any.
+
 	stakeQC := stakingtypes.NewQueryClient(conn)
 	valsResp, err := stakeQC.Validators(ctx, &stakingtypes.QueryValidatorsRequest{})
 	s.Require().NoError(err)
 	s.Require().GreaterOrEqual(len(valsResp.Validators), 1, "need at least one validator")
 
-	// Query valoper address from the first validator node
 	val0 := s.chain.GetNode()
 	stdout, stderr, err := val0.Exec(ctx, []string{
 		"gmd", "keys", "show", "--address", "validator",
@@ -211,116 +234,7 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 		}
 	}
 	s.Require().NotNil(seqPubkeyAny, "could not find validator matching val-0 operator address %s", val0Oper)
-
-	msg := &migrationmngrtypes.MsgMigrateToEvolve{
-		Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-		BlockHeight: migrateAt,
-		Sequencer: migrationmngrtypes.Sequencer{
-			Name:            "sequencer-node-1",
-			ConsensusPubkey: seqPubkeyAny,
-		},
-		Attesters: nil,
-	}
-
-	s.T().Logf("Migration message: Authority=%s, BlockHeight=%d, Sequencer.Name=%s",
-		msg.Authority, msg.BlockHeight, msg.Sequencer.Name)
-
-	// Use a much larger deposit to ensure proposal enters voting period immediately
-	deposit := sdk.NewCoins(sdk.NewInt64Coin("stake", 10_000_000_000))
-	s.T().Logf("Proposal deposit: %s", deposit.String())
-
-	propMsg, err := govv1.NewMsgSubmitProposal(
-		[]sdk.Msg{msg},
-		deposit,
-		proposer,
-		"",                          // metadata
-		"Migrate to Evolve",         // title
-		"Set sequencer and migrate", // summary
-		false,                       // expedited
-	)
-	s.Require().NoError(err)
-
-	prop, err := s.chain.SubmitAndVoteOnGovV1Proposal(ctx, propMsg, govv1.VoteOption_VOTE_OPTION_YES)
-	s.Require().NoError(err)
-	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, prop.Status, "proposal did not pass")
-}
-
-// setGovFastParams reduces gov timings/thresholds for test speed.
-func setGovFastParams(ctx context.Context, node *cosmos.ChainNode) error {
-	return config.Modify(ctx, node, "config/genesis.json", func(genDoc *map[string]interface{}) {
-		appState, ok := (*genDoc)["app_state"].(map[string]interface{})
-		if !ok {
-			return
-		}
-		govState, ok := appState["gov"].(map[string]interface{})
-		if !ok {
-			return
-		}
-		if params, ok := govState["params"].(map[string]interface{}); ok {
-			params["voting_period"] = "60s" // increased from 10s to give more time for votes
-			params["max_deposit_period"] = "10s"
-			params["min_deposit"] = []map[string]interface{}{{"denom": "stake", "amount": "1"}}
-			params["quorum"] = "0.000000000000000000"
-			params["threshold"] = "0.200000000000000000"
-			params["veto_threshold"] = "0.334000000000000000"
-			return
-		}
-		if dp, ok := govState["deposit_params"].(map[string]interface{}); ok {
-			dp["min_deposit"] = []map[string]interface{}{{"denom": "stake", "amount": "1"}}
-			dp["max_deposit_period"] = "10s"
-		}
-		if vp, ok := govState["voting_params"].(map[string]interface{}); ok {
-			vp["voting_period"] = "60s" // increased from 10s
-		}
-		if tp, ok := govState["tally_params"].(map[string]interface{}); ok {
-			tp["quorum"] = "0.000000000000000000"
-			tp["threshold"] = "0.200000000000000000"
-			tp["veto_threshold"] = "0.334000000000000000"
-		}
-	})
-}
-
-// voteYesAllValidators iterates nodes, finds a local key name, and votes YES from each node.
-func (s *MigrationTestSuite) voteYesAllValidators(ctx context.Context, proposalID uint64) {
-	for i, n := range s.chain.GetNodes() {
-		node := n.(*cosmos.ChainNode)
-
-		// Get the node's internal RPC address and use it explicitly
-		netInfo, err := node.GetNetworkInfo(ctx)
-		s.Require().NoError(err)
-		rpcAddr := fmt.Sprintf("tcp://%s", netInfo.Internal.RPCAddress())
-
-		// Vote from the validator key explicitly
-		from := "validator"
-
-		stdout, stderr, err := node.Exec(ctx, []string{
-			"gmd", "tx", "gov", "vote", strconv.FormatUint(proposalID, 10), "yes",
-			"--from", from,
-			"--home", node.HomeDir(),
-			"--chain-id", s.chain.GetChainID(),
-			"--keyring-backend", "test",
-			"--node", rpcAddr,
-			"--yes",
-			"--broadcast-mode", "sync", // wait for tx to be included in a block
-			"--output", "json",
-		}, nil)
-		s.T().Logf("Vote from validator %d:", i)
-		s.T().Logf("  stdout=%s", stdout)
-		s.T().Logf("  stderr=%s", stderr)
-
-		s.Require().NoError(err, "vote tx failed from %s: %s", from, stderr)
-		// Check if the vote transaction succeeded (code 0)
-		if !bytes.Contains([]byte(stdout), []byte(`"code":0`)) {
-			s.T().Fatalf("Vote tx did not succeed: %s", stdout)
-		}
-
-		// Give a moment for the vote to be included in a block
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	// Give extra time for all votes to be included
-	s.T().Log("Waiting for votes to be included in blocks...")
-	time.Sleep(2 * time.Second)
+	return seqPubkeyAny
 }
 
 // waitForMigrationHalt waits until the chain reaches at least the migration
@@ -528,13 +442,6 @@ func (s *MigrationTestSuite) getCosmosChainBuilder(numNodes int) *cosmos.ChainBu
 		WithBech32Prefix("gm").
 		WithBinaryName("gmd").
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
-		WithPostInit(
-			setGovFastParams,
-			func(ctx context.Context, node *cosmos.ChainNode) error {
-				return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
-					cfg.TxIndex.Indexer = "kv"
-				})
-			}).
 		WithNodes(nodes...)
 }
 

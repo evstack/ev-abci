@@ -69,11 +69,11 @@ func migrateToSequencer(
 	}
 
 	for _, val := range lastValidatorSet {
-
+		powerUpdate := val.ABCIValidatorUpdateZero()
 		if val.ConsensusPubkey.Equal(seq.ConsensusPubkey) {
 			continue
 		}
-		initialValUpdates = append(initialValUpdates, val.ABCIValidatorUpdateZero())
+		initialValUpdates = append(initialValUpdates, powerUpdate)
 	}
 
 	return append(initialValUpdates, sequencerUpdate), nil
@@ -101,8 +101,8 @@ func migrateToAttesters(
 	}
 
 	// Add attesters with power 1
-	for i := range migrationData.Attesters {
-		pk, err := migrationData.Attesters[i].TmConsPublicKey()
+	for _, attester := range migrationData.Attesters {
+		pk, err := attester.TmConsPublicKey()
 		if err != nil {
 			return nil, err
 		}
@@ -124,16 +124,6 @@ func (k Keeper) migrateOver(
 	migrationData types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-	// ensure pubkey Any fields are unpacked before use during progressive migrations
-	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
-		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer interfaces: %v", err)
-	}
-
-	for i := range migrationData.Attesters {
-		if err := migrationData.Attesters[i].UnpackInterfaces(k.cdc); err != nil {
-			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack attester interfaces: %v", err)
-		}
-	}
 	step, err := k.MigrationStep.Get(ctx)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to get migration step: %v", err)
@@ -197,8 +187,8 @@ func (k Keeper) migrateOver(
 		}
 		startAdd := int(step) * addPerStep
 		endAdd := min(startAdd+addPerStep, len(newAttestersToAdd))
-		for i := startAdd; i < endAdd; i++ {
-			pk, err := newAttestersToAdd[i].TmConsPublicKey()
+		for _, attester := range newAttestersToAdd[startAdd:endAdd] {
+			pk, err := attester.TmConsPublicKey()
 			if err != nil {
 				return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to get attester pubkey: %v", err)
 			}
