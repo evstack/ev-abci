@@ -112,6 +112,11 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 // TestCosmosToEvolveMigration_MultiValidator_OnChainRequired verifies that when multiple
 // validators exist, evolve-migrate requires the on-chain sequencer in migrationmngr state.
 // This test asserts the command fails with a clear error until the sequencer is set on-chain.
+//
+// Running locally pre-requisites.
+// from root of repo, build images with ibc disabled.
+// - docker build . -f Dockerfile -t evolve-gm:latest --build-arg ENABLE_IBC=false
+// - docker build . -f Dockerfile.cosmos-sdk -t cosmos-gm:test --build-arg ENABLE_IBC=false
 func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSuccess() {
 	ctx := context.Background()
 	t := s.T()

@@ -2,10 +2,8 @@ package keeper
 
 import (
 	"context"
-	"errors"
-	"fmt"
-
 	"cosmossdk.io/collections"
+	"errors"
 	abci "github.com/cometbft/cometbft/abci/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -23,16 +21,11 @@ func (k Keeper) migrateNow(
 	migrationData types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-	k.Logger(ctx).Info("migrateNow called", "num_validators", len(lastValidatorSet))
-
 	// ensure sequencer pubkey Any is unpacked and cached for TmConsPublicKey() to work correctly
 	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
 	}
 
-	k.Logger(ctx).Info("sequencer unpacked",
-		"sequencer_pubkey", migrationData.Sequencer.ConsensusPubkey.String(),
-		"cached_value", migrationData.Sequencer.ConsensusPubkey.GetCachedValue())
 	switch len(migrationData.Attesters) {
 	case 0:
 		// no attesters, we are migrating to a single sequencer
@@ -51,22 +44,9 @@ func (k Keeper) migrateNow(
 	// set new sequencer in the store
 	// it will be used by the evolve migration command when using attesters
 	seq := migrationData.Sequencer
-	k.Logger(ctx).Info("Storing sequencer in k.Sequencer",
-		"name", seq.Name,
-		"consensus_pubkey", seq.ConsensusPubkey,
-		"consensus_pubkey_nil", seq.ConsensusPubkey == nil,
-	)
-	if seq.ConsensusPubkey != nil {
-		k.Logger(ctx).Info("Sequencer ConsensusPubkey details",
-			"type_url", seq.ConsensusPubkey.TypeUrl,
-			"value_len", len(seq.ConsensusPubkey.Value),
-			"cached_value", seq.ConsensusPubkey.GetCachedValue(),
-		)
-	}
 	if err := k.Sequencer.Set(ctx, seq); err != nil {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to set sequencer: %v", err)
 	}
-	k.Logger(ctx).Info("Successfully stored sequencer in k.Sequencer")
 
 	return initialValUpdates, nil
 }
@@ -88,36 +68,12 @@ func migrateToSequencer(
 		Power:  1,
 	}
 
-	fmt.Printf("DEBUG: Sequencer update pubkey: %v\n", pk)
-	fmt.Printf("DEBUG: Sequencer update pubkey String(): %s\n", pk.String())
+	for _, val := range lastValidatorSet {
 
-	for i, val := range lastValidatorSet {
-		// skip the sequencer - we'll add it at the end with power 1
-		isEqual := val.ConsensusPubkey.Equal(seq.ConsensusPubkey)
-
-		valPkStr := val.ConsensusPubkey.String()
-		seqPkStr := seq.ConsensusPubkey.String()
-		valCached := val.ConsensusPubkey.GetCachedValue()
-		seqCached := seq.ConsensusPubkey.GetCachedValue()
-
-		// Log all validators for debugging
-		fmt.Printf("DEBUG: Comparing validator[%d]:\n", i)
-		fmt.Printf("  val.ConsensusPubkey.String(): %s\n", valPkStr)
-		fmt.Printf("  seq.ConsensusPubkey.String(): %s\n", seqPkStr)
-		fmt.Printf("  val cached value: %v (type: %T)\n", valCached, valCached)
-		fmt.Printf("  seq cached value: %v (type: %T)\n", seqCached, seqCached)
-		fmt.Printf("  Equal result: %v\n", isEqual)
-		fmt.Printf("  Action: %s\n", map[bool]string{true: "SKIP (is sequencer)", false: "REMOVE"}[isEqual])
-
-		if isEqual {
+		if val.ConsensusPubkey.Equal(seq.ConsensusPubkey) {
 			continue
 		}
-		// use ABCIValidatorUpdateZero() to get the proper CometBFT representation
-		// this ensures the pubkey bytes match what CometBFT expects
-		powerUpdate := val.ABCIValidatorUpdateZero()
-		fmt.Printf("  Removal update pubkey: %v\n", powerUpdate.PubKey)
-		fmt.Printf("  Removal update pubkey String(): %s\n", powerUpdate.PubKey.String())
-		initialValUpdates = append(initialValUpdates, powerUpdate)
+		initialValUpdates = append(initialValUpdates, val.ABCIValidatorUpdateZero())
 	}
 
 	return append(initialValUpdates, sequencerUpdate), nil
@@ -168,10 +124,11 @@ func (k Keeper) migrateOver(
 	migrationData types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-	// Ensure pubkey Any fields are unpacked before use during progressive migrations
+	// ensure pubkey Any fields are unpacked before use during progressive migrations
 	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer interfaces: %v", err)
 	}
+
 	for i := range migrationData.Attesters {
 		if err := migrationData.Attesters[i].UnpackInterfaces(k.cdc); err != nil {
 			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack attester interfaces: %v", err)

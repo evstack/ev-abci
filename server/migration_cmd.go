@@ -476,27 +476,7 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	fullKey := append([]byte(modulePrefix), collectionsItemPrefix)
 	fullKey = append(fullKey, migrationmngrtypes.SequencerKey...)
 
-	fmt.Printf("DEBUG: Looking for sequencer at key: %q (hex: %x)\n", string(fullKey), fullKey)
-
-	// List all keys with the migrationmngr prefix to see what's actually there
-	fmt.Printf("DEBUG: Listing all keys with prefix %q\n", modulePrefix)
-	iter, err := appDB.Iterator([]byte(modulePrefix), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create iterator: %w", err)
-	}
-	keyCount := 0
-	for ; iter.Valid() && keyCount < 10; iter.Next() {
-		key := iter.Key()
-		if !bytes.HasPrefix(key, []byte(modulePrefix)) {
-			break
-		}
-		keyCount++
-		fmt.Printf("  Key[%d]: %q (hex: %x), value length: %d\n", keyCount, string(key), key, len(iter.Value()))
-	}
-	iter.Close()
-	fmt.Printf("DEBUG: Found %d keys with migrationmngr prefix\n", keyCount)
-
-	// Read directly from the database
+	// read directly from the database
 	sequencerBytes, err := appDB.Get(fullKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read sequencer from database: %w", err)
@@ -504,9 +484,6 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	if len(sequencerBytes) == 0 {
 		return nil, fmt.Errorf("sequencer not found in migrationmngr state at key %q", string(fullKey))
 	}
-
-	fmt.Printf("DEBUG: Found sequencer data, length: %d bytes\n", len(sequencerBytes))
-	fmt.Printf("DEBUG: First 50 bytes (hex): %x\n", sequencerBytes[:min(50, len(sequencerBytes))])
 
 	// The collections library wraps values in a protobuf container with a field tag and length.
 	// First byte: field tag (e.g., 0x6a = field 13, wire type 2)
@@ -523,9 +500,6 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 		return nil, fmt.Errorf("failed to unmarshal sequencer: %w", err)
 	}
 
-	fmt.Printf("DEBUG: Sequencer unmarshaled: name='%s'\n", sequencer.Name)
-	fmt.Printf("DEBUG: Sequencer.ConsensusPubkey nil? %v\n", sequencer.ConsensusPubkey == nil)
-
 	if err := sequencer.UnpackInterfaces(encCfg.InterfaceRegistry); err != nil {
 		return nil, fmt.Errorf("failed to unpack sequencer interfaces: %w", err)
 	}
@@ -535,9 +509,6 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	if pubKeyAny == nil {
 		return nil, fmt.Errorf("sequencer consensus public key is nil")
 	}
-
-	fmt.Printf("DEBUG: After UnpackInterfaces - TypeUrl: %s\n", pubKeyAny.TypeUrl)
-	fmt.Printf("DEBUG: After UnpackInterfaces - CachedValue type: %T\n", pubKeyAny.GetCachedValue())
 
 	// Convert from Cosmos SDK crypto type to CometBFT crypto type
 	// The cached value is a Cosmos SDK cryptotypes.PubKey, we need CometBFT crypto.PubKey
