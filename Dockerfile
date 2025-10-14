@@ -28,6 +28,11 @@ RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy
 
+# TODO: replace this with proper ignite flag to skip IBC registration when available
+# Patch out IBC registration (comment out the call and its error handling)
+RUN awk 'BEGIN{c=0} /registerIBCModules\(appOpts\)/ {print "// "$0; c=2; next} {if (c>0) {print "// "$0; c--; next} } {print $0}' \
+  app/app.go > app/app.go.tmp && mv app/app.go.tmp app/app.go
+
 RUN ignite chain build --skip-proto
 
 # create lightweight runtime image

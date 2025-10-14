@@ -19,7 +19,7 @@ WORKDIR /workspace
 
 # Scaffold a plain Cosmos SDK chain
 
-RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm # --minimal
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 
 WORKDIR /workspace/gm
 
@@ -28,11 +28,10 @@ RUN ignite app install -g github.com/chatton/apps/evolve@main
 # Add only the evolve migrate command (do not scaffold full evolve integration)
 RUN ignite evolve add --start=false --migrate
 
-RUN ls -la
-RUN ls -la app
+# TODO: replace this with proper ignite flag to skip IBC registration when available
 # Patch out IBC registration (comment out the call and its error handling)
-#RUN #sed -i '/registerIBCModules(appOpts)/,+2 s/^/// /' app/app.go
-RUN sed -i '/registerIBCModules(appOpts)/,/^[[:space:]]*}/ s/^/// /' app/app.go
+RUN awk 'BEGIN{c=0} /registerIBCModules\(appOpts\)/ {print "// "$0; c=2; next} {if (c>0) {print "// "$0; c--; next} } {print $0}' \
+  app/app.go > app/app.go.tmp && mv app/app.go.tmp app/app.go
 
 # Build the Cosmos SDK binary
 RUN ignite chain build --skip-proto
