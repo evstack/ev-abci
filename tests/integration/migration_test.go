@@ -1,26 +1,36 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"cosmossdk.io/math"
 	"github.com/celestiaorg/tastora/framework/docker"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
-	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
-	cometcfg "github.com/cometbft/cometbft/config"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	govmodule "github.com/cosmos/cosmos-sdk/x/gov"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	migrationmngr "github.com/evstack/ev-abci/modules/migrationmngr"
+	migrationmngrtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // MigrationTestSuite tests the migration from cosmos-sdk to evolve
@@ -34,6 +44,8 @@ type MigrationTestSuite struct {
 	preMigrationTxHashes []string
 	preMigrationBalances map[string]sdk.Coin
 	testWallets          []*types.Wallet
+
+	migrationHeight uint64
 }
 
 func TestMigrationSuite(t *testing.T) {
@@ -54,7 +66,6 @@ func (s *MigrationTestSuite) SetupTest() {
 
 func (s *MigrationTestSuite) TearDownTest() {
 	if s.chain != nil {
-		s.T().Log("tearing down chain...")
 		if err := s.chain.Remove(context.Background()); err != nil {
 			s.T().Logf("failed to remove chain: %s", err)
 		}
@@ -67,7 +78,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	t := s.T()
 
 	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
-		s.createAndStartSDKChain(ctx)
+		s.createAndStartSDKChain(ctx, 1)
 	})
 
 	t.Run("generate_test_transactions", func(t *testing.T) {
@@ -87,7 +98,7 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	})
 
 	t.Run("migrate_chain", func(t *testing.T) {
-		s.recreateChainAndPerformMigration(ctx)
+		s.recreateChainAndPerformMigration(ctx, 1)
 	})
 
 	t.Run("validate_migration_success", func(t *testing.T) {
@@ -95,8 +106,167 @@ func (s *MigrationTestSuite) TestCosmosToEvolveMigration() {
 	})
 }
 
-func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context) {
-	s.chain = s.createCosmosSDKChain(ctx)
+// TestCosmosToEvolveMigration_MultiValidator_OnChainRequired verifies that when multiple
+// validators exist, evolve-migrate requires the on-chain sequencer in migrationmngr state.
+// This test asserts the command fails with a clear error until the sequencer is set on-chain.
+//
+// Running locally pre-requisites.
+// from root of repo, build images with ibc disabled.
+// - docker build . -f Dockerfile -t evolve-gm:latest --build-arg ENABLE_IBC=false
+// - docker build . -f Dockerfile.cosmos-sdk -t cosmos-gm:test --build-arg ENABLE_IBC=false
+func (s *MigrationTestSuite) TestCosmosToEvolveMigration_MultiValidator_GovSuccess() {
+	ctx := context.Background()
+	t := s.T()
+
+	t.Run("create_cosmos_sdk_chain", func(t *testing.T) {
+		s.createAndStartSDKChain(ctx, 3)
+	})
+
+	t.Run("generate_test_transactions", func(t *testing.T) {
+		s.generateTestTransactions(ctx)
+	})
+
+	t.Run("record_pre_migration_state", func(t *testing.T) {
+		s.recordPreMigrationState(ctx)
+	})
+
+	t.Run("submit_migration_proposal_and_vote", func(t *testing.T) {
+		s.submitMigrationProposalAndVote(ctx)
+	})
+
+	t.Run("wait_for_halt", func(t *testing.T) {
+		s.waitForMigrationHalt(ctx)
+	})
+
+	t.Run("stop_sdk_chain", func(t *testing.T) {
+		s.stopChainPreservingVolumes(ctx)
+	})
+
+	t.Run("setup_da_network", func(t *testing.T) {
+		s.setupDANetwork(ctx)
+	})
+
+	t.Run("migrate_chain", func(t *testing.T) {
+		s.recreateChainAndPerformMigration(ctx, 3)
+	})
+
+	t.Run("validate_migration_success", func(t *testing.T) {
+		s.validateMigrationSuccess(ctx)
+	})
+}
+
+// submitMigrationProposalAndVote prepares and submits a gov proposal to migrate,
+// votes YES from faucet, and waits briefly for execution.
+func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context) {
+	networkInfo, err := s.chain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+
+	conn, err := grpc.NewClient(networkInfo.External.GRPCAddress(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	s.Require().NoError(err)
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	curHeight, err := s.chain.Height(ctx)
+	s.Require().NoError(err)
+	// Schedule migration sufficiently in the future to allow proposal
+	// submission, deposits, and validator votes to complete.
+	migrateAt := uint64(curHeight + 30)
+	s.migrationHeight = migrateAt
+	s.T().Logf("Current height: %d, Migration scheduled for height: %d", curHeight, migrateAt)
+
+	faucet := s.chain.GetFaucetWallet()
+	proposer := faucet.GetFormattedAddress()
+
+	msg := &migrationmngrtypes.MsgMigrateToEvolve{
+		Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		BlockHeight: migrateAt,
+		Sequencer: migrationmngrtypes.Sequencer{
+			Name:            "sequencer-node-1",
+			ConsensusPubkey: s.getSequencerPubKey(ctx, conn),
+		},
+	}
+
+	propMsg, err := govv1.NewMsgSubmitProposal(
+		[]sdk.Msg{msg},
+		sdk.NewCoins(sdk.NewInt64Coin("stake", 10_000_000_000)), // deposit
+		proposer,
+		"",                          // metadata
+		"Migrate to Evolve",         // title
+		"Set sequencer and migrate", // summary
+		false,                       // expedited
+	)
+	s.Require().NoError(err)
+
+	prop, err := s.chain.SubmitAndVoteOnGovV1Proposal(ctx, propMsg, govv1.VoteOption_VOTE_OPTION_YES)
+	s.Require().NoError(err)
+	s.Require().Equal(govv1.ProposalStatus_PROPOSAL_STATUS_PASSED, prop.Status, "proposal did not pass")
+}
+
+// getSequencerPubKey fetches the intended sequencer's consensus pubkey Any from the chain.
+func (s *MigrationTestSuite) getSequencerPubKey(ctx context.Context, conn *grpc.ClientConn) *codectypes.Any {
+	// Determine the intended sequencer to align with the node that will run
+	// in aggregator mode (validator index 0 when we restart as evolve).
+	// We fetch the operator (valoper) address from the first validator node's keyring,
+	// then find the matching validator on-chain to get its consensus pubkey Any.
+
+	stakeQC := stakingtypes.NewQueryClient(conn)
+	valsResp, err := stakeQC.Validators(ctx, &stakingtypes.QueryValidatorsRequest{})
+	s.Require().NoError(err)
+	s.Require().GreaterOrEqual(len(valsResp.Validators), 1, "need at least one validator")
+
+	val0 := s.chain.GetNode()
+	stdout, stderr, err := val0.Exec(ctx, []string{
+		"gmd", "keys", "show", "--address", "validator",
+		"--home", val0.HomeDir(),
+		"--keyring-backend", "test",
+		"--bech", "val",
+	}, nil)
+	s.Require().NoError(err, "failed to get valoper address from node 0: %s", stderr)
+	val0Oper := string(bytes.TrimSpace(stdout))
+
+	// Find matching validator by operator address and use its consensus pubkey Any
+	var seqPubkeyAny *codectypes.Any
+	for _, v := range valsResp.Validators {
+		if v.OperatorAddress == val0Oper {
+			seqPubkeyAny = v.ConsensusPubkey
+			break
+		}
+	}
+	s.Require().NotNil(seqPubkeyAny, "could not find validator matching val-0 operator address %s", val0Oper)
+	return seqPubkeyAny
+}
+
+// waitForMigrationHalt waits until the chain reaches the halt height
+// and verifies that block production stops.
+func (s *MigrationTestSuite) waitForMigrationHalt(ctx context.Context) {
+	haltHeight := int64(s.migrationHeight + 2)
+
+	// wait until we reach the halt height
+	err := wait.ForCondition(ctx, 2*time.Minute, 5*time.Second, func() (bool, error) {
+		h, err := s.chain.Height(ctx)
+		if err != nil {
+			return false, err
+		}
+		return h >= haltHeight, nil
+	})
+	s.Require().NoError(err, "chain did not reach halt height %d", haltHeight)
+
+	baseline, err := s.chain.Height(ctx)
+	s.Require().NoError(err)
+
+	// wait longer than a block time to ensure halt
+	time.Sleep(10 * time.Second)
+
+	// verify height hasn't increased
+	current, err := s.chain.Height(ctx)
+	if err == nil {
+		s.Require().Equal(baseline, current, "chain did not halt, height increased from %d to %d", baseline, current)
+	}
+}
+
+func (s *MigrationTestSuite) createAndStartSDKChain(ctx context.Context, numNodes int) {
+	s.chain = s.createCosmosSDKChain(ctx, numNodes)
 	s.Require().NotNil(s.chain)
 
 	err := s.chain.Start(ctx)
@@ -172,7 +342,7 @@ func (s *MigrationTestSuite) setupDANetwork(ctx context.Context) {
 }
 
 // recreateChainAndPerformMigration recreates the chain with evolve image and DA config, reusing existing volumes
-func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Context) {
+func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Context, numNodes int) {
 	s.T().Log("Recreating chain with evolve image...")
 
 	// get DA connection details
@@ -186,7 +356,7 @@ func (s *MigrationTestSuite) recreateChainAndPerformMigration(ctx context.Contex
 	daAddress := fmt.Sprintf("http://%s", bridgeRPCAddress)
 
 	// recreate using same builder config as createCosmosSDKChain but with evolve image and DA config
-	evolveChain := s.createEvolveChain(ctx, authToken, daAddress)
+	evolveChain := s.createEvolveChain(ctx, authToken, daAddress, numNodes)
 
 	s.performMigration(ctx, evolveChain)
 	s.T().Log("Migration command completed successfully")
@@ -216,8 +386,21 @@ func (s *MigrationTestSuite) validateMigrationSuccess(ctx context.Context) {
 }
 
 // getCosmosChainBuilder returns a chain builder for cosmos-sdk chain
-func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
+func (s *MigrationTestSuite) getCosmosChainBuilder(numNodes int) *cosmos.ChainBuilder {
+	// Include gov + migrationmngr so client-side encoding can marshal
+	// gov v1 MsgSubmitProposal and migrationmngr MsgMigrateToEvolve
+	testEncCfg := testutil.MakeTestEncodingConfig(
+		auth.AppModuleBasic{},
+		bank.AppModuleBasic{},
+		govmodule.AppModuleBasic{},
+		migrationmngr.AppModuleBasic{},
+	)
+
+	var nodes []cosmos.ChainNodeConfig
+	for i := 0; i < numNodes; i++ {
+		nodes = append(nodes, cosmos.NewChainNodeConfigBuilder().Build())
+	}
+
 	return cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getCosmosSDKAppContainer()).
@@ -229,46 +412,51 @@ func (s *MigrationTestSuite) getCosmosChainBuilder() *cosmos.ChainBuilder {
 		WithBech32Prefix("gm").
 		WithBinaryName("gmd").
 		WithGasPrices(fmt.Sprintf("0.00%s", "stake")).
-		WithNodes(
-			cosmos.NewChainNodeConfigBuilder().
-				WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
-					return config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
-						cfg.TxIndex.Indexer = "kv"
-					})
-				}).
-				Build(),
-		)
+		WithNodes(nodes...)
 }
 
 // createCosmosSDKChain creates a cosmos-sdk chain without evolve modules
-func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context) *cosmos.Chain {
-	cosmosChain, err := s.getCosmosChainBuilder().Build(ctx)
+func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context, numNodes int) *cosmos.Chain {
+	cosmosChain, err := s.getCosmosChainBuilder(numNodes).Build(ctx)
 	s.Require().NoError(err)
 	return cosmosChain
 }
 
 // createEvolveChain creates a chain with evolve chain which alligns with the existing cosmos sdk chain.
 // the image is changed, and initialization is skipped as we are reusing existing volumes.
-func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, daAddress string) *cosmos.Chain {
-	evolveChain, err := s.getCosmosChainBuilder().
+func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, daAddress string, numNodes int) *cosmos.Chain {
+	sequencer := cosmos.NewChainNodeConfigBuilder().
+		WithAdditionalStartArgs(
+			"--evnode.node.aggregator",
+			"--evnode.signer.passphrase", "12345678",
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
+			"--log_level", "*:info",
+		).
+		Build()
+
+	nodeConfigs := []cosmos.ChainNodeConfig{sequencer}
+	for i := 1; i < numNodes; i++ {
+		nodeConfigs = append(nodeConfigs, cosmos.NewChainNodeConfigBuilder().WithAdditionalStartArgs(
+			"--evnode.da.address", daAddress,
+			"--evnode.da.gas_price", "0.000001",
+			"--evnode.da.auth_token", authToken,
+			"--evnode.rpc.address", "0.0.0.0:7331",
+			"--evnode.da.namespace", "ev-header",
+			"--evnode.da.data_namespace", "ev-data",
+			"--log_level", "*:debug",
+		).Build())
+	}
+
+	evolveChain, err := s.getCosmosChainBuilder(numNodes).
 		WithImage(getEvolveAppContainer()).
 		WithSkipInit(true). // skip initalization as we have already done that previously when it was an sdk chain..
-		WithNodes(
-			cosmos.NewChainNodeConfigBuilder().
-				WithAdditionalStartArgs(
-					"--evnode.node.aggregator",
-					"--evnode.signer.passphrase", "12345678",
-					"--evnode.da.address", daAddress,
-					"--evnode.da.gas_price", "0.000001",
-					"--evnode.da.auth_token", authToken,
-					"--evnode.rpc.address", "0.0.0.0:7331",
-					"--evnode.da.namespace", "ev-header",
-					"--evnode.da.data_namespace", "ev-data",
-					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-					"--log_level", "*:info",
-				).
-				Build(),
-		).
+		WithNodes(nodeConfigs...).
 		Build(ctx)
 	s.Require().NoError(err)
 	return evolveChain
@@ -289,12 +477,13 @@ func (s *MigrationTestSuite) recordTestTransaction(ctx context.Context, fromWall
 
 // performMigration runs the migration command on the given chain node.
 func (s *MigrationTestSuite) performMigration(ctx context.Context, chain *cosmos.Chain) {
-	_, stderr, err := chain.GetNode().Exec(ctx, []string{
-		"gmd", "evolve-migrate",
-		"--home", chain.GetNode().HomeDir(),
-	}, nil)
-
-	s.Require().NoError(err, "migration command failed: %s", stderr)
+	for _, node := range chain.GetNodes() {
+		_, stderr, err := node.Exec(ctx, []string{
+			"gmd", "evolve-migrate",
+			"--home", chain.GetNode().HomeDir(),
+		}, nil)
+		s.Require().NoError(err, "migration command failed: %s", stderr)
+	}
 }
 
 // validateOldTransactions verifies old transactions are still accessible

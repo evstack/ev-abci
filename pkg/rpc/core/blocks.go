@@ -24,7 +24,7 @@ import (
 	"github.com/evstack/ev-abci/pkg/adapter"
 )
 
-// BlockSearch searches for a paginated set of blocks matching BeginBlock and
+// BlockSearch searches for a paginated set of blocks matching PreBlock and
 // EndBlock event search criteria.
 func BlockSearch(
 	ctx *rpctypes.Context,

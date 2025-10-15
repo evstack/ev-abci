@@ -1,4 +1,5 @@
 FROM golang:1.24-alpine AS ignite-builder
+ARG ENABLE_IBC=true
 
 # Install dependencies needed for ignite and building
 RUN apk add --no-cache \
@@ -27,6 +28,16 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy
+
+# TODO: replace this with proper ignite flag to skip IBC registration when available
+# Patch out IBC registration (comment out the call and its error handling)
+RUN if [ "$ENABLE_IBC" = "false" ]; then \
+      echo "Disabling IBC registration..."; \
+      awk 'BEGIN{c=0} /registerIBCModules\(appOpts\)/ {print "// "$0; c=2; next} {if (c>0) {print "// "$0; c--; next} } {print $0}' \
+        app/app.go > app/app.go.tmp && mv app/app.go.tmp app/app.go; \
+    else \
+      echo "IBC enabled, leaving registration intact."; \
+    fi
 
 RUN ignite chain build --skip-proto
 

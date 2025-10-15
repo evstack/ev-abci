@@ -3,31 +3,23 @@ package server
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"cosmossdk.io/collections"
-	"cosmossdk.io/log"
-	"cosmossdk.io/store"
-	"cosmossdk.io/store/metrics"
-	storetypes "cosmossdk.io/store/types"
 	goheaderstore "github.com/celestiaorg/go-header/store"
 	cmtdbm "github.com/cometbft/cometbft-db"
 	cometbftcmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
 	cfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/crypto"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/state"
 	cmtstore "github.com/cometbft/cometbft/store"
 	cmttypes "github.com/cometbft/cometbft/types"
 	dbm "github.com/cosmos/cosmos-db"
-	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/runtime"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	ds "github.com/ipfs/go-datastore"
 	ktds "github.com/ipfs/go-datastore/keytransform"
@@ -111,12 +103,18 @@ After migration, start the node normally - it will automatically detect and use 
 				return err
 			}
 
+			// Track whether sync stores were started
+			var syncStoresStarted bool
+
 			// Ensure all stores are stopped/closed in the right order on any exit path.
 			// Order matters: stop header/data sync stores first, then close rollkit store,
 			// then close Comet stores.
 			defer func() {
-				_ = rollkitStores.headerSyncStore.Stop(ctx)
-				_ = rollkitStores.dataSyncStore.Stop(ctx)
+				// Only stop sync stores if they were started
+				if syncStoresStarted {
+					_ = rollkitStores.headerSyncStore.Stop(ctx)
+					_ = rollkitStores.dataSyncStore.Stop(ctx)
+				}
 				_ = rollkitStores.rollkitStore.Close()
 				_ = cometBlockStore.Close()
 				_ = cometStateStore.Close()
@@ -218,6 +216,8 @@ After migration, start the node normally - it will automatically detect and use 
 			if err := rollkitStores.dataSyncStore.Start(ctx); err != nil {
 				return fmt.Errorf("failed to start data sync store: %w", err)
 			}
+			// Mark that sync stores were started successfully
+			syncStoresStarted = true
 
 			currentSyncHeight := rollkitStores.headerSyncStore.Height()
 			if currentSyncHeight == 0 {
@@ -468,33 +468,45 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 	}
 	defer func() { _ = appDB.Close() }()
 
-	storeKey := storetypes.NewKVStoreKey(migrationmngrtypes.ModuleName)
-
 	encCfg := moduletestutil.MakeTestEncodingConfig(migrationmngr.AppModuleBasic{})
-	sequencerCollection := collections.NewItem(
-		collections.NewSchemaBuilder(runtime.NewKVStoreService(storeKey)),
-		migrationmngrtypes.SequencerKey,
-		"sequencer",
-		codec.CollValue[migrationmngrtypes.Sequencer](encCfg.Codec),
-	)
 
-	// create context and commit multi-store
-	cms := store.NewCommitMultiStore(appDB, log.NewNopLogger(), metrics.NewNoOpMetrics())
-	cms.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, appDB)
-	if err := cms.LoadLatestVersion(); err != nil {
-		return nil, fmt.Errorf("failed to load latest version of commit multi store: %w", err)
+	// Register crypto types so UnpackInterfaces can properly decode the consensus pubkey
+	cryptocodec.RegisterInterfaces(encCfg.InterfaceRegistry)
+
+	// The migrationmngr module data is stored with the prefix: s/k:migrationmngr/
+	// Collections library adds 0x66 ('f') prefix for Item type collections
+	// For the Sequencer collection, the full key is: s/k:migrationmngr/ + 0x66 + SequencerKey
+	modulePrefix := fmt.Sprintf("s/k:%s/", migrationmngrtypes.ModuleName)
+
+	// Collections library uses 0x66 ('f') as a deterministic prefix for Item types
+	collectionsItemPrefix := byte(0x66)
+
+	// Build the full key: module prefix + collections Item prefix + sequencer key
+	fullKey := append([]byte(modulePrefix), collectionsItemPrefix)
+	fullKey = append(fullKey, migrationmngrtypes.SequencerKey...)
+
+	// read directly from the database
+	sequencerBytes, err := appDB.Get(fullKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sequencer from database: %w", err)
 	}
-	ctx := sdk.NewContext(cms, cmtproto.Header{
-		Height:  int64(cometBFTState.LastBlockHeight),
-		ChainID: cometBFTState.ChainID,
-		Time:    cometBFTState.LastBlockTime,
-	}, false, log.NewNopLogger())
+	if len(sequencerBytes) == 0 {
+		return nil, fmt.Errorf("sequencer not found in migrationmngr state at key %q", string(fullKey))
+	}
 
-	sequencer, err := sequencerCollection.Get(ctx)
-	if errors.Is(err, collections.ErrNotFound) {
-		return nil, fmt.Errorf("sequencer not found in migrationmngr state, ensure the module is initialized and sequencer is set")
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to get sequencer from migrationmngr state: %w", err)
+	// The collections library wraps values in a protobuf container with a field tag and length.
+	// First byte: field tag (e.g., 0x6a = field 13, wire type 2)
+	// Second byte: length varint
+	// We skip these 2 wrapper bytes to get to the actual Sequencer proto
+	// TODO: properly decode the varint length instead of hardcoding 2 bytes
+	if len(sequencerBytes) < 2 {
+		return nil, fmt.Errorf("sequencer bytes too short: %d", len(sequencerBytes))
+	}
+	actualProtoBytes := sequencerBytes[2:]
+
+	var sequencer migrationmngrtypes.Sequencer
+	if err := encCfg.Codec.Unmarshal(actualProtoBytes, &sequencer); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal sequencer: %w", err)
 	}
 
 	if err := sequencer.UnpackInterfaces(encCfg.InterfaceRegistry); err != nil {
@@ -507,10 +519,16 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 		return nil, fmt.Errorf("sequencer consensus public key is nil")
 	}
 
-	// Get the cached value which should be a crypto.PubKey
-	pubKey, ok := pubKeyAny.GetCachedValue().(crypto.PubKey)
+	// Convert from Cosmos SDK crypto type to CometBFT crypto type
+	// The cached value is a Cosmos SDK cryptotypes.PubKey, we need CometBFT crypto.PubKey
+	sdkPubKey, ok := pubKeyAny.GetCachedValue().(cryptotypes.PubKey)
 	if !ok {
-		return nil, fmt.Errorf("failed to extract public key from sequencer")
+		return nil, fmt.Errorf("failed to get SDK pubkey from cached value, got type %T", pubKeyAny.GetCachedValue())
+	}
+
+	pubKey, err := cryptocodec.ToCmtPubKeyInterface(sdkPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert public key to CometBFT format: %w", err)
 	}
 
 	// Get the address from the public key

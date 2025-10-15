@@ -22,16 +22,21 @@ func (k Keeper) migrateNow(
 	migrationData types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
+	// ensure sequencer pubkey Any is unpacked and cached for TmConsPublicKey() to work correctly
+	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
+		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
+	}
+
 	switch len(migrationData.Attesters) {
 	case 0:
 		// no attesters, we are migrating to a single sequencer
-		initialValUpdates, err = migrateToSequencer(migrationData, lastValidatorSet)
+		initialValUpdates, err = migrateToSequencer(&migrationData, lastValidatorSet)
 		if err != nil {
 			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to migrate to sequencer: %v", err)
 		}
 	default:
 		// we are migrating the validator set to attesters
-		initialValUpdates, err = migrateToAttesters(migrationData, lastValidatorSet)
+		initialValUpdates, err = migrateToAttesters(&migrationData, lastValidatorSet)
 		if err != nil {
 			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to migrate to sequencer & attesters: %v", err)
 		}
@@ -50,10 +55,10 @@ func (k Keeper) migrateNow(
 // migrateToSequencer migrates the chain to a single sequencer.
 // the validator set is updated to include the sequencer and remove all other validators.
 func migrateToSequencer(
-	migrationData types.EvolveMigration,
+	migrationData *types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
-	seq := migrationData.Sequencer
+	seq := &migrationData.Sequencer
 
 	pk, err := seq.TmConsPublicKey()
 	if err != nil {
@@ -78,7 +83,7 @@ func migrateToSequencer(
 // migrateToAttesters migrates the chain to attesters.
 // the validator set is updated to include the attesters and remove all other validators.
 func migrateToAttesters(
-	migrationData types.EvolveMigration,
+	migrationData *types.EvolveMigration,
 	lastValidatorSet []stakingtypes.Validator,
 ) (initialValUpdates []abci.ValidatorUpdate, err error) {
 	// First, remove all existing validators that are not attesters

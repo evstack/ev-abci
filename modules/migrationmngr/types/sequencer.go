@@ -10,7 +10,7 @@ import (
 )
 
 // TmConsPublicKey converts the Sequencer's consensus public key to a CometBFT public key.
-func (seq Sequencer) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
+func (seq *Sequencer) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
 	pk, ok := seq.ConsensusPubkey.GetCachedValue().(cryptotypes.PubKey)
 	if !ok {
 		return cmtprotocrypto.PublicKey{}, errors.Wrapf(sdkerrors.ErrInvalidType, "expecting cryptotypes.PubKey, got %T", pk)
@@ -24,13 +24,13 @@ func (seq Sequencer) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
 }
 
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (seq Sequencer) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
+func (seq *Sequencer) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
 	var pk cryptotypes.PubKey
 	return unpacker.UnpackAny(seq.ConsensusPubkey, &pk)
 }
 
 // TmConsPublicKey converts the Sequencer's ConsensusPubkey to a CometBFT PublicKey type.
-func (att Attester) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
+func (att *Attester) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
 	pk, ok := att.ConsensusPubkey.GetCachedValue().(cryptotypes.PubKey)
 	if !ok {
 		return cmtprotocrypto.PublicKey{}, errors.Wrapf(sdkerrors.ErrInvalidType, "expecting cryptotypes.PubKey, got %T", pk)
@@ -44,7 +44,7 @@ func (att Attester) TmConsPublicKey() (cmtprotocrypto.PublicKey, error) {
 }
 
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (att Attester) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
+func (att *Attester) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
 	var pk cryptotypes.PubKey
 	return unpacker.UnpackAny(att.ConsensusPubkey, &pk)
 }
