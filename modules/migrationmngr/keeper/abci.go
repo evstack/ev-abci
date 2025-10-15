@@ -54,12 +54,12 @@ func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error
 	return &sdk.ResponsePreBlock{}, nil
 }
 
-// EndBlocker is called at the end of every block and returns sequencer updates.
+// EndBlock is called at the end of every block and returns sequencer updates.
 func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	start, end, shouldBeMigrating := k.IsMigrating(ctx)
-	k.Logger(ctx).Info("EndBlock migration check", "height", sdkCtx.BlockHeight(), "start", start, "end", end, "shouldBeMigrating", shouldBeMigrating)
+	k.Logger(ctx).Debug("EndBlock migration check", "height", sdkCtx.BlockHeight(), "start", start, "end", end, "shouldBeMigrating", shouldBeMigrating)
 
 	if !shouldBeMigrating || start > uint64(sdkCtx.BlockHeight()) {
 		// no migration in progress, return empty updates
@@ -93,6 +93,6 @@ func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 		}
 	}
 
-	k.Logger(ctx).Info("EndBlock migration updates", "height", sdkCtx.BlockHeight(), "updates", len(updates))
+	k.Logger(ctx).Debug("EndBlock migration updates", "height", sdkCtx.BlockHeight(), "updates", len(updates))
 	return updates, nil
 }
