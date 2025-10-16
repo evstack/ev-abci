@@ -9,7 +9,7 @@ RUN apk add --no-cache \
     git
 
 # Set environment variables
-ENV IGNITE_VERSION=v29.4.0
+ENV IGNITE_VERSION=v29.5.0
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
@@ -23,7 +23,7 @@ WORKDIR /workspace/gm
 RUN ignite app install -g github.com/ignite/apps/evolve@main
 
 # Add only the evolve migrate command (do not scaffold full evolve integration)
-RUN ignite evolve add --start=false --migrate
+RUN ignite evolve add-migrate
 
 # TODO: replace this with proper ignite flag to skip IBC registration when available
 # Patch out IBC registration (comment out the call and its error handling)
