@@ -484,6 +484,7 @@ func (s *MigrationTestSuite) performMigration(ctx context.Context, chain *cosmos
 		}, nil)
 		s.Require().NoError(err, "migration command failed: %s", stderr)
 	}
+	time.Sleep(10 * time.Second)
 }
 
 // validateOldTransactions verifies old transactions are still accessible
