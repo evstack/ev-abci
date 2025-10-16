@@ -235,6 +235,13 @@ After migration, start the node normally - it will automatically detect and use 
 			} else {
 				cmd.Println("Sync stores already initialized. Skipping seeding")
 			}
+
+			// clean up the migration state from the application database to prevent halt on restart
+			if err := cleanupMigrationState(config.RootDir); err != nil {
+				return fmt.Errorf("failed to cleanup migration state: %w", err)
+			}
+			cmd.Println("Cleaned up migration state from application database")
+
 			// Defer cleanup above will stop/close stores in correct order
 			cmd.Println("Migration completed successfully")
 			return nil
@@ -551,6 +558,57 @@ func getSequencerFromMigrationMngrState(rootDir string, cometBFTState state.Stat
 		Address: addr,
 		PubKey:  pubKey,
 	}, nil
+}
+
+// cleanupMigrationState removes the migration state from the application database
+// to prevent the chain from halting on restart after migration is complete.
+func cleanupMigrationState(rootDir string) error {
+	config := cfg.DefaultConfig()
+	config.SetRoot(rootDir)
+
+	dbType := dbm.BackendType(config.DBBackend)
+
+	// check if application database exists
+	appDBPath := filepath.Join(config.DBDir(), "application.db")
+	if ok, err := fileExists(appDBPath); err != nil {
+		return fmt.Errorf("error checking application database in %v: %w", config.DBDir(), err)
+	} else if !ok {
+		return fmt.Errorf("no application database found in %v", config.DBDir())
+	}
+
+	// open application database
+	appDB, err := dbm.NewDB("application", dbType, config.DBDir())
+	if err != nil {
+		return fmt.Errorf("failed to open application database: %w", err)
+	}
+	defer func() { _ = appDB.Close() }()
+
+	// the migrationmngr module data is stored with the prefix: s/k:migrationmngr/
+	// collections library adds 0x66 ('f') prefix for Item type collections
+	// for the Migration collection, the full key is: s/k:migrationmngr/ + 0x66 + MigrationKey
+	modulePrefix := fmt.Sprintf("s/k:%s/", migrationmngrtypes.ModuleName)
+
+	// collections library uses 0x66 ('f') as a deterministic prefix for Item types
+	collectionsItemPrefix := byte(0x66)
+
+	// build the full key for migration state: module prefix + collections Item prefix + migration key
+	migrationFullKey := append([]byte(modulePrefix), collectionsItemPrefix)
+	migrationFullKey = append(migrationFullKey, migrationmngrtypes.MigrationKey...)
+
+	// delete the migration state from the database
+	if err := appDB.Delete(migrationFullKey); err != nil {
+		return fmt.Errorf("failed to delete migration state from database: %w", err)
+	}
+
+	// also remove the sequencer state as it's no longer needed after migration
+	sequencerFullKey := append([]byte(modulePrefix), collectionsItemPrefix)
+	sequencerFullKey = append(sequencerFullKey, migrationmngrtypes.SequencerKey...)
+
+	if err := appDB.Delete(sequencerFullKey); err != nil {
+		return fmt.Errorf("failed to delete sequencer state from database: %w", err)
+	}
+
+	return nil
 }
 
 // fileExists checks if a file/directory exists.
