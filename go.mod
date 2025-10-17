@@ -27,7 +27,7 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/gogoproto v1.7.0
-	github.com/evstack/ev-node v1.0.0-beta.7
+	github.com/evstack/ev-node v1.0.0-beta.8
 	github.com/evstack/ev-node/core v1.0.0-beta.3
 	github.com/evstack/ev-node/da v1.0.0-beta.4
 	github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2
@@ -65,7 +65,7 @@ require (
 	buf.build/go/spdx v0.2.0 // indirect
 	buf.build/go/standard v0.1.0 // indirect
 	cel.dev/expr v0.24.0 // indirect
-	connectrpc.com/connect v1.19.0 // indirect
+	connectrpc.com/connect v1.19.1 // indirect
 	connectrpc.com/grpcreflect v1.3.0 // indirect
 	connectrpc.com/otelconnect v0.7.2 // indirect
 	cosmossdk.io/schema v1.1.0 // indirect
