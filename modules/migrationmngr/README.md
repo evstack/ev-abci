@@ -175,39 +175,34 @@ type App struct {
 }
 ```
 
-### 2. Modify the `EndBlocker` Method
+### 2. Use the Staking Wrapper Module
 
-Next, you must modify the `EndBlocker` (or `EndBlock`) method of your `App`. Wrap the existing call to the module manager's `EndBlock` function with logic that checks if a migration is in progress.
+To prevent the standard `staking` module from sending conflicting validator updates during migration, you must use the staking wrapper module provided in the `modules/staking` directory instead of the standard Cosmos SDK staking module.
 
-**Replace the standard `EndBlocker` implementation:**
+The staking wrapper module automatically nullifies validator updates from the standard staking module by returning an empty validator update list in its `EndBlock` method. This ensures that the `migrationmngr` module remains the sole source of validator set changes during the migration process.
 
-```go
-func (app *App) EndBlocker(ctx sdk.Context) (abci.ResponseEndBlock, error) {
-	return app.mm.EndBlock(ctx)
-}
-```
+**Update your application's module dependencies:**
 
-**With this conditional logic:**
+Replace imports of the standard Cosmos SDK staking module:
 
 ```go
-func (app *App) EndBlocker(ctx sdk.Context) (abci.ResponseEndBlock, error) {
-	// Check if a migration is in progress.
-	_, _, isMigrating := app.MigrationmngrKeeper.IsMigrating(ctx)
-	if isMigrating {
-		// If migrating, only run the migrationmngr EndBlocker.
-		// This prevents the staking module from sending conflicting validator updates.
-		valUpdates, err := app.MigrationmngrKeeper.EndBlock(ctx)
-		if err != nil {
-			return abci.ResponseEndBlock{}, err
-		}
-		return abci.ResponseEndBlock{
-			ValidatorUpdates: valUpdates,
-		}, nil
-	}
-
-	// If no migration is in progress, run the default EndBlocker logic.
-	return app.mm.EndBlock(ctx)
-}
+import (
+	// OLD - remove this
+	"github.com/cosmos/cosmos-sdk/x/staking"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+)
 ```
 
-These changes guarantee that during the migration, the `migrationmngr` module is the sole source of truth for validator set changes, ensuring a smooth and predictable transition.
+**With imports of the ev-abci staking wrapper module:**
+
+```go
+import (
+	// NEW - use the wrapper module
+	"github.com/evstack/ev-abci/modules/staking"
+	stakingkeeper "github.com/evstack/ev-abci/modules/staking/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types" // types remain the same
+)
+```
+
+If you're using depinject, the staking wrapper module will be automatically wired through the dependency injection system and will prevent validator updates from the staking module while allowing the `migrationmngr` module to control validator set changes during migrations.
