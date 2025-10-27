@@ -9,7 +9,7 @@ RUN apk add --no-cache \
 
 # Set environment variables
 ENV EVNODE_VERSION=v1.0.0-beta.8
-ENV IGNITE_VERSION=v29.6.1
+ENV IGNITE_VERSION=v29.5.0
 ENV IGNITE_EVOLVE_APP_VERSION=main
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
@@ -33,11 +33,11 @@ RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$
 # TODO: replace this with proper ignite flag to skip IBC registration when available
 # Patch out IBC registration (comment out the call and its error handling)
 RUN if [ "$ENABLE_IBC" = "false" ]; then \
-    echo "Disabling IBC registration..."; \
-    awk 'BEGIN{c=0} /registerIBCModules\(appOpts\)/ {print "// "$0; c=2; next} {if (c>0) {print "// "$0; c--; next} } {print $0}' \
-    app/app.go > app/app.go.tmp && mv app/app.go.tmp app/app.go; \
+      echo "Disabling IBC registration..."; \
+      awk 'BEGIN{c=0} /registerIBCModules\(appOpts\)/ {print "// "$0; c=2; next} {if (c>0) {print "// "$0; c--; next} } {print $0}' \
+        app/app.go > app/app.go.tmp && mv app/app.go.tmp app/app.go; \
     else \
-    echo "IBC enabled, leaving registration intact."; \
+      echo "IBC enabled, leaving registration intact."; \
     fi
 
 RUN ignite chain build --skip-proto
