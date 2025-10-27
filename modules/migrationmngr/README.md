@@ -143,7 +143,7 @@ If you are a validator or node operator on a chain using this module, you must b
 
 1.  **Monitor Governance**: The migration will be initiated by a governance proposal. Stay informed about upcoming proposals. The proposal will define the target block height for the migration.
 
-2.  **Prepare for the Chain Halt**: At `migration_end_height + 1`, your node **will stop**. This is expected. Check your node's logs for the specific "MIGRATE" error message.
+2.  **Prepare for the Chain Halt**: Your node **will stop** at a predictable block height, calculated from the migration's start height (`block_height` in the proposal). With IBC enabled, the halt is at `block_height + 31`; without IBC, it is `block_height + 2`. This is expected. Check your node's logs for the specific "MIGRATE" error message.
 
 3.  **Perform the Upgrade**: Once the chain has halted, you must perform the following steps:
     a. **Install the New Binary**: You will need to replace your current node software (e.g., `gmd`) with the new version required for the rollup.
