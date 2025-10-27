@@ -11,8 +11,8 @@ permissions:
   packages: write # needed for GHCR push
 
 env:
-  EVNODE_VERSION: "v1.0.0-beta.7"
-  IGNITE_VERSION: "v29.5.0"
+  EVNODE_VERSION: "v1.0.0-beta.8"
+  IGNITE_VERSION: "v29.6.1"
   IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
   EVOLVE_IMAGE_REPO: "ghcr.io/evstack/evolve-abci-gm"
   COSMOS_SDK_IMAGE_REPO: "ghcr.io/evstack/cosmos-sdk-gm"
@@ -50,9 +50,9 @@ jobs:
       matrix:
         include:
           - enable_ibc: "true"
-            tag_suffix: ""          # normal tag
+            tag_suffix: "" # normal tag
           - enable_ibc: "false"
-            tag_suffix: "-no-ibc"   # appended to tag
+            tag_suffix: "-no-ibc" # appended to tag
 
     steps:
       - uses: actions/checkout@v5
@@ -99,9 +99,9 @@ jobs:
       matrix:
         include:
           - enable_ibc: "true"
-            tag_suffix: ""          # normal tag
+            tag_suffix: "" # normal tag
           - enable_ibc: "false"
-            tag_suffix: "-no-ibc"   # appended to tag
+            tag_suffix: "-no-ibc" # appended to tag
 
     steps:
       - uses: actions/checkout@v5
