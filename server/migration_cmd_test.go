@@ -86,11 +86,8 @@ func TestCometBlockToRollkit(t *testing.T) {
 	require.Equal(t, uint64(11), header.Version.Block)
 	require.Equal(t, uint64(1), header.Version.App)
 	require.Equal(t, block.Header.Hash().Bytes(), []byte(header.LastHeaderHash))
-	require.Equal(t, []byte("lastcommithash"), []byte(header.LastCommitHash))
 	require.Equal(t, []byte("datahash"), []byte(header.DataHash))
-	require.Equal(t, []byte("consensushash"), []byte(header.ConsensusHash))
 	require.Equal(t, []byte("apphash"), []byte(header.AppHash))
-	require.Equal(t, []byte("lastresultshash"), []byte(header.LastResultsHash))
 	require.Equal(t, []byte("validatorshash"), []byte(header.ValidatorHash))
 	require.Equal(t, address.Bytes(), header.ProposerAddress)
 
@@ -202,7 +199,6 @@ func TestCometbftStateToRollkitState(t *testing.T) {
 	require.Equal(t, uint64(blockHeight), rollkitState.LastBlockHeight)
 	require.Equal(t, blockTime, rollkitState.LastBlockTime)
 	require.Equal(t, daHeight, rollkitState.DAHeight)
-	require.Equal(t, []byte("lastresultshash"), []byte(rollkitState.LastResultsHash))
 	require.Equal(t, []byte("apphash"), []byte(rollkitState.AppHash))
 }
 
