@@ -813,11 +813,6 @@ func getEvolveHeader(node string, height int64) (*evolvetypes.Header, error) {
 		AppHash:         appHash,
 		ProposerAddress: proposerAddress,
 		ValidatorHash:   validatorsHash,
-		Legacy: &evolvetypes.LegacyHeaderFields{
-			LastCommitHash:  lastCommitHash,
-			ConsensusHash:   consensusHash,
-			LastResultsHash: lastResultsHash,
-		},
 	}
 
 	return evHeader, nil
