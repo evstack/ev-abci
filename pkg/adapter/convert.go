@@ -10,11 +10,11 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	cmtversion "github.com/cometbft/cometbft/version"
 
-	rlktypes "github.com/evstack/ev-node/types"
+	evtypes "github.com/evstack/ev-node/types"
 )
 
 // ToABCIHeader converts rollkit header format defined by ABCI.
-func ToABCIHeader(header rlktypes.Header, lastCommit *cmttypes.Commit) (cmttypes.Header, error) {
+func ToABCIHeader(header evtypes.Header, lastCommit *cmttypes.Commit) (cmttypes.Header, error) {
 	if len(header.ProposerAddress) == 0 {
 		return cmttypes.Header{}, errors.New("proposer address is not set")
 	}
@@ -29,9 +29,9 @@ func ToABCIHeader(header rlktypes.Header, lastCommit *cmttypes.Commit) (cmttypes
 		LastBlockID:        lastCommit.BlockID,
 		LastCommitHash:     lastCommit.Hash(),
 		DataHash:           cmbytes.HexBytes(header.DataHash),
-		ConsensusHash:      cmbytes.HexBytes(header.ConsensusHash),
+		ConsensusHash:      cmbytes.HexBytes(make(evtypes.Hash, 32)),
 		AppHash:            cmbytes.HexBytes(header.AppHash),
-		LastResultsHash:    cmbytes.HexBytes(header.LastResultsHash),
+		LastResultsHash:    nil, // not set
 		EvidenceHash:       new(cmttypes.EvidenceData).Hash(),
 		ProposerAddress:    header.ProposerAddress,
 		ChainID:            header.ChainID(),
@@ -41,7 +41,7 @@ func ToABCIHeader(header rlktypes.Header, lastCommit *cmttypes.Commit) (cmttypes
 }
 
 // ToABCIBlock converts rollit block into block format defined by ABCI.
-func ToABCIBlock(header cmttypes.Header, lastCommit *cmttypes.Commit, data *rlktypes.Data) (*cmttypes.Block, error) {
+func ToABCIBlock(header cmttypes.Header, lastCommit *cmttypes.Commit, data *evtypes.Data) (*cmttypes.Block, error) {
 	abciBlock := cmttypes.Block{
 		Header: header,
 		Evidence: cmttypes.EvidenceData{
