@@ -166,8 +166,7 @@ func (s *DockerIntegrationTestSuite) getAttester(ctx context.Context, gmChain *c
 	s.T().Logf("funded attester account %s with %s", attesterAccAddr.String(), coins)
 
 	// Use internal addresses for communication within docker network
-	attesterConfig.GMNodeURL = fmt.Sprintf("http://%s:26657", gmNodeInfo.Internal.Hostname)
-	attesterConfig.GMAPIUrl = fmt.Sprintf("http://%s:1417", gmNodeInfo.Internal.Hostname)
+	attesterConfig.GMNodeURL = fmt.Sprintf("tcp://%s:26657", gmNodeInfo.Internal.Hostname)
 
 	// Create and start the attester
 	attesterNode, err := NewAttester(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)

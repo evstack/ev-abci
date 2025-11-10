@@ -1,49 +1,77 @@
-FROM golang:1.24-alpine as builder
+FROM golang:1.24-alpine AS ignite-builder
+ARG ENABLE_IBC=true
 
-# Install dependencies
-RUN apk add --no-cache git make gcc musl-dev
+# Install dependencies needed for ignite and building
+RUN apk add --no-cache \
+    libc6-compat \
+    curl \
+    bash
 
-# Set working directory
+# Set environment variables
+ENV EVNODE_VERSION=v1.0.0-beta.9
+ENV IGNITE_VERSION=v29.6.1
+ENV IGNITE_EVOLVE_APP_VERSION=main
+
+RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
+
 WORKDIR /workspace
 
-# Copy ev-abci (repo root) and the scaffolded gm chain
-COPY . /workspace/ev-abci
-# Ensure attester sources are present (attester/main.go, etc.)
-COPY attester /workspace/ev-abci/attester
-# Build the attester binary (it has its own go.mod)
-WORKDIR /workspace/ev-abci/attester
-## Align module replacements and fetch deps
-# attester lives at /workspace/ev-abci/attester, so the ev-abci root is one level up
-RUN go mod edit -dropreplace github.com/evstack/ev-abci || true \
-    && go mod edit -replace github.com/evstack/ev-abci=.. \
-    && go mod edit -dropreplace github.com/evstack/ev-node || true \
-    && go mod tidy
-RUN go build -o /workspace/attester .
+COPY . ./ev-abci
 
-# Runtime stage
-FROM alpine:3.18
+RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
+
+WORKDIR /workspace/gm
+
+RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION} && \
+    ignite evolve add && \
+    ignite evolve add-migrate
+
+RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
+    go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
+    go mod tidy
+
+# TODO: replace this with proper ignite flag to skip IBC registration when available
+# Patch out IBC registration (comment out the call and its error handling)
+RUN if [ "$ENABLE_IBC" = "false" ]; then \
+    echo "Disabling IBC registration..."; \
+    awk 'BEGIN{c=0} /registerIBCModules\(appOpts\)/ {print "// "$0; c=2; next} {if (c>0) {print "// "$0; c--; next} } {print $0}' \
+    app/app.go > app/app.go.tmp && mv app/app.go.tmp app/app.go; \
+    else \
+    echo "IBC enabled, leaving registration intact."; \
+    fi
+
+RUN ignite chain build --skip-proto
+
+# Create lightweight runtime image for attester
+FROM alpine:latest
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates curl jq bash
 
 # Create attester user with stable UID/GID expected by integration tests
-RUN addgroup -g 2000 attester \
-    && adduser -D -G attester -u 2000 -h /home/attester -s /bin/bash attester
+RUN addgroup -g 2000 attester && \
+    adduser -D -G attester -u 2000 -h /home/attester -s /bin/bash attester
 
-# Copy attester binary
-COPY --from=builder /workspace/attester /usr/local/bin/attester
+# Copy the gmd binary from the builder stage
+COPY --from=ignite-builder /go/bin/gmd /usr/local/bin/gmd
+
+# Verify binary is executable and present
+RUN chmod +x /usr/local/bin/gmd
 
 # Switch to attester user
 USER attester
 WORKDIR /home/attester
 
-# Environment variables
+# Environment variables for reference (actual values passed via command)
 ENV CHAIN_ID=gm
-ENV GM_HOME=/home/attester/.gm
-ENV GM_NODE=http://gm-chain:26757
-ENV GM_API=http://gm-chain:1417
-ENV MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+ENV GM_NODE=tcp://gm-chain:26657
+ENV GM_HOME=/home/attester
 
-# Health check
+# Health check - verify gmd attester process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD pgrep -f attester || exit 1
+    CMD pgrep -f "gmd attester" || exit 1
+
+# Expose no ports (attester is a client only)
+
+# Default command runs attester help (will be overridden in tests)
+CMD ["gmd", "attester", "--help"]
