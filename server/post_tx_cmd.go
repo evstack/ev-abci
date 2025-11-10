@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
-	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
@@ -15,10 +18,13 @@ import (
 	"github.com/evstack/ev-node/pkg/cmd"
 	rollconf "github.com/evstack/ev-node/pkg/config"
 	"github.com/evstack/ev-node/types"
+
+	migrationtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
+	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 
 const (
-	flagTxData     = "tx"
+	flagTx         = "tx"
 	flagNamespace  = "namespace"
 	flagGasPrice   = "gas-price"
 	flagTimeout    = "timeout"
@@ -34,11 +40,20 @@ func PostTxCmd() *cobra.Command {
 		Short: "Post a signed transaction to Celestia namespace",
 		Long: `Post a signed transaction to a Celestia namespace using the Evolve configuration.
 
-This command submits a raw signed transaction to the configured Celestia DA layer.
-The transaction data should be provided as a hex-encoded string.
+This command submits a signed transaction to the configured Celestia DA layer.
+The transaction is provided via the --tx flag, which accepts either:
+  1. A path to a JSON file containing the transaction
+  2. A JSON string directly
 
-Example:
-  evabcid post-tx --tx 0x1234567890abcdef --namespace 0000000000000000000000000000000000000000000001
+The command automatically detects whether the input is a file path or JSON string.
+The JSON format must match the Cosmos SDK transaction JSON format.
+
+Examples:
+  # From JSON file
+  evabcid post-tx --tx tx.json
+
+  # From JSON string
+  evabcid post-tx --tx '{"body":{...},"auth_info":{...},"signatures":[...]}'
 `,
 		Args: cobra.NoArgs,
 		RunE: postTxRunE,
@@ -48,23 +63,19 @@ Example:
 	rollconf.AddFlags(cobraCmd)
 
 	// Add command-specific flags
-	cobraCmd.Flags().String(flagTxData, "", "Hex-encoded signed transaction data (required)")
+	cobraCmd.Flags().String(flagTx, "", "Transaction as JSON file path or JSON string (required)")
 	cobraCmd.Flags().String(flagNamespace, "", "Celestia namespace ID (if not provided, uses config namespace)")
 	cobraCmd.Flags().Float64(flagGasPrice, -1, "Gas price for DA submission (if not provided, uses config gas price)")
 	cobraCmd.Flags().Duration(flagTimeout, defaultTimeout, "Timeout for DA submission")
 	cobraCmd.Flags().String(flagSubmitOpts, "", "Additional submit options (if not provided, uses config submit options)")
 
-	_ = cobraCmd.MarkFlagRequired(flagTxData)
+	_ = cobraCmd.MarkFlagRequired(flagTx)
 
 	return cobraCmd
 }
 
-// postTxRunE executes the post-tx command.
-// It accepts hex-encoded transaction bytes via CLI (for convenience),
-// decodes them to raw bytes, and submits those raw bytes to Celestia DA.
-// The raw bytes are the same format that would be passed to ExecuteTxs in the ABCI adapter.
+// postTxRunE executes the post-tx command
 func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
-	// Get timeout from flags
 	timeout, err := cobraCmd.Flags().GetDuration(flagTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to get timeout flag: %w", err)
@@ -73,27 +84,29 @@ func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(cobraCmd.Context(), timeout)
 	defer cancel()
 
-	// Get transaction data (hex-encoded for CLI convenience)
-	txHex, err := cobraCmd.Flags().GetString(flagTxData)
+	// Get transaction input
+	txInput, err := cobraCmd.Flags().GetString(flagTx)
 	if err != nil {
 		return fmt.Errorf("failed to get tx flag: %w", err)
 	}
 
-	if txHex == "" {
-		return fmt.Errorf("transaction data cannot be empty")
+	if txInput == "" {
+		return fmt.Errorf("transaction cannot be empty")
 	}
 
-	// Remove 0x prefix if present
-	if len(txHex) >= 2 && txHex[:2] == "0x" {
-		txHex = txHex[2:]
-	}
-
-	// Decode hex to raw transaction bytes.
-	// These are the raw bytes that will be submitted to Celestia and would be
-	// passed to ExecuteTxs in the ABCI adapter.
-	txData, err := hex.DecodeString(txHex)
-	if err != nil {
-		return fmt.Errorf("failed to decode hex transaction: %w", err)
+	var txData []byte
+	if _, err := os.Stat(txInput); err == nil {
+		// Input is a file path
+		txData, err = decodeTxFromFile(txInput)
+		if err != nil {
+			return fmt.Errorf("failed to decode transaction from file: %w", err)
+		}
+	} else {
+		// Input is a JSON string
+		txData, err = decodeTxFromJSON(txInput)
+		if err != nil {
+			return fmt.Errorf("failed to decode transaction from JSON: %w", err)
+		}
 	}
 
 	if len(txData) == 0 {
@@ -171,8 +184,7 @@ func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create DA client: %w", err)
 	}
 
-	// Submit transaction to DA layer.
-	// The raw bytes (txData) are submitted as-is to Celestia.
+	// Submit transaction to DA layer
 	logger.Info().Msg("submitting transaction to DA layer...")
 
 	blobs := [][]byte{txData}
@@ -184,12 +196,12 @@ func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
 	switch result.Code {
 	case da.StatusSuccess:
 		logger.Info().Msg("transaction successfully submitted to DA layer")
-		fmt.Fprintf(cobraCmd.OutOrStdout(), "\n✓ Transaction posted successfully\n\n")
-		fmt.Fprintf(cobraCmd.OutOrStdout(), "Namespace:  %s\n", namespace)
-		fmt.Fprintf(cobraCmd.OutOrStdout(), "DA Height:  %d\n", result.Height)
-		fmt.Fprintf(cobraCmd.OutOrStdout(), "Gas Price:  %.2f\n", gasPrice)
-		fmt.Fprintf(cobraCmd.OutOrStdout(), "Data Size:  %d bytes\n", len(txData))
-		fmt.Fprintf(cobraCmd.OutOrStdout(), "\n")
+		cobraCmd.Printf("\n✓ Transaction posted successfully\n\n")
+		cobraCmd.Printf("Namespace:  %s\n", namespace)
+		cobraCmd.Printf("DA Height:  %d\n", result.Height)
+		cobraCmd.Printf("Gas Price:  %.2f\n", gasPrice)
+		cobraCmd.Printf("Data Size:  %d bytes\n", len(txData))
+		cobraCmd.Printf("\n")
 		return nil
 
 	case da.StatusTooBig:
@@ -199,9 +211,9 @@ func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("transaction not included in DA block: %s", result.Message)
 
 	case da.StatusAlreadyInMempool:
-		fmt.Fprintf(cobraCmd.OutOrStdout(), "⚠ Transaction already in mempool\n")
+		cobraCmd.Printf("⚠ Transaction already in mempool\n")
 		if result.Height > 0 {
-			fmt.Fprintf(cobraCmd.OutOrStdout(), "  DA Height: %d\n", result.Height)
+			cobraCmd.Printf("  DA Height: %d\n", result.Height)
 		}
 		return nil
 
@@ -211,4 +223,49 @@ func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
 	default:
 		return fmt.Errorf("DA submission failed (code: %d): %s", result.Code, result.Message)
 	}
+}
+
+// decodeTxFromFile reads a JSON transaction from a file and decodes it to bytes
+func decodeTxFromFile(filePath string) ([]byte, error) {
+	jsonData, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading file: %w", err)
+	}
+
+	return decodeTxFromJSON(string(jsonData))
+}
+
+// decodeTxFromJSON decodes a JSON transaction string to bytes
+func decodeTxFromJSON(jsonStr string) ([]byte, error) {
+	// Create interface registry and codec
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+
+	// Register interfaces for modules
+	migrationtypes.RegisterInterfaces(interfaceRegistry)
+	networktypes.RegisterInterfaces(interfaceRegistry)
+
+	protoCodec := codec.NewProtoCodec(interfaceRegistry)
+	txConfig := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
+
+	// First try to decode as a Cosmos SDK transaction JSON
+	var txJSON map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &txJSON); err != nil {
+		return nil, fmt.Errorf("parsing JSON: %w", err)
+	}
+
+	// Use the SDK's JSON decoder
+	txJSONDecoder := txConfig.TxJSONDecoder()
+	tx, err := txJSONDecoder([]byte(jsonStr))
+	if err != nil {
+		return nil, fmt.Errorf("decoding transaction JSON: %w", err)
+	}
+
+	// Encode the transaction to bytes
+	txEncoder := txConfig.TxEncoder()
+	txBytes, err := txEncoder(tx)
+	if err != nil {
+		return nil, fmt.Errorf("encoding transaction: %w", err)
+	}
+
+	return txBytes, nil
 }
