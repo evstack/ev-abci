@@ -992,12 +992,9 @@ func getEvolveHeader(node string, height int64) (*evolvetypes.Header, error) {
 
 	// Parse hex fields
 	lastHeaderHash, _ := hex.DecodeString(header.LastBlockID.Hash)
-	lastCommitHash, _ := hex.DecodeString(header.LastCommitHash)
 	dataHash, _ := hex.DecodeString(header.DataHash)
 	validatorsHash, _ := hex.DecodeString(header.ValidatorsHash)
-	consensusHash, _ := hex.DecodeString(header.ConsensusHash)
 	appHash, _ := hex.DecodeString(header.AppHash)
-	lastResultsHash, _ := hex.DecodeString(header.LastResultsHash)
 	proposerAddress, _ := hex.DecodeString(header.ProposerAddress)
 
 	// Parse version
@@ -1015,11 +1012,8 @@ func getEvolveHeader(node string, height int64) (*evolvetypes.Header, error) {
 			App:   appVersion,
 		},
 		LastHeaderHash:  lastHeaderHash,
-		LastCommitHash:  lastCommitHash,
 		DataHash:        dataHash,
-		ConsensusHash:   consensusHash,
 		AppHash:         appHash,
-		LastResultsHash: lastResultsHash,
 		ProposerAddress: proposerAddress,
 		ValidatorHash:   validatorsHash,
 	}

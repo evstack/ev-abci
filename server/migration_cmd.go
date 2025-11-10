@@ -281,11 +281,8 @@ func cometBlockToRollkit(block *cmttypes.Block) (*rollkittypes.SignedHeader, *ro
 				App:   block.Version.App,
 			},
 			LastHeaderHash:  block.Header.Hash().Bytes(),
-			LastCommitHash:  block.LastCommitHash.Bytes(),
 			DataHash:        block.DataHash.Bytes(),
-			ConsensusHash:   block.ConsensusHash.Bytes(),
 			AppHash:         block.AppHash.Bytes(),
-			LastResultsHash: block.LastResultsHash.Bytes(),
 			ValidatorHash:   block.ValidatorsHash.Bytes(),
 			ProposerAddress: block.ProposerAddress.Bytes(),
 		},
@@ -394,8 +391,7 @@ func cometbftStateToRollkitState(cometBFTState state.State, daHeight uint64) (ro
 
 		DAHeight: daHeight,
 
-		LastResultsHash: cometBFTState.LastResultsHash,
-		AppHash:         cometBFTState.AppHash,
+		AppHash: cometBFTState.AppHash,
 	}, nil
 }
 
