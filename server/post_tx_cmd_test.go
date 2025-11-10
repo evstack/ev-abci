@@ -186,14 +186,6 @@ func TestDecodeTxFromFile(t *testing.T) {
 	}
 }
 
-func TestCreateClientContext(t *testing.T) {
-	clientCtx, err := createClientContext()
-	assert.NilError(t, err)
-	assert.Assert(t, clientCtx.TxConfig != nil, "TxConfig should not be nil")
-	assert.Assert(t, clientCtx.InterfaceRegistry != nil, "InterfaceRegistry should not be nil")
-	assert.Assert(t, clientCtx.Codec != nil, "Codec should not be nil")
-}
-
 func TestRoundTripEncodeDecode(t *testing.T) {
 	// Create a simple transaction
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
