@@ -17,7 +17,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/ibc-go/v8 v8.7.0
 	github.com/evstack/ev-abci v0.4.2
-	github.com/evstack/ev-node v1.0.0-beta.8
+	github.com/evstack/ev-node v1.0.0-beta.9
 	github.com/pelletier/go-toml/v2 v2.2.4
 	google.golang.org/grpc v1.75.1
 	google.golang.org/protobuf v1.36.10
