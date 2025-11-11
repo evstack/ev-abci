@@ -30,7 +30,7 @@ require (
 	github.com/evstack/ev-node v1.0.0-beta.9
 	github.com/evstack/ev-node/core v1.0.0-beta.4
 	github.com/evstack/ev-node/da v1.0.0-beta.4
-	github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2
+	github.com/evstack/ev-node/sequencers/single v1.0.0-beta.3
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
