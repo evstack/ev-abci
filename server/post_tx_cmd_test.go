@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -15,6 +16,21 @@ import (
 	migrationtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
 	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
+
+func createClientContext(t *testing.T) client.Context {
+	t.Helper()
+	// Create interface registry and codec
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+
+	// Register interfaces for modules
+	migrationtypes.RegisterInterfaces(interfaceRegistry)
+	networktypes.RegisterInterfaces(interfaceRegistry)
+
+	protoCodec := codec.NewProtoCodec(interfaceRegistry)
+	txConfig := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
+
+	return client.Context{}.WithTxConfig(txConfig)
+}
 
 func TestDecodeTxFromJSON(t *testing.T) {
 	tests := []struct {
@@ -82,7 +98,7 @@ func TestDecodeTxFromJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			txBytes, err := decodeTxFromJSON(tt.jsonStr)
+			txBytes, err := decodeTxFromJSON(createClientContext(t), tt.jsonStr)
 
 			if tt.wantErr {
 				assert.Assert(t, err != nil, "expected error but got none")
@@ -170,7 +186,7 @@ func TestDecodeTxFromFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			filePath := tt.setupFile()
-			txBytes, err := decodeTxFromFile(filePath)
+			txBytes, err := decodeTxFromFile(createClientContext(t), filePath)
 
 			if tt.wantErr {
 				assert.Assert(t, err != nil, "expected error but got none")
@@ -210,7 +226,7 @@ func TestRoundTripEncodeDecode(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Decode from JSON back to bytes using our function
-	decodedBytes, err := decodeTxFromJSON(string(txJSON))
+	decodedBytes, err := decodeTxFromJSON(createClientContext(t), string(txJSON))
 	assert.NilError(t, err)
 
 	// Verify the bytes match
@@ -290,10 +306,10 @@ func TestAutoDetectFileVsJSON(t *testing.T) {
 			// Simulate the auto-detect logic from postTxRunE
 			if _, statErr := os.Stat(tt.input); statErr == nil {
 				// Input is a file path
-				txData, err = decodeTxFromFile(tt.input)
+				txData, err = decodeTxFromFile(createClientContext(t), tt.input)
 			} else {
 				// Input is a JSON string
-				txData, err = decodeTxFromJSON(tt.input)
+				txData, err = decodeTxFromJSON(createClientContext(t), tt.input)
 			}
 
 			if tt.wantErr {
@@ -330,7 +346,7 @@ func TestTransactionJSONStructure(t *testing.T) {
 	}`
 
 	// Decode to bytes
-	txBytes, err := decodeTxFromJSON(txJSON)
+	txBytes, err := decodeTxFromJSON(createClientContext(t), txJSON)
 	assert.NilError(t, err)
 
 	// Decode bytes to transaction

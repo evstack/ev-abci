@@ -7,9 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
@@ -18,9 +16,6 @@ import (
 	"github.com/evstack/ev-node/pkg/cmd"
 	rollconf "github.com/evstack/ev-node/pkg/config"
 	"github.com/evstack/ev-node/types"
-
-	migrationtypes "github.com/evstack/ev-abci/modules/migrationmngr/types"
-	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 
 const (
@@ -72,6 +67,8 @@ Examples:
 
 // postTxRunE executes the post-tx command
 func postTxRunE(cobraCmd *cobra.Command, args []string) error {
+	clientCtx := client.GetClientContextFromCmd(cobraCmd)
+
 	timeout, err := cobraCmd.Flags().GetDuration(flagTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to get timeout flag: %w", err)
@@ -89,13 +86,13 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	var txData []byte
 	if _, err := os.Stat(txInput); err == nil {
 		// Input is a file path
-		txData, err = decodeTxFromFile(txInput)
+		txData, err = decodeTxFromFile(clientCtx, txInput)
 		if err != nil {
 			return fmt.Errorf("failed to decode transaction from file: %w", err)
 		}
 	} else {
 		// Input is a JSON string
-		txData, err = decodeTxFromJSON(txInput)
+		txData, err = decodeTxFromJSON(clientCtx, txInput)
 		if err != nil {
 			return fmt.Errorf("failed to decode transaction from JSON: %w", err)
 		}
@@ -217,27 +214,17 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 }
 
 // decodeTxFromFile reads a JSON transaction from a file and decodes it to bytes
-func decodeTxFromFile(filePath string) ([]byte, error) {
+func decodeTxFromFile(clientCtx client.Context, filePath string) ([]byte, error) {
 	jsonData, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
 
-	return decodeTxFromJSON(string(jsonData))
+	return decodeTxFromJSON(clientCtx, string(jsonData))
 }
 
 // decodeTxFromJSON decodes a JSON transaction string to bytes
-func decodeTxFromJSON(jsonStr string) ([]byte, error) {
-	// Create interface registry and codec
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-
-	// Register interfaces for modules
-	migrationtypes.RegisterInterfaces(interfaceRegistry)
-	networktypes.RegisterInterfaces(interfaceRegistry)
-
-	protoCodec := codec.NewProtoCodec(interfaceRegistry)
-	txConfig := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
-
+func decodeTxFromJSON(clientCtx client.Context, jsonStr string) ([]byte, error) {
 	// First try to decode as a Cosmos SDK transaction JSON
 	var txJSON map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &txJSON); err != nil {
@@ -245,14 +232,14 @@ func decodeTxFromJSON(jsonStr string) ([]byte, error) {
 	}
 
 	// Use the SDK's JSON decoder
-	txJSONDecoder := txConfig.TxJSONDecoder()
+	txJSONDecoder := clientCtx.TxConfig.TxJSONDecoder()
 	tx, err := txJSONDecoder([]byte(jsonStr))
 	if err != nil {
 		return nil, fmt.Errorf("decoding transaction JSON: %w", err)
 	}
 
 	// Encode the transaction to bytes
-	txEncoder := txConfig.TxEncoder()
+	txEncoder := clientCtx.TxConfig.TxEncoder()
 	txBytes, err := txEncoder(tx)
 	if err != nil {
 		return nil, fmt.Errorf("encoding transaction: %w", err)
