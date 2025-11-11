@@ -57,7 +57,7 @@ func (s *MigrationTestSuite) SetupTest() {
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 
 	// only setup docker infrastructure, not the chains
-	s.dockerClient, s.networkID = docker.DockerSetup(s.T())
+	s.dockerClient, s.networkID = docker.Setup(s.T())
 
 	s.preMigrationTxHashes = []string{}
 	s.preMigrationBalances = make(map[string]sdk.Coin)

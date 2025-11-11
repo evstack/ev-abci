@@ -3,7 +3,7 @@ module github.com/evstack/ev-abci/tests/integration
 go 1.24.6
 
 require (
-	github.com/celestiaorg/tastora v0.7.2
+	github.com/celestiaorg/tastora v0.8.0
 	github.com/moby/moby v27.5.1+incompatible
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0

@@ -33,7 +33,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
-	"github.com/moby/moby/client"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
@@ -51,7 +50,7 @@ const (
 type DockerIntegrationTestSuite struct {
 	suite.Suite
 
-	dockerClient  *client.Client
+	dockerClient  types.TastoraDockerClient
 	networkID     string
 	celestiaChain *cosmos.Chain
 	daNetwork     *dataavailability.Network
@@ -68,7 +67,7 @@ func (s *DockerIntegrationTestSuite) SetupTest() {
 	s.T().Cleanup(func() {
 		_ = s.logger.Sync()
 	})
-	s.dockerClient, s.networkID = docker.DockerSetup(s.T())
+	s.dockerClient, s.networkID = docker.Setup(s.T())
 
 	s.celestiaChain = s.CreateCelestiaChain(ctx)
 	s.T().Log("Celestia app chain started")
