@@ -4,6 +4,13 @@ go 1.24.6
 
 replace github.com/celestiaorg/go-header => github.com/julienrbrt/go-header v0.0.0-20251008134330-747c8c192fa8 // TODO: to remove after https://github.com/celestiaorg/go-header/pull/347
 
+// TODO: remove after https://github.com/evstack/ev-node/pull/2797
+replace (
+	github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.9.0.20251111144303-272027d0e3cd
+	github.com/evstack/ev-node/core => github.com/evstack/ev-node/core v1.0.0-beta.4.0.20251111144303-272027d0e3cd
+	github.com/evstack/ev-node/sequencers/single => github.com/evstack/ev-node/sequencers/single v1.0.0-beta.3.0.20251111144303-272027d0e3cd
+)
+
 replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
 	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
@@ -49,6 +56,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250825161204-c5933d9347a5
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
+	gotest.tools/v3 v3.5.2
 )
 
 require (
@@ -335,7 +343,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gotest.tools/v3 v3.5.2 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	nhooyr.io/websocket v1.8.6 // indirect
 	pgregory.net/rapid v1.2.0 // indirect

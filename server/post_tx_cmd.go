@@ -24,7 +24,6 @@ import (
 )
 
 const (
-	flagTx         = "tx"
 	flagNamespace  = "namespace"
 	flagGasPrice   = "gas-price"
 	flagTimeout    = "timeout"
@@ -37,11 +36,11 @@ const (
 func PostTxCmd() *cobra.Command {
 	cobraCmd := &cobra.Command{
 		Use:   "post-tx",
-		Short: "Post a signed transaction to Celestia namespace",
+		Short: "Post a signed transaction to a Celestia namespace",
 		Long: `Post a signed transaction to a Celestia namespace using the Evolve configuration.
 
 This command submits a signed transaction to the configured Celestia DA layer.
-The transaction is provided via the --tx flag, which accepts either:
+The transaction is provided as argument, which accepts either:
   1. A path to a JSON file containing the transaction
   2. A JSON string directly
 
@@ -50,12 +49,12 @@ The JSON format must match the Cosmos SDK transaction JSON format.
 
 Examples:
   # From JSON file
-  evabcid post-tx --tx tx.json
+  evabcid post-tx tx.json
 
   # From JSON string
-  evabcid post-tx --tx '{"body":{...},"auth_info":{...},"signatures":[...]}'
+  evabcid post-tx '{"body":{...},"auth_info":{...},"signatures":[...]}'
 `,
-		Args: cobra.NoArgs,
+		Args: cobra.ExactArgs(1),
 		RunE: postTxRunE,
 	}
 
@@ -63,19 +62,16 @@ Examples:
 	rollconf.AddFlags(cobraCmd)
 
 	// Add command-specific flags
-	cobraCmd.Flags().String(flagTx, "", "Transaction as JSON file path or JSON string (required)")
 	cobraCmd.Flags().String(flagNamespace, "", "Celestia namespace ID (if not provided, uses config namespace)")
 	cobraCmd.Flags().Float64(flagGasPrice, -1, "Gas price for DA submission (if not provided, uses config gas price)")
 	cobraCmd.Flags().Duration(flagTimeout, defaultTimeout, "Timeout for DA submission")
 	cobraCmd.Flags().String(flagSubmitOpts, "", "Additional submit options (if not provided, uses config submit options)")
 
-	_ = cobraCmd.MarkFlagRequired(flagTx)
-
 	return cobraCmd
 }
 
 // postTxRunE executes the post-tx command
-func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
+func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	timeout, err := cobraCmd.Flags().GetDuration(flagTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to get timeout flag: %w", err)
@@ -84,11 +80,7 @@ func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(cobraCmd.Context(), timeout)
 	defer cancel()
 
-	// Get transaction input
-	txInput, err := cobraCmd.Flags().GetString(flagTx)
-	if err != nil {
-		return fmt.Errorf("failed to get tx flag: %w", err)
-	}
+	txInput := args[0]
 
 	if txInput == "" {
 		return fmt.Errorf("transaction cannot be empty")
@@ -130,9 +122,8 @@ func postTxRunE(cobraCmd *cobra.Command, _ []string) error {
 	}
 
 	if namespace == "" {
-		namespace = cfg.DA.GetNamespace()
+		namespace = cfg.DA.GetForcedInclusionNamespace()
 	}
-
 	namespaceBz := da.NamespaceFromString(namespace).Bytes()
 
 	// Get gas price (use flag if provided, otherwise use config)
