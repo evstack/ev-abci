@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
@@ -68,6 +69,7 @@ Examples:
 // postTxRunE executes the post-tx command
 func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	clientCtx := client.GetClientContextFromCmd(cobraCmd)
+	serverCtx := server.GetServerContextFromCmd(cobraCmd)
 
 	timeout, err := cobraCmd.Flags().GetDuration(flagTimeout)
 	if err != nil {
@@ -144,16 +146,14 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	// Setup logger
-	logger := zerolog.New(os.Stderr).With().
-		Timestamp().
-		Str("component", "post-tx").
-		Logger()
+	logger := serverCtx.Logger
+	zlLogger, ok := logger.Impl().(*zerolog.Logger)
+	if !ok {
+		znop := zerolog.Nop()
+		zlLogger = &znop
+	}
 
-	logger.Info().
-		Str("namespace", namespace).
-		Float64("gas_price", gasPrice).
-		Int("tx_size", len(txData)).
-		Msg("posting transaction to Celestia")
+	logger.Info("posting transaction to Celestia", "namespace", namespace, "gas_price", gasPrice, "tx_size", len(txData))
 
 	// Create DA client
 	submitCtx, submitCancel := context.WithTimeout(ctx, timeout)
@@ -161,7 +161,7 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 
 	daClient, err := jsonrpc.NewClient(
 		submitCtx,
-		logger,
+		*zlLogger,
 		cfg.DA.Address,
 		cfg.DA.AuthToken,
 		gasPrice,
@@ -173,17 +173,17 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	// Submit transaction to DA layer
-	logger.Info().Msg("submitting transaction to DA layer...")
+	logger.Info("submitting transaction to DA layer...")
 
 	blobs := [][]byte{txData}
 	options := []byte(submitOpts)
 
-	result := types.SubmitWithHelpers(submitCtx, &daClient.DA, logger, blobs, gasPrice, namespaceBz, options)
+	result := types.SubmitWithHelpers(submitCtx, &daClient.DA, *zlLogger, blobs, gasPrice, namespaceBz, options)
 
 	// Check result
 	switch result.Code {
 	case da.StatusSuccess:
-		logger.Info().Msg("transaction successfully submitted to DA layer")
+		logger.Info("transaction successfully submitted to DA layer")
 		cobraCmd.Printf("\n✓ Transaction posted successfully\n\n")
 		cobraCmd.Printf("Namespace:  %s\n", namespace)
 		cobraCmd.Printf("DA Height:  %d\n", result.Height)
