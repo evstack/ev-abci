@@ -8,7 +8,8 @@ on:
 
 permissions:
   contents: read
-  packages: write # needed for GHCR push
+  packages: write
+  actions: write
 
 env:
   EVNODE_VERSION: "v1.0.0-beta.9"
@@ -86,7 +87,7 @@ jobs:
           push: true
           tags: ${{ env.COSMOS_SDK_IMAGE_REPO }}:${{ needs.determine-tag.outputs.image_tag }}${{ matrix.tag_suffix }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
   docker-build-evolve-image:
     name: Build Evolve Docker Images
@@ -137,7 +138,7 @@ jobs:
           push: true
           tags: ${{ env.EVOLVE_IMAGE_REPO }}:${{ needs.determine-tag.outputs.image_tag }}${{ matrix.tag_suffix }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
   migration-tastora-single-node:
     name: Test Migration from Cosmos SDK to Evolve
