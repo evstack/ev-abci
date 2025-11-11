@@ -16,12 +16,10 @@ It's useful for:
 ## Usage
 
 ```bash
-evabcid post-tx --tx <json-file-or-string> [flags]
+evabcid post-tx <json-file-or-string> [flags]
 ```
 
-## Required Flags
-
-- `--tx`: Transaction as JSON file path or JSON string (required)
+- The first argument contains a transaction as JSON file path or JSON string (required)
   - Accepts either a path to a JSON file containing the transaction
   - Or a JSON string directly
   - The command automatically detects whether input is a file or JSON string
@@ -64,7 +62,7 @@ The command also accepts all Evolve configuration flags (prefixed with `--evnode
 Post a transaction from a JSON file:
 
 ```bash
-evabcid post-tx --tx transaction.json
+evabcid post-tx transaction.json
 ```
 
 ### Basic Usage (JSON String)
@@ -72,7 +70,7 @@ evabcid post-tx --tx transaction.json
 Post a transaction from a JSON string:
 
 ```bash
-evabcid post-tx --tx '{
+evabcid post-tx '{
   "body": {
     "messages": [],
     "memo": "test transaction",
@@ -99,7 +97,7 @@ Post to a specific Celestia namespace:
 
 ```bash
 evabcid post-tx \
-  --tx signed_tx.json \
+  signed_tx.json \
   --namespace 0000000000000000000000000000000000000000000001
 ```
 
@@ -109,7 +107,7 @@ Post with explicit gas price:
 
 ```bash
 evabcid post-tx \
-  --tx signed_tx.json \
+  signed_tx.json \
   --gas-price 0.025
 ```
 
@@ -119,7 +117,7 @@ Post using a specific DA endpoint:
 
 ```bash
 evabcid post-tx \
-  --tx signed_tx.json \
+  signed_tx.json \
   --evnode.da.address http://celestia-node:7980 \
   --evnode.da.auth_token my-secret-token
 ```
@@ -130,18 +128,8 @@ Post with extended timeout:
 
 ```bash
 evabcid post-tx \
-  --tx signed_tx.json \
+  signed_tx.json \
   --timeout 5m
-```
-
-### Complete Example
-
-```bash
-evabcid post-tx \
-  --tx signed_tx.json \
-  --namespace 0000000000000000000000000000000000000000000001 \
-  --gas-price 0.025 \
-  --timeout 120s
 ```
 
 ## Transaction JSON Format
@@ -198,7 +186,7 @@ The transaction data must be provided in Cosmos SDK transaction JSON format:
 
 ### Auto-Detection
 
-The command automatically detects whether `--tx` is a file path or JSON string:
+The command automatically detects whether arg is a file path or JSON string:
 
 1. Check if the value is a valid file path that exists
 2. If yes → read file contents and decode as JSON
@@ -363,186 +351,3 @@ The maximum blob size is determined by the DA layer (Celestia). Currently:
    ```bash
    evabcid post-tx --tx signed_tx.json
    ```
-
-## Use Cases
-
-### 1. Testing DA Connectivity
-
-Quickly verify your DA configuration works:
-
-```bash
-# Create a simple test transaction
-cat > test_tx.json <<EOF
-{
-  "body": {
-    "messages": [],
-    "memo": "connectivity test",
-    "timeout_height": "0",
-    "extension_options": [],
-    "non_critical_extension_options": []
-  },
-  "auth_info": {
-    "signer_infos": [],
-    "fee": {
-      "amount": [],
-      "gas_limit": "200000",
-      "payer": "",
-      "granter": ""
-    }
-  },
-  "signatures": []
-}
-EOF
-
-# Submit it
-evabcid post-tx --tx test_tx.json
-```
-
-### 2. Batch Transaction Submission
-
-Submit multiple transactions from files:
-
-```bash
-#!/bin/bash
-for tx in transactions/*.json; do
-    echo "Submitting $tx..."
-    evabcid post-tx --tx "$tx" || exit 1
-    sleep 1
-done
-```
-
-### 3. CI/CD Integration
-
-Automate transaction posting in scripts:
-
-```bash
-#!/bin/bash
-TX_FILE="signed_tx.json"
-if evabcid post-tx --tx $TX_FILE; then
-  echo "Transaction posted successfully"
-  exit 0
-else
-  echo "Failed to post transaction"
-  exit 1
-fi
-```
-
-### 4. Inline JSON Submission
-
-Post transactions without creating files:
-
-```bash
-evabcid post-tx --tx '{
-  "body": {
-    "messages": [],
-    "memo": "inline test",
-    "timeout_height": "0",
-    "extension_options": [],
-    "non_critical_extension_options": []
-  },
-  "auth_info": {
-    "signer_infos": [],
-    "fee": {
-      "amount": [{"denom": "stake", "amount": "200"}],
-      "gas_limit": "200000",
-      "payer": "",
-      "granter": ""
-    }
-  },
-  "signatures": []
-}'
-```
-
-## Troubleshooting
-
-### "required flag(s) 'tx' not set"
-
-You must provide the `--tx` flag with either a JSON file path or JSON string.
-
-### "failed to decode transaction from JSON"
-
-Ensure your JSON is valid:
-
-- Check for syntax errors (missing commas, brackets, quotes)
-- Validate with `jq`: `jq empty transaction.json`
-- Ensure all required fields are present
-- Verify message types use correct `@type` format
-
-### "failed to decode transaction from file"
-
-Verify that:
-
-1. The file path is correct
-2. The file exists and is readable
-3. The file contains valid JSON
-
-### "transaction cannot be empty"
-
-The `--tx` flag value cannot be empty. Provide either:
-
-- A valid file path: `--tx transaction.json`
-- A JSON string: `--tx '{"body":{...}}'`
-
-### "failed to load config"
-
-Verify that:
-
-1. The config file exists at `~/.evabci/config/evnode.yaml`
-2. The YAML syntax is valid
-3. You have read permissions
-
-### "invalid config: namespace cannot be empty"
-
-Set the namespace either via:
-
-- `--namespace` flag
-- `evnode.da.namespace` in config file
-
-### "failed to create DA client: connection refused"
-
-Check that:
-
-1. The DA node is running
-2. The address in config is correct
-3. Firewall allows the connection
-
-## Validation
-
-Before submitting, validate your transaction JSON:
-
-```bash
-# Validate JSON syntax
-jq empty transaction.json
-
-# Pretty print
-jq . transaction.json
-
-# Check specific fields
-jq '.body.memo' transaction.json
-jq '.auth_info.fee.gas_limit' transaction.json
-```
-
-## Best Practices
-
-1. **Use Files for Production** - Easier to version control and audit
-2. **Validate JSON First** - Use `jq` or similar tools before submission
-3. **Set Meaningful Memos** - Include context about the transaction
-4. **Monitor Submissions** - Track DA heights and timestamps
-5. **Handle Errors** - Implement retry logic for production use
-6. **Test First** - Try with test transactions before production
-7. **Keep Backups** - Save both unsigned and signed transactions
-
-## Related Commands
-
-- `evabcid init`: Initialize Evolve configuration
-- `evabcid start`: Start the Evolve node (includes DA submission)
-- `evabcid evolve-migrate`: Migrate from CometBFT to Evolve
-
-## See Also
-
-- [Complete Guide](../examples/POST_TX_README.md)
-- [Quick Reference](../examples/POST_TX_QUICK_REF.md)
-- [Workflow Examples](../examples/WORKFLOW_EXAMPLE.md)
-- [Evolve Documentation](https://docs.evstack.org)
-- [Celestia Documentation](https://docs.celestia.org)
-- [Cosmos SDK Documentation](https://docs.cosmos.network)
