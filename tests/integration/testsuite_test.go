@@ -44,6 +44,9 @@ const (
 	celestiaNodeTag  = "v0.23.5"
 	celestiaAppRepo  = "ghcr.io/celestiaorg/celestia-app"
 	celestiaNodeRepo = "ghcr.io/celestiaorg/celestia-node"
+
+	// passphraseFile specifies the filename in which a passphrase is stored for secure access or authentication purposes.
+	passphraseFile = "passphrase.txt"
 )
 
 // DockerIntegrationTestSuite provides common functionality for integration tests using Docker
@@ -220,7 +223,7 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 				// Create aggregator node with rollkit-specific start arguments
 				WithAdditionalStartArgs(
 					"--evnode.node.aggregator",
-					"--evnode.signer.passphrase", "12345678",
+					"--evnode.signer.passphrase_file", "/var/cosmos-chain/evolve/passhrase.txt",
 					"--evnode.da.address", daAddress,
 					"--evnode.da.gas_price", "0.000001",
 					"--evnode.da.auth_token", authToken,
@@ -230,7 +233,7 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 					"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 					"--log_level", "*:info",
 				).
-				WithPostInit(addSingleSequencer, setDAStartHeight(daStartHeight)).
+				WithPostInit(addSingleSequencer, setDAStartHeight(daStartHeight), writePasshraseFile("12345678")).
 				Build(),
 		).
 		Build(ctx)
@@ -418,21 +421,9 @@ func setDAStartHeight(daStartHeight string) func(context.Context, *cosmos.ChainN
 		})
 	}
 }
-func setDAStartHeightEV(daStartHeight string) func(context.Context, *cosmos.ChainNode) error {
+func writePasshraseFile(passphrase string) func(context.Context, *cosmos.ChainNode) error {
 	return func(ctx context.Context, node *cosmos.ChainNode) error {
-		daHeight, err := strconv.ParseUint(daStartHeight, 10, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse da start height: %w", err)
-		}
-
-		return config.Modify(ctx, node, "config/genesis.json", func(genDoc *map[string]interface{}) {
-			evolveGenesis, ok := (*genDoc)["evolve"].(map[string]interface{})
-			if !ok {
-				return
-			}
-
-			evolveGenesis["da_start_height"] = daHeight
-		})
+		return node.WriteFile(ctx, passphraseFile, []byte(passphrase))
 	}
 }
 

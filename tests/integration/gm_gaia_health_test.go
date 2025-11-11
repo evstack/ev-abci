@@ -296,6 +296,7 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 		WithEncodingConfig(&testEncCfg).
 		WithDockerClient(s.dockerClient).
 		WithDockerNetworkID(s.networkID).
+		WithName("gm").
 		WithImage(gmImg).
 		WithDenom("stake").
 		WithBech32Prefix("celestia").
@@ -304,7 +305,7 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 		WithGasPrices(fmt.Sprintf("0.001%s", "stake")).
 		WithAdditionalStartArgs(
 			"--evnode.node.aggregator",
-			"--evnode.signer.passphrase", "12345678",
+			"--evnode.signer.passphrase_file", fmt.Sprintf("/var/cosmos-chain/gm/%s", passphraseFile),
 			"--evnode.da.address", daAddress,
 			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
@@ -356,7 +357,7 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			return node.WriteFile(ctx, "config/app.toml", updated)
 		}).
 		WithNode(cosmos.NewChainNodeConfigBuilder().
-			WithPostInit(AddSingleSequencer).
+			WithPostInit(AddSingleSequencer, writePasshraseFile("12345678")).
 			Build()).
 		Build(ctx)
 	require.NoError(s.T(), err)
