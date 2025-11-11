@@ -35,7 +35,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/version"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/hashicorp/go-metrics"
-	"github.com/ipfs/go-datastore"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/rs/zerolog"
@@ -571,7 +570,7 @@ func setupNodeAndExecutor(
 func createSequencer(
 	ctx context.Context,
 	logger zerolog.Logger,
-	datastore datastore.Batching,
+	datastore ds.Batching,
 	da da.DA,
 	nodeConfig config.Config,
 	genesis genesis.Genesis,
