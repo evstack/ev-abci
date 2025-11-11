@@ -3,9 +3,9 @@ package integration_test
 import (
 	"context"
 	"fmt"
+	"github.com/celestiaorg/tastora/framework/types"
 
 	"github.com/celestiaorg/tastora/framework/docker/container"
-	dockerclient "github.com/moby/moby/client"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ type Attester struct {
 	*container.Node
 }
 
-func NewAttester(ctx context.Context, dockerClient *dockerclient.Client, testName, networkID string, index int, logger *zap.Logger) (*Attester, error) {
+func NewAttester(ctx context.Context, dockerClient types.TastoraDockerClient, testName, networkID string, index int, logger *zap.Logger) (*Attester, error) {
 	image := container.Image{
 		Repository: attesterDefaultImage,
 		Version:    attesterDefaultVersion,
