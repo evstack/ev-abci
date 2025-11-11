@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	attesterDefaultImage   = "evabci/attester"
+	attesterDefaultImage   = "evabci/gm"
 	attesterDefaultVersion = "local"
 	attesterDefaultUIDGID  = "2000:2000"
 	attesterHomeDir        = "/home/attester"
@@ -74,7 +74,6 @@ func (h *Attester) Name() string {
 type AttesterConfig struct {
 	ChainID            string
 	GMNodeURL          string
-	GMAPIUrl           string
 	PrivKeyArmor       string
 	ValidatorKeyPath   string
 	ValidatorStatePath string
@@ -89,23 +88,14 @@ func DefaultAttesterConfig() AttesterConfig {
 
 func (h *Attester) Start(ctx context.Context, config AttesterConfig) error {
 	cmd := []string{
+		"gmd",
 		"attester",
 		"--chain-id", config.ChainID,
-		"--home", attesterHomeDir,
-	}
-
-	// Use armored key
-	cmd = append(cmd, "--priv-key-armor", config.PrivKeyArmor)
-
-	cmd = append(cmd,
-		"--api-addr", config.GMAPIUrl,
 		"--node", config.GMNodeURL,
-		"--bech32-account-prefix", "celestia",
-		"--bech32-account-pubkey", "celestiapub",
-		"--bech32-validator-prefix", "celestiavaloper",
-		"--bech32-validator-pubkey", "celestiavaloperpub",
+		"--home", attesterHomeDir,
+		"--priv-key-armor", config.PrivKeyArmor,
 		"--verbose",
-	)
+	}
 
 	err := h.CreateContainer(ctx, h.TestName, h.NetworkID, h.Image, nil, "", h.Bind(), nil, h.Name(), cmd, nil, []string{})
 	if err != nil {
