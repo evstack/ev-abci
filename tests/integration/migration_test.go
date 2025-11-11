@@ -57,7 +57,7 @@ func (s *MigrationTestSuite) SetupTest() {
 	sdk.GetConfig().SetBech32PrefixForAccount("gm", "gmpub")
 
 	// only setup docker infrastructure, not the chains
-	s.dockerClient, s.networkID = docker.DockerSetup(s.T())
+	s.dockerClient, s.networkID = docker.Setup(s.T())
 
 	s.preMigrationTxHashes = []string{}
 	s.preMigrationBalances = make(map[string]sdk.Coin)
@@ -426,9 +426,11 @@ func (s *MigrationTestSuite) createCosmosSDKChain(ctx context.Context, numNodes 
 // the image is changed, and initialization is skipped as we are reusing existing volumes.
 func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, daAddress string, numNodes int) *cosmos.Chain {
 	sequencer := cosmos.NewChainNodeConfigBuilder().
+		WithPostInit(writePasshraseFile("12345678")). // ensure the passhrase file exists.
 		WithAdditionalStartArgs(
 			"--evnode.node.aggregator",
-			"--evnode.signer.passphrase", "12345678",
+			// the filepath is determined based on the name in the chain builder.
+			"--evnode.signer.passphrase_file", fmt.Sprintf("/var/cosmos-chain/evolve/%s", passphraseFile),
 			"--evnode.da.address", daAddress,
 			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
@@ -455,7 +457,7 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 
 	evolveChain, err := s.getCosmosChainBuilder(numNodes).
 		WithImage(getEvolveAppContainer()).
-		WithSkipInit(true). // skip initalization as we have already done that previously when it was an sdk chain..
+		WithSkipInit(true). // skip initalization as we have already done that previously when it was an sdk chain.
 		WithNodes(nodeConfigs...).
 		Build(ctx)
 	s.Require().NoError(err)
