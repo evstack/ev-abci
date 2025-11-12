@@ -529,7 +529,7 @@ jobs:
           fi
 
   attester-integration:
-    needs: [build-gm-image, build-attester-image]
+    needs: build-gm-image
     name: Attester Mode Integration Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -563,11 +563,6 @@ jobs:
         run: |
           docker pull ${{ needs.build-gm-image.outputs.image_tag }}
           docker tag ${{ needs.build-gm-image.outputs.image_tag }} evabci/gm:local
-
-      - name: Pull Attester image from GHCR
-        run: |
-          docker pull ${{ needs.build-attester-image.outputs.image_tag }}
-          docker tag ${{ needs.build-attester-image.outputs.image_tag }} evabci/attester:local
 
       - name: Run attester integration test
         working-directory: tests/integration

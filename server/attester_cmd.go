@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	"io"
 	"net/http"
 	"net/url"
@@ -50,16 +51,12 @@ const (
 
 // AttesterConfig holds all configuration parameters for the attester
 type AttesterConfig struct {
-	ChainID               string
-	Node                  string
-	Home                  string
-	Verbose               bool
-	Mnemonic              string
-	PrivKeyArmor          string
-	Bech32AccountPrefix   string
-	Bech32AccountPubkey   string
-	Bech32ValidatorPrefix string
-	Bech32ValidatorPubkey string
+	ChainID      string
+	Node         string
+	Home         string
+	Verbose      bool
+	Mnemonic     string
+	PrivKeyArmor string
 }
 
 // NewAttesterCmd creates a command to run the attester client
@@ -97,19 +94,6 @@ func NewAttesterCmd() *cobra.Command {
 
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
-
-			sdkConfig := sdk.GetConfig()
-			sdkConfig.SetBech32PrefixForAccount(config.Bech32AccountPrefix, config.Bech32AccountPubkey)
-			sdkConfig.SetBech32PrefixForValidator(config.Bech32ValidatorPrefix, config.Bech32ValidatorPubkey)
-			sdkConfig.Seal()
-
-			if config.Verbose {
-				cmd.Printf("Bech32 Configuration:\n")
-				cmd.Printf("  Account prefix: %s\n", config.Bech32AccountPrefix)
-				cmd.Printf("  Account pubkey: %s\n", config.Bech32AccountPubkey)
-				cmd.Printf("  Validator prefix: %s\n", config.Bech32ValidatorPrefix)
-				cmd.Printf("  Validator pubkey: %s\n", config.Bech32ValidatorPubkey)
-			}
 
 			var operatorPrivKey *secp256k1.PrivKey
 			if config.PrivKeyArmor != "" {
@@ -161,6 +145,9 @@ func NewAttesterCmd() *cobra.Command {
 
 	cmd.Flags().String(flagMnemonic, "", "Mnemonic for the private key")
 	cmd.Flags().String(flagPrivKeyArmor, "", "ASCII armored private key (alternative to mnemonic)")
+	cmd.Flags().Bool(flagVerbose, false, "Enable verbose output")
+
+	flags.AddTxFlagsToCmd(cmd)
 
 	return cmd
 }

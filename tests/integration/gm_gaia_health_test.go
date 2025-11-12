@@ -108,6 +108,10 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 
 	attesterConfig, attesterNode := s.getAttester(ctx, gmChain, validatorArmoredKey)
 
+	s.T().Logf("Initializing attester node %s", attesterNode.Name())
+	err = attesterNode.Init(ctx, attesterConfig.ChainID, attesterConfig.GMNodeURL)
+	require.NoError(s.T(), err)
+
 	s.T().Logf("Starting attester node %s", attesterNode.Name())
 	err = attesterNode.Start(ctx, attesterConfig)
 	require.NoError(s.T(), err)
