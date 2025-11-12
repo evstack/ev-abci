@@ -29,7 +29,7 @@ require (
 	github.com/cosmos/gogoproto v1.7.2
 	github.com/evstack/ev-node v1.0.0-beta.9
 	github.com/evstack/ev-node/core v1.0.0-beta.4
-	github.com/evstack/ev-node/da v1.0.0-beta.4
+	github.com/evstack/ev-node/da v1.0.0-beta.5
 	github.com/evstack/ev-node/sequencers/single v1.0.0-beta.3
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
@@ -126,7 +126,7 @@ require (
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
-	github.com/filecoin-project/go-jsonrpc v0.8.0 // indirect
+	github.com/filecoin-project/go-jsonrpc v0.9.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
