@@ -12,8 +12,8 @@ import (
 const (
 	attesterDefaultImage   = "evabci/gm"
 	attesterDefaultVersion = "local"
-	attesterDefaultUIDGID  = "2000:2000"
-	attesterHomeDir        = "/home/attester"
+	attesterDefaultUIDGID  = "1000:1000"
+	attesterHomeDir        = "/home/gm"
 )
 
 var AttesterNode = AttesterNodeType{}
@@ -86,6 +86,47 @@ func DefaultAttesterConfig() AttesterConfig {
 	}
 }
 
+// createClientConfig creates a basic client.toml before running any gmd commands.
+func (h *Attester) createClientConfig(ctx context.Context, chainID, nodeURL string) error {
+	// creating a config is required before calling init because tx flags are registered in the attester command.
+	clientToml := fmt.Sprintf(`chain-id = "%s"
+keyring-backend = "test"
+output = "text"
+node = "%s"
+broadcast-mode = "sync"
+`, chainID, nodeURL)
+
+	err := h.WriteFile(ctx, "config/client.toml", []byte(clientToml))
+	if err != nil {
+		return fmt.Errorf("failed to write client.toml: %w", err)
+	}
+
+	return nil
+}
+
+// Init initializes the attester home directory with necessary config files
+func (h *Attester) Init(ctx context.Context, chainID, nodeURL string) error {
+	err := h.createClientConfig(ctx, chainID, nodeURL)
+	if err != nil {
+		return err
+	}
+
+	cmd := []string{
+		"gmd",
+		"init",
+		"attester-node",
+		"--chain-id", chainID,
+		"--home", attesterHomeDir,
+	}
+
+	_, _, err = h.Exec(ctx, h.Logger, cmd, nil)
+	if err != nil {
+		return fmt.Errorf("failed to initialize attester home: %w", err)
+	}
+
+	return nil
+}
+
 func (h *Attester) Start(ctx context.Context, config AttesterConfig) error {
 	cmd := []string{
 		"gmd",
@@ -108,5 +149,3 @@ func (h *Attester) Start(ctx context.Context, config AttesterConfig) error {
 
 	return nil
 }
-
-// Attester inherits WriteFileWithOptions from embedded container.Node.
