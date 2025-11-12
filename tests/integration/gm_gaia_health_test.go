@@ -8,17 +8,14 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/BurntSushi/toml"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/ibc"
 	"github.com/celestiaorg/tastora/framework/docker/ibc/relayer"
-	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/query"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
-	cometcfg "github.com/cometbft/cometbft/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -280,42 +277,6 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--minimum-gas-prices", "0.001stake",
 			"--log_level", "*:info",
 		).
-		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
-			// 1) Ensure ABCI responses and tx events are retained and indexed for Hermes
-			if err := config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
-				cfg.Storage.DiscardABCIResponses = false
-				// Enable key-value tx indexer so Hermes can query IBC packet events
-				cfg.TxIndex.Indexer = "kv"
-				// Increase RPC BroadcastTxCommit timeout to accommodate CI slowness
-				if cfg.RPC != nil {
-					cfg.RPC.TimeoutBroadcastTxCommit = 120000000000 // 120s in nanoseconds
-				}
-			}); err != nil {
-				return err
-			}
-			// 2) Ensure app-level index-events include IBC packet events
-			appToml, err := node.ReadFile(ctx, "config/app.toml")
-			if err != nil {
-				return err
-			}
-			var appCfg map[string]interface{}
-			if err := toml.Unmarshal(appToml, &appCfg); err != nil {
-				return err
-			}
-			appCfg["index-events"] = []string{
-				"message.action",
-				"send_packet",
-				"recv_packet",
-				"write_acknowledgement",
-				"acknowledge_packet",
-				"timeout_packet",
-			}
-			updated, err := toml.Marshal(appCfg)
-			if err != nil {
-				return err
-			}
-			return node.WriteFile(ctx, "config/app.toml", updated)
-		}).
 		WithNode(cosmos.NewChainNodeConfigBuilder().
 			WithPostInit(AddSingleSequencer, writePasshraseFile("12345678")).
 			Build()).
