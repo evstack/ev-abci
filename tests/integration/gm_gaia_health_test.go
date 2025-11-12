@@ -112,7 +112,6 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	connection, channel := setupIBCConnection(s.T(), ctx, s.celestiaChain, gmChain, hermes)
 	s.T().Logf("Established IBC connection %s and channel %s between Celestia and GM chain", connection.ConnectionID, channel.ChannelID)
 
-	// Test IBC transfers
 	s.testIBCTransfers(ctx, s.celestiaChain, gmChain, channel, hermes)
 }
 
@@ -309,17 +308,16 @@ func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
 
 // setupIBCConnection establishes a complete IBC connection and channel
 func setupIBCConnection(t *testing.T, ctx context.Context, chainA, chainB types.Chain, hermes *relayer.Hermes) (ibc.Connection, ibc.Channel) {
-	// create clients
 	err := hermes.CreateClients(ctx, chainA, chainB)
 	require.NoError(t, err)
 
-	// create connections
 	connection, err := hermes.CreateConnections(ctx, chainA, chainB)
 	require.NoError(t, err)
 	require.NotEmpty(t, connection.ConnectionID, "Connection ID should not be empty")
 
 	// give chains a moment to persist connection state and client updates
-	_ = wait.ForBlocks(ctx, 2, chainA, chainB)
+	err = wait.ForBlocks(ctx, 2, chainA, chainB)
+	require.NoError(t, err)
 
 	// Create an ICS20 channel for token transfers
 	channelOpts := ibc.CreateChannelOptions{
@@ -342,15 +340,14 @@ func setupIBCConnection(t *testing.T, ctx context.Context, chainA, chainB types.
 
 // testIBCTransfers performs bidirectional IBC transfers and validates they succeed
 func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celestiaChain, gmChain *cosmos.Chain, channel ibc.Channel, hermes *relayer.Hermes) {
-	// Transfer amount
 	transferAmount := sdkmath.NewInt(1_000_000)
 
-	// Get wallets for both chains
 	celestiaWallet := celestiaChain.GetFaucetWallet()
 	gmWallet := gmChain.GetFaucetWallet()
 
 	celestiaAddr, err := sdkacc.AddressFromWallet(celestiaWallet)
 	require.NoError(s.T(), err)
+
 	gmAddr, err := sdkacc.AddressFromWallet(gmWallet)
 	require.NoError(s.T(), err)
 
@@ -363,13 +360,13 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 	// Calculate IBC denom for GM chain receiving Celestia tokens
 	celestiaToGMIBCDenom := s.calculateIBCDenom(channel.CounterpartyPort, channel.CounterpartyID, "utia")
 
-	// Start Hermes relayer
 	s.T().Log("Starting Hermes relayer...")
 	err = hermes.Start(ctx)
 	require.NoError(s.T(), err)
 
 	// Allow Hermes to sync initial heights before sending packets
-	_ = wait.ForBlocks(ctx, 2, celestiaChain, gmChain)
+	err = wait.ForBlocks(ctx, 2, celestiaChain, gmChain)
+	require.NoError(s.T(), err)
 
 	// Test 1: Transfer from Celestia to GM chain
 	s.T().Log("=== Testing transfer from Celestia to GM chain ===")
@@ -394,6 +391,7 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 	ctxTx, cancelTx := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancelTx()
 	resp, err := celestiaChain.BroadcastMessages(ctxTx, celestiaWallet, transferMsg)
+
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), uint32(0), resp.Code, "IBC transfer failed: %s", resp.RawLog)
 
