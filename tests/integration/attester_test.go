@@ -89,13 +89,8 @@ func DefaultAttesterConfig() AttesterConfig {
 // createClientConfig creates a basic client.toml before running any gmd commands
 // This prevents "Config File client Not Found" errors from flags.AddTxFlagsToCmd
 func (h *Attester) createClientConfig(ctx context.Context, chainID, nodeURL string) error {
-	// Create config directory first
-	mkdirCmd := []string{"mkdir", "-p", "config"}
-	_, _, err := h.Exec(ctx, h.Logger, mkdirCmd, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
 
+	// creating a config is required before calling init because tx flags are registered in the attester command.
 	clientToml := fmt.Sprintf(`chain-id = "%s"
 keyring-backend = "test"
 output = "text"
@@ -103,7 +98,7 @@ node = "%s"
 broadcast-mode = "sync"
 `, chainID, nodeURL)
 
-	err = h.WriteFile(ctx, "config/client.toml", []byte(clientToml))
+	err := h.WriteFile(ctx, "config/client.toml", []byte(clientToml))
 	if err != nil {
 		return fmt.Errorf("failed to write client.toml: %w", err)
 	}

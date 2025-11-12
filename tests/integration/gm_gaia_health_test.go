@@ -120,12 +120,17 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	hermes, err := relayer.NewHermes(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
 	require.NoError(s.T(), err, "failed to create hermes relayer")
 
-	err = hermes.Init(ctx, []types.Chain{s.celestiaChain, gmChain})
+	err = hermes.Init(ctx, []types.Chain{s.celestiaChain, gmChain}, func(cfg *relayer.HermesConfig) {
+		for i := range cfg.Chains {
+			// switch hermes to pull mode to avoid WebSocket connection issues
+			cfg.Chains[i].EventSource = map[string]interface{}{
+				"mode":     "pull",
+				"interval": "200ms",
+			}
+			cfg.Chains[i].ClockDrift = "60s"
+		}
+	})
 	require.NoError(s.T(), err, "failed to initialize relayer")
-
-	// Switch hermes to pull mode to avoid WebSocket connection issues
-	err = s.configureHermesForPullMode(ctx, hermes)
-	require.NoError(s.T(), err, "failed to configure hermes for pull mode")
 
 	connection, channel := setupIBCConnection(s.T(), ctx, s.celestiaChain, gmChain, hermes)
 	s.T().Logf("Established IBC connection %s and channel %s between Celestia and GM chain", connection.ConnectionID, channel.ChannelID)
@@ -237,54 +242,6 @@ func deriveAttesterAccountFromArmor(armoredKey string) (sdk.AccAddress, error) {
 	}
 
 	return keyAddr, nil
-}
-
-func (s *DockerIntegrationTestSuite) configureHermesForPullMode(ctx context.Context, hermes *relayer.Hermes) error {
-	s.T().Log("Configuring hermes to use pull mode and increased clock drift...")
-
-	// Read the current config
-	configBz, err := hermes.ReadFile(ctx, ".hermes/config.toml")
-	if err != nil {
-		return fmt.Errorf("failed to read hermes config: %w", err)
-	}
-
-	// Unmarshal into map
-	var c map[string]interface{}
-	if err := toml.Unmarshal(configBz, &c); err != nil {
-		return fmt.Errorf("failed to unmarshal hermes config: %w", err)
-	}
-
-	// Update chains to use pull mode and increase clock drift
-	chains, ok := c["chains"].([]map[string]interface{})
-	if !ok {
-		return fmt.Errorf("chains not found in config or not in expected format")
-	}
-
-	for i := range chains {
-		// Update event_source to pull mode with tighter interval
-		chains[i]["event_source"] = map[string]interface{}{
-			"mode":     "pull",
-			"interval": "200ms",
-		}
-
-		// Update clock_drift to handle timing differences between chains
-		chains[i]["clock_drift"] = "60s"
-	}
-
-	// Remarshal into bytes
-	updatedConfigBz, err := toml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("failed to marshal updated hermes config: %w", err)
-	}
-
-	// Write the updated config
-	err = hermes.WriteFile(ctx, ".hermes/config.toml", updatedConfigBz)
-	if err != nil {
-		return fmt.Errorf("failed to write updated hermes config: %w", err)
-	}
-
-	s.T().Log("Successfully configured hermes to use pull mode with 60s clock drift tolerance")
-	return nil
 }
 
 func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Chain {
