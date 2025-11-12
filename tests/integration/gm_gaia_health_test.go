@@ -46,28 +46,23 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	}()
 
 	// Wait for GM chain RPC to be ready
-	s.T().Log("Waiting for GM chain RPC to be ready...")
-	var rpcReady bool
-	for i := 0; i < 30; i++ { // 30 second timeout
+	err := wait.ForCondition(ctx, time.Second*30, time.Second, func() (bool, error) {
 		node := gmChain.GetNodes()[0]
 		rpcClient, _ := node.GetRPCClient()
 		if rpcClient != nil {
 			// Test if RPC client is actually working by making a simple call
 			_, err := rpcClient.Status(ctx)
 			if err == nil {
-				rpcReady = true
-				s.T().Log("GM chain RPC is ready")
-				break
+				return true, nil
 			}
 		}
-		time.Sleep(1 * time.Second)
-	}
-	require.True(s.T(), rpcReady, "GM chain RPC failed to become ready within 30 seconds")
+		return false, nil
+	})
+	s.Require().NoError(err)
 
 	kr, err := gmChain.GetNodes()[0].GetKeyring()
 	require.NoError(s.T(), err)
 
-	// List available keys
 	keys, err := kr.List()
 	require.NoError(s.T(), err)
 	s.T().Logf("Available keys in keyring: %d", len(keys))
@@ -83,25 +78,10 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 		}
 	}
 
-	// Extract validator key if found
-	var validatorArmoredKey string
-	if validatorKey != nil {
-		s.T().Logf("Extracting validator key...")
+	s.Require().NotNil(validatorKey, "validator key not found in keyring")
 
-		// Export private key in armor format (no passphrase for test keyring)
-		armoredPrivKey, err := kr.ExportPrivKeyArmor("validator", "")
-		require.NoError(s.T(), err, "failed to export validator private key")
-
-		s.T().Logf("Validator private key exported successfully (armor format)")
-		previewLen := 100
-		if len(armoredPrivKey) < previewLen {
-			previewLen = len(armoredPrivKey)
-		}
-		s.T().Logf("Armored key preview: %s...", armoredPrivKey[:previewLen])
-		validatorArmoredKey = armoredPrivKey
-	} else {
-		s.T().Log("No validator key found in keyring")
-	}
+	validatorArmoredKey, err := kr.ExportPrivKeyArmor("validator", "")
+	s.Require().NoError(err, "failed to export validator private key")
 
 	attesterConfig, attesterNode := s.getAttester(ctx, gmChain, validatorArmoredKey)
 
