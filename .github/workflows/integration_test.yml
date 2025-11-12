@@ -355,9 +355,14 @@ jobs:
 
       - name: Start Local DA
         run: |
-          go install github.com/evstack/ev-node/da/cmd/local-da@main
+          # Create a temporary go module to use go tool (can't use go install due to replace directives)
+          mkdir -p /tmp/da-tool
+          cd /tmp/da-tool
+          go mod init temp
+          go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
+          go get github.com/evstack/ev-node/da/cmd/local-da
           # start the local da in the background
-          local-da &
+          go tool github.com/evstack/ev-node/da/cmd/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start
