@@ -6,7 +6,7 @@ count := 1
 
 IGNITE_VERSION ?= v29.3.1
 IGNITE_EVOLVE_APP_VERSION ?= main
-EVNODE_VERSION ?= v1.0.0-beta.5
+EVNODE_VERSION ?= v1.0.0-beta.9
 
 ## help: Show this help message
 help: Makefile
@@ -83,8 +83,8 @@ proto-gen:
 .PHONY: proto-gen
 
 
-## build-attester-docker-images: Build Docker images for the GM chain and attester integration tests
-build-attester-docker-images:
+## build-attester-docker-image: Build Docker images for the GM chain and attester integration tests
+build-attester-docker-image:
 	@echo "--> Building GM integration Docker image"
 	@docker build \
 		-f tests/integration/docker/Dockerfile.gm \
@@ -93,10 +93,5 @@ build-attester-docker-images:
 		--build-arg EVNODE_VERSION=$(EVNODE_VERSION) \
 		-t evabci/gm:local \
 		.
-	@echo "--> Building attester integration Docker image"
-	@docker build \
-		-f tests/integration/docker/Dockerfile.attester \
-		-t evabci/attester:local \
-		.
 
-.PHONY: build-attester-docker-images
+.PHONY: build-attester-docker-image
