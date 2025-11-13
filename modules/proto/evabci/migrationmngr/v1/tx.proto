@@ -38,6 +38,13 @@ message MsgMigrateToEvolve {
   // attesters is the list of attesters that will attest to blocks.
   repeated Attester attesters = 4
       [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
+
+  // TODO: HACK - this boolean is a temporary workaround. The N→1 validator migration
+  // use case (staying on CometBFT) should be its own separate command/message type,
+  // not a flag on MsgMigrateToEvolve which is designed for rollup migration.
+  // stay_on_comet indicates whether to continue on CometBFT after migration
+  // instead of halting for a binary switch to rollup.
+  bool stay_on_comet = 5;
 }
 
 // MsgMigrateToEvolveResponse defines the response structure for executing a

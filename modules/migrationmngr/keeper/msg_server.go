@@ -35,6 +35,7 @@ func (m *msgServer) MigrateToEvolve(ctx context.Context, msg *types.MsgMigrateTo
 		BlockHeight: msg.BlockHeight,
 		Sequencer:   msg.Sequencer,
 		Attesters:   msg.Attesters,
+		StayOnComet: msg.StayOnComet,
 	}
 
 	if err := m.Migration.Set(ctx, s); err != nil {

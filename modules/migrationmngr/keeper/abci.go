@@ -38,6 +38,27 @@ func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error
 
 	// one block after the migration end, we halt forcing a binary switch
 	if shouldHalt {
+		migration, err := k.Migration.Get(ctx)
+		if err != nil {
+			k.Logger(ctx).Error("failed to get migration state", "error", err)
+			return nil, sdkerrors.ErrLogic.Wrapf("failed to get migration state: %v", err)
+		}
+
+		// TODO: HACK - this check is a temporary workaround. The N→1 validator migration
+		// use case (staying on CometBFT) should be its own separate command/message type,
+		// not a flag on MsgMigrateToEvolve which is designed for rollup migration.
+		if migration.StayOnComet {
+			k.Logger(ctx).Info("Migration complete, staying on CometBFT (no binary switch)")
+
+			// remove the migration state from the store
+			if err := k.Migration.Remove(ctx); err != nil {
+				k.Logger(ctx).Error("failed to remove migration state", "error", err)
+			}
+
+			// continue running on CometBFT - do not halt
+			return &sdk.ResponsePreBlock{}, nil
+		}
+
 		k.Logger(ctx).Info("HALTING CHAIN - migration complete, binary switch required")
 
 		// remove the migration state from the store
@@ -76,6 +97,15 @@ func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 		return nil, err
 	}
 
+	// TODO: HACK - when staying on CometBFT, we unbond delegations and let staking module handle
+	// validator updates naturally. This is a temporary workaround - the N→1 validator migration
+	// use case should be its own separate command/message type.
+	if migration.StayOnComet {
+		// unbond delegations to validators being removed, let staking module handle validator updates
+		return k.migrateWithUnbonding(ctx, migration, validatorSet)
+	}
+
+	// rollup migration: return validator updates directly without unbonding
 	var updates []abci.ValidatorUpdate
 	if !k.isIBCEnabled(ctx) {
 		// if IBC is not enabled, we can migrate immediately

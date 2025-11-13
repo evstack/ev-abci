@@ -6,6 +6,7 @@ import (
 
 	"cosmossdk.io/collections"
 	abci "github.com/cometbft/cometbft/abci/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -234,4 +235,123 @@ func (k Keeper) migrateOver(
 	}
 
 	return initialValUpdates, nil
+}
+
+// unbondValidatorDelegations unbonds all delegations to a specific validator.
+// This is used when StayOnComet is true to properly return tokens to delegators.
+func (k Keeper) unbondValidatorDelegations(ctx context.Context, validator stakingtypes.Validator) error {
+	valAddr, err := sdk.ValAddressFromBech32(validator.OperatorAddress)
+	if err != nil {
+		return sdkerrors.ErrInvalidAddress.Wrapf("invalid validator address: %v", err)
+	}
+
+	// get all delegations to this validator
+	delegations, err := k.stakingKeeper.GetValidatorDelegations(ctx, valAddr)
+	if err != nil {
+		return sdkerrors.ErrLogic.Wrapf("failed to get validator delegations: %v", err)
+	}
+
+	// unbond each delegation
+	for _, delegation := range delegations {
+		delAddr, err := sdk.AccAddressFromBech32(delegation.DelegatorAddress)
+		if err != nil {
+			k.Logger(ctx).Error("failed to parse delegator address", "address", delegation.DelegatorAddress, "error", err)
+			continue
+		}
+
+		// unbond all shares from this delegation
+		_, _, err = k.stakingKeeper.Undelegate(ctx, delAddr, valAddr, delegation.Shares)
+		if err != nil {
+			k.Logger(ctx).Error("failed to undelegate",
+				"delegator", delegation.DelegatorAddress,
+				"validator", validator.OperatorAddress,
+				"error", err)
+			continue
+		}
+	}
+
+	return nil
+}
+
+// migrateWithUnbonding migrates by unbonding delegations to validators being removed.
+// This is used when StayOnComet is true to properly return tokens to delegators.
+// Returns empty ValidatorUpdates since the staking module will handle validator set changes.
+func (k Keeper) migrateWithUnbonding(
+	ctx context.Context,
+	migrationData types.EvolveMigration,
+	lastValidatorSet []stakingtypes.Validator,
+) ([]abci.ValidatorUpdate, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	currentHeight := uint64(sdkCtx.BlockHeight())
+	
+	// ensure sequencer pubkey is unpacked
+	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
+		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
+	}
+
+	// determine which validators to remove (all except sequencer)
+	var validatorsToRemove []stakingtypes.Validator
+	for _, val := range lastValidatorSet {
+		if !val.ConsensusPubkey.Equal(migrationData.Sequencer.ConsensusPubkey) {
+			validatorsToRemove = append(validatorsToRemove, val)
+		}
+	}
+
+	if len(validatorsToRemove) == 0 {
+		k.Logger(ctx).Info("No validators to remove, migration complete")
+		return []abci.ValidatorUpdate{}, nil
+	}
+
+	// if IBC is not enabled, unbond all immediately
+	if !k.isIBCEnabled(ctx) {
+		if currentHeight == migrationData.BlockHeight {
+			k.Logger(ctx).Info("Unbonding all validators immediately (IBC not enabled)",
+				"validators_to_remove", len(validatorsToRemove))
+			for _, val := range validatorsToRemove {
+				if err := k.unbondValidatorDelegations(ctx, val); err != nil {
+					k.Logger(ctx).Error("failed to unbond validator", "validator", val.OperatorAddress, "error", err)
+				}
+			}
+		}
+		return []abci.ValidatorUpdate{}, nil
+	}
+
+	// IBC enabled: unbond gradually over smoothing period
+	step, err := k.MigrationStep.Get(ctx)
+	if err != nil && !errors.Is(err, collections.ErrNotFound) {
+		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to get migration step: %v", err)
+	}
+
+	if step >= IBCSmoothingFactor {
+		// migration complete
+		if err := k.MigrationStep.Remove(ctx); err != nil {
+			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to remove migration step: %v", err)
+		}
+		return []abci.ValidatorUpdate{}, nil
+	}
+
+	// unbond validators gradually
+	removePerStep := (len(validatorsToRemove) + int(IBCSmoothingFactor) - 1) / int(IBCSmoothingFactor)
+	startRemove := int(step) * removePerStep
+	endRemove := min(startRemove+removePerStep, len(validatorsToRemove))
+
+	k.Logger(ctx).Info("Unbonding validators",
+		"step", step,
+		"start_index", startRemove,
+		"end_index", endRemove,
+		"total_to_remove", len(validatorsToRemove))
+
+	for _, val := range validatorsToRemove[startRemove:endRemove] {
+		if err := k.unbondValidatorDelegations(ctx, val); err != nil {
+			k.Logger(ctx).Error("failed to unbond validator", "validator", val.OperatorAddress, "error", err)
+		}
+	}
+
+	// increment step
+	if err := k.MigrationStep.Set(ctx, step+1); err != nil {
+		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to set migration step: %v", err)
+	}
+
+	// return empty updates - let staking module handle validator set changes
+	return []abci.ValidatorUpdate{}, nil
 }

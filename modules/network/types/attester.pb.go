@@ -7,8 +7,6 @@ import (
 	fmt "fmt"
 	_ "github.com/cosmos/cosmos-proto"
 	types "github.com/cosmos/cosmos-sdk/codec/types"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	_ "github.com/cosmos/gogoproto/gogoproto"
 	proto "github.com/cosmos/gogoproto/proto"
 	io "io"
@@ -407,9 +405,3 @@ var (
 	ErrIntOverflowAttester          = fmt.Errorf("proto: integer overflow")
 	ErrUnexpectedEndOfGroupAttester = fmt.Errorf("proto: unexpected end of group")
 )
-
-// UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (info *AttesterInfo) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
-	var pk cryptotypes.PubKey
-	return unpacker.UnpackAny(info.Pubkey, &pk)
-}
