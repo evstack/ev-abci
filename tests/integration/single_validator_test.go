@@ -449,6 +449,68 @@ func (s *SingleValidatorSuite) validateIBCStatePreserved(ctx context.Context) {
 	s.Require().Equal(s.preMigrationIBCBal.Amount, currentIBCBalance.Amount)
 
 	s.T().Logf("IBC balance preserved: %s %s", currentIBCBalance.Amount, s.ibcDenom)
+
+	// perform IBC transfer back to verify IBC still works after migration
+	s.T().Log("Performing IBC transfer back to verify IBC functionality...")
+
+	transferAmount := math.NewInt(100_000)
+	ibcChainWallet := s.ibcCounterpartyChain.GetFaucetWallet()
+
+	// get counterparty network info to query balance
+	counterpartyNetworkInfo, err := s.ibcCounterpartyChain.GetNode().GetNetworkInfo(ctx)
+	s.Require().NoError(err)
+
+	// get initial balance on counterparty chain
+	initialCounterpartyBalance, err := queryBankBalance(ctx,
+		counterpartyNetworkInfo.External.GRPCAddress(),
+		ibcChainWallet.GetFormattedAddress(),
+		"stake")
+	s.Require().NoError(err)
+
+	// transfer IBC tokens back from gm-1 to gm-2
+	transferMsg := transfertypes.NewMsgTransfer(
+		s.ibcChannel.CounterpartyPort,
+		s.ibcChannel.CounterpartyID,
+		sdk.NewCoin(s.ibcDenom, transferAmount),
+		gmWallet.GetFormattedAddress(),
+		ibcChainWallet.GetFormattedAddress(),
+		clienttypes.ZeroHeight(),
+		uint64(time.Now().Add(time.Hour).UnixNano()),
+		"",
+	)
+
+	ctxTx, cancelTx := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelTx()
+	resp, err := s.chain.BroadcastMessages(ctxTx, gmWallet, transferMsg)
+	s.Require().NoError(err)
+	s.Require().Equal(uint32(0), resp.Code, "IBC transfer transaction failed")
+
+	s.T().Log("Waiting for IBC transfer to complete...")
+
+	// wait for transfer to complete on counterparty chain
+	err = wait.ForCondition(ctx, 2*time.Minute, 2*time.Second, func() (bool, error) {
+		balance, err := queryBankBalance(ctx,
+			counterpartyNetworkInfo.External.GRPCAddress(),
+			ibcChainWallet.GetFormattedAddress(),
+			"stake")
+		if err != nil {
+			return false, nil
+		}
+		expectedBalance := initialCounterpartyBalance.Amount.Add(transferAmount)
+		return balance.Amount.GTE(expectedBalance), nil
+	})
+	s.Require().NoError(err)
+
+	// verify final balance on counterparty chain
+	finalCounterpartyBalance, err := queryBankBalance(ctx,
+		counterpartyNetworkInfo.External.GRPCAddress(),
+		ibcChainWallet.GetFormattedAddress(),
+		"stake")
+	s.Require().NoError(err)
+	expectedFinalBalance := initialCounterpartyBalance.Amount.Add(transferAmount)
+	s.Require().Equal(expectedFinalBalance, finalCounterpartyBalance.Amount)
+
+	s.T().Logf("IBC transfer back successful: %s stake received on counterparty chain", transferAmount)
 }
 
 // calculateIBCDenom calculates the IBC denomination
