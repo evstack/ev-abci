@@ -462,8 +462,6 @@ func setupNodeAndExecutor(
 		*evLogger,
 		evcfg.DA.Address,
 		evcfg.DA.AuthToken,
-		evcfg.DA.GasPrice,
-		evcfg.DA.GasMultiplier,
 		cmd.DefaultMaxBlobSize,
 	)
 	if err != nil {
@@ -676,12 +674,14 @@ func getAppGenesis(cfg *cmtcfg.Config) (*genutiltypes.AppGenesis, error) {
 
 // getDaStartHeight parses the da_start_height from the genesis file.
 func getDaStartHeight(cfg *cmtcfg.Config) (uint64, error) {
+	const dAStartHeightFieldName = "da_start_height"
+
 	genFile, err := os.Open(filepath.Clean(cfg.GenesisFile()))
 	if err != nil {
 		return 0, fmt.Errorf("failed to open genesis file %s: %w", cfg.GenesisFile(), err)
 	}
 
-	daStartHeight, err := parseDAStartHeightFromGenesis(bufio.NewReader(genFile))
+	daStartHeight, err := parseFieldFromGenesis(bufio.NewReader(genFile), dAStartHeightFieldName)
 	if err != nil {
 		return 0, err
 	}
@@ -693,13 +693,11 @@ func getDaStartHeight(cfg *cmtcfg.Config) (uint64, error) {
 	return daStartHeight, nil
 }
 
-// parseDAStartHeightFromGenesis parses the `da_start_height` from a genesis JSON file, aborting early after finding the `da_start_height`.
-// For efficiency, it's recommended to place the `da_start_height` field before any large entries in the JSON file.
-// Returns no error when the `da_start_height` field is not found.
+// parseFieldFromGenesis parses given fields from a genesis JSON file, aborting early after finding the field.
+// For efficiency, it's recommended to place the field before any large entries in the JSON file.
+// Returns no error when the field is not found.
 // Logic based on https://github.com/cosmos/cosmos-sdk/blob/v0.50.14/x/genutil/types/chain_id.go#L18.
-func parseDAStartHeightFromGenesis(r io.Reader) (uint64, error) {
-	const dAStartHeightFieldName = "da_start_height"
-
+func parseFieldFromGenesis(r io.Reader, fieldName string) (uint64, error) {
 	dec := json.NewDecoder(r)
 
 	t, err := dec.Token()
@@ -720,7 +718,7 @@ func parseDAStartHeightFromGenesis(r io.Reader) (uint64, error) {
 			return 0, fmt.Errorf("expected string for the key type, got %s", t)
 		}
 
-		if key == dAStartHeightFieldName {
+		if key == fieldName {
 			var chainID uint64
 			if err := dec.Decode(&chainID); err != nil {
 				return 0, err

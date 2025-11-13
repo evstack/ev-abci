@@ -1,12 +1,15 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
+	cmtcfg "github.com/cometbft/cometbft/config"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/rs/zerolog"
@@ -131,10 +134,6 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get gas-price flag: %w", err)
 	}
 
-	if gasPrice == -1 {
-		gasPrice = cfg.DA.GasPrice
-	}
-
 	// Get submit options (use flag if provided, otherwise use config)
 	submitOpts, err := cobraCmd.Flags().GetString(flagSubmitOpts)
 	if err != nil {
@@ -164,8 +163,6 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 		*zlLogger,
 		cfg.DA.Address,
 		cfg.DA.AuthToken,
-		gasPrice,
-		cfg.DA.GasMultiplier,
 		cmd.DefaultMaxBlobSize,
 	)
 	if err != nil {
@@ -187,8 +184,27 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 		cobraCmd.Printf("\n✓ Transaction posted successfully\n\n")
 		cobraCmd.Printf("Namespace:  %s\n", namespace)
 		cobraCmd.Printf("DA Height:  %d\n", result.Height)
-		cobraCmd.Printf("Gas Price:  %.2f\n", gasPrice)
 		cobraCmd.Printf("Data Size:  %d bytes\n", len(txData))
+
+		// Calculate when transaction will be included based on DA epochs
+		daStartHeight, err := getDaStartHeight(serverCtx.Config)
+		if err != nil {
+			cobraCmd.Printf("Failed to get DA start height: %v\n", err)
+			daStartHeight = 0
+		}
+		epochSize, err := getDaEpoch(serverCtx.Config)
+		if err != nil {
+			cobraCmd.Printf("Failed to get DA epoch size: %v\n", err)
+			epochSize = 0
+		}
+
+		_, epochEnd := types.CalculateEpochBoundaries(result.Height, daStartHeight, epochSize)
+		cobraCmd.Printf(
+			"DA Blocks until inclusion: %d (at DA height %d)\n",
+			epochEnd-(result.Height+1),
+			epochEnd+1,
+		)
+
 		cobraCmd.Printf("\n")
 		return nil
 
@@ -246,4 +262,25 @@ func decodeTxFromJSON(clientCtx client.Context, jsonStr string) ([]byte, error) 
 	}
 
 	return txBytes, nil
+}
+
+// getDaEpoch parses the da_start_height from the genesis file.
+func getDaEpoch(cfg *cmtcfg.Config) (uint64, error) {
+	const daEpochFieldName = "da_epoch_forced_inclusion"
+
+	genFile, err := os.Open(filepath.Clean(cfg.GenesisFile()))
+	if err != nil {
+		return 0, fmt.Errorf("failed to open genesis file %s: %w", cfg.GenesisFile(), err)
+	}
+
+	daStartHeight, err := parseFieldFromGenesis(bufio.NewReader(genFile), daEpochFieldName)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := genFile.Close(); err != nil {
+		return 0, fmt.Errorf("failed to close genesis file %s: %v", genFile.Name(), err)
+	}
+
+	return daStartHeight, nil
 }

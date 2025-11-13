@@ -6,9 +6,9 @@ replace github.com/celestiaorg/go-header => github.com/julienrbrt/go-header v0.0
 
 // TODO: remove after https://github.com/evstack/ev-node/pull/2797
 replace (
-	github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.9.0.20251111144303-272027d0e3cd
-	github.com/evstack/ev-node/core => github.com/evstack/ev-node/core v1.0.0-beta.4.0.20251111144303-272027d0e3cd
-	github.com/evstack/ev-node/sequencers/single => github.com/evstack/ev-node/sequencers/single v1.0.0-beta.3.0.20251111144303-272027d0e3cd
+	github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.9.0.20251113110405-0d790efaf5b7
+	github.com/evstack/ev-node/core => github.com/evstack/ev-node/core v1.0.0-beta.4.0.20251113110405-0d790efaf5b7
+	github.com/evstack/ev-node/da => github.com/evstack/ev-node/da v1.0.0-beta.4.0.20251113110405-0d790efaf5b7
 )
 
 replace (
@@ -37,7 +37,6 @@ require (
 	github.com/evstack/ev-node v1.0.0-beta.9
 	github.com/evstack/ev-node/core v1.0.0-beta.4
 	github.com/evstack/ev-node/da v1.0.0-beta.4
-	github.com/evstack/ev-node/sequencers/single v1.0.0-beta.2
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
@@ -134,7 +133,7 @@ require (
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/filecoin-project/go-clock v0.1.0 // indirect
-	github.com/filecoin-project/go-jsonrpc v0.8.0 // indirect
+	github.com/filecoin-project/go-jsonrpc v0.9.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
