@@ -43,6 +43,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	evblock "github.com/evstack/ev-node/block"
+	"github.com/evstack/ev-node/core/da"
+	coresequencer "github.com/evstack/ev-node/core/sequencer"
 	"github.com/evstack/ev-node/da/jsonrpc"
 	"github.com/evstack/ev-node/node"
 	"github.com/evstack/ev-node/pkg/cmd"
@@ -52,7 +54,8 @@ import (
 	"github.com/evstack/ev-node/pkg/p2p/key"
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
-	"github.com/evstack/ev-node/sequencers/single"
+	basedsequencer "github.com/evstack/ev-node/sequencers/based"
+	singlesequencer "github.com/evstack/ev-node/sequencers/single"
 	rollkittypes "github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
@@ -459,36 +462,25 @@ func setupNodeAndExecutor(
 		*evLogger,
 		evcfg.DA.Address,
 		evcfg.DA.AuthToken,
-		evcfg.DA.GasPrice,
-		evcfg.DA.GasMultiplier,
 		cmd.DefaultMaxBlobSize,
 	)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
 	}
 
-	singleMetrics, err := single.NopMetrics()
+	singleMetrics, err := singlesequencer.NopMetrics()
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
 
 	if evcfg.Instrumentation.IsPrometheusEnabled() {
-		singleMetrics, err = single.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", evGenesis.ChainID)
+		singleMetrics, err = singlesequencer.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", evGenesis.ChainID)
 		if err != nil {
 			return nil, nil, cleanupFn, err
 		}
 	}
 
-	sequencer, err := single.NewSequencer(
-		ctx,
-		*evLogger,
-		database,
-		&daClient.DA,
-		[]byte(evGenesis.ChainID),
-		evcfg.Node.BlockTime.Duration,
-		singleMetrics,
-		evcfg.Node.Aggregator,
-	)
+	sequencer, err := createSequencer(ctx, *evLogger, database, &daClient.DA, evcfg, *evGenesis, singleMetrics)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -570,6 +562,64 @@ func setupNodeAndExecutor(
 	return rolllkitNode, executor, cleanupFn, nil
 }
 
+// createSequencer creates a sequencer based on the configuration.
+// If BasedSequencer is enabled, it creates a based sequencer that fetches transactions from DA.
+// Otherwise, it creates a single (traditional) sequencer.
+func createSequencer(
+	ctx context.Context,
+	logger zerolog.Logger,
+	datastore ds.Batching,
+	da da.DA,
+	nodeConfig config.Config,
+	genesis genesis.Genesis,
+	singleMetrics *singlesequencer.Metrics,
+) (coresequencer.Sequencer, error) {
+	daRetriever, err := evblock.NewDARetriever(da, nodeConfig, genesis, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DA retriever: %w", err)
+	}
+
+	if nodeConfig.Node.BasedSequencer {
+		// Based sequencer mode - fetch transactions only from DA
+		if !nodeConfig.Node.Aggregator {
+			return nil, fmt.Errorf("based sequencer mode requires aggregator mode to be enabled")
+		}
+
+		basedSeq := basedsequencer.NewBasedSequencer(daRetriever, da, nodeConfig, genesis, logger)
+
+		logger.Info().
+			Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
+			Uint64("da_epoch", genesis.DAEpochForcedInclusion).
+			Msg("based sequencer initialized")
+
+		return basedSeq, nil
+	}
+
+	sequencer, err := singlesequencer.NewSequencer(
+		ctx,
+		logger,
+		datastore,
+		da,
+		[]byte(genesis.ChainID),
+		nodeConfig.Node.BlockTime.Duration,
+		singleMetrics,
+		nodeConfig.Node.Aggregator,
+		1000,
+		daRetriever,
+		genesis,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create single sequencer: %w", err)
+	}
+
+	logger.Info().
+		Bool("forced_inclusion_enabled", daRetriever != nil).
+		Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
+		Msg("single sequencer initialized")
+
+	return sequencer, nil
+}
+
 func createAndStartEventBus(logger log.Logger) (*cmttypes.EventBus, error) {
 	eventBus := cmttypes.NewEventBus()
 	eventBus.SetLogger(servercmtlog.CometLoggerWrapper{Logger: logger}.With("module", "events"))
@@ -624,12 +674,14 @@ func getAppGenesis(cfg *cmtcfg.Config) (*genutiltypes.AppGenesis, error) {
 
 // getDaStartHeight parses the da_start_height from the genesis file.
 func getDaStartHeight(cfg *cmtcfg.Config) (uint64, error) {
+	const dAStartHeightFieldName = "da_start_height"
+
 	genFile, err := os.Open(filepath.Clean(cfg.GenesisFile()))
 	if err != nil {
 		return 0, fmt.Errorf("failed to open genesis file %s: %w", cfg.GenesisFile(), err)
 	}
 
-	daStartHeight, err := parseDAStartHeightFromGenesis(bufio.NewReader(genFile))
+	daStartHeight, err := parseFieldFromGenesis(bufio.NewReader(genFile), dAStartHeightFieldName)
 	if err != nil {
 		return 0, err
 	}
@@ -641,13 +693,11 @@ func getDaStartHeight(cfg *cmtcfg.Config) (uint64, error) {
 	return daStartHeight, nil
 }
 
-// parseDAStartHeightFromGenesis parses the `da_start_height` from a genesis JSON file, aborting early after finding the `da_start_height`.
-// For efficiency, it's recommended to place the `da_start_height` field before any large entries in the JSON file.
-// Returns no error when the `da_start_height` field is not found.
+// parseFieldFromGenesis parses given fields from a genesis JSON file, aborting early after finding the field.
+// For efficiency, it's recommended to place the field before any large entries in the JSON file.
+// Returns no error when the field is not found.
 // Logic based on https://github.com/cosmos/cosmos-sdk/blob/v0.50.14/x/genutil/types/chain_id.go#L18.
-func parseDAStartHeightFromGenesis(r io.Reader) (uint64, error) {
-	const dAStartHeightFieldName = "da_start_height"
-
+func parseFieldFromGenesis(r io.Reader, fieldName string) (uint64, error) {
 	dec := json.NewDecoder(r)
 
 	t, err := dec.Token()
@@ -668,7 +718,7 @@ func parseDAStartHeightFromGenesis(r io.Reader) (uint64, error) {
 			return 0, fmt.Errorf("expected string for the key type, got %s", t)
 		}
 
-		if key == dAStartHeightFieldName {
+		if key == fieldName {
 			var chainID uint64
 			if err := dec.Decode(&chainID); err != nil {
 				return 0, err

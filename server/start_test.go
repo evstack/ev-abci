@@ -72,7 +72,7 @@ func TestParseDAStartHeightFromGenesis(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chainID, err := parseDAStartHeightFromGenesis(strings.NewReader(tc.json))
+			chainID, err := parseFieldFromGenesis(strings.NewReader(tc.json), "da_start_height")
 			if len(tc.expError) > 0 {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.expError)
