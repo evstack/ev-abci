@@ -8,17 +8,14 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/BurntSushi/toml"
 	"github.com/celestiaorg/tastora/framework/docker/container"
 	"github.com/celestiaorg/tastora/framework/docker/cosmos"
 	"github.com/celestiaorg/tastora/framework/docker/ibc"
 	"github.com/celestiaorg/tastora/framework/docker/ibc/relayer"
-	"github.com/celestiaorg/tastora/framework/testutil/config"
 	"github.com/celestiaorg/tastora/framework/testutil/query"
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
-	cometcfg "github.com/cometbft/cometbft/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -49,28 +46,23 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	}()
 
 	// Wait for GM chain RPC to be ready
-	s.T().Log("Waiting for GM chain RPC to be ready...")
-	var rpcReady bool
-	for i := 0; i < 30; i++ { // 30 second timeout
+	err := wait.ForCondition(ctx, time.Second*30, time.Second, func() (bool, error) {
 		node := gmChain.GetNodes()[0]
 		rpcClient, _ := node.GetRPCClient()
 		if rpcClient != nil {
 			// Test if RPC client is actually working by making a simple call
 			_, err := rpcClient.Status(ctx)
 			if err == nil {
-				rpcReady = true
-				s.T().Log("GM chain RPC is ready")
-				break
+				return true, nil
 			}
 		}
-		time.Sleep(1 * time.Second)
-	}
-	require.True(s.T(), rpcReady, "GM chain RPC failed to become ready within 30 seconds")
+		return false, nil
+	})
+	s.Require().NoError(err)
 
 	kr, err := gmChain.GetNodes()[0].GetKeyring()
 	require.NoError(s.T(), err)
 
-	// List available keys
 	keys, err := kr.List()
 	require.NoError(s.T(), err)
 	s.T().Logf("Available keys in keyring: %d", len(keys))
@@ -86,27 +78,16 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 		}
 	}
 
-	// Extract validator key if found
-	var validatorArmoredKey string
-	if validatorKey != nil {
-		s.T().Logf("Extracting validator key...")
+	s.Require().NotNil(validatorKey, "validator key not found in keyring")
 
-		// Export private key in armor format (no passphrase for test keyring)
-		armoredPrivKey, err := kr.ExportPrivKeyArmor("validator", "")
-		require.NoError(s.T(), err, "failed to export validator private key")
-
-		s.T().Logf("Validator private key exported successfully (armor format)")
-		previewLen := 100
-		if len(armoredPrivKey) < previewLen {
-			previewLen = len(armoredPrivKey)
-		}
-		s.T().Logf("Armored key preview: %s...", armoredPrivKey[:previewLen])
-		validatorArmoredKey = armoredPrivKey
-	} else {
-		s.T().Log("No validator key found in keyring")
-	}
+	validatorArmoredKey, err := kr.ExportPrivKeyArmor("validator", "")
+	s.Require().NoError(err, "failed to export validator private key")
 
 	attesterConfig, attesterNode := s.getAttester(ctx, gmChain, validatorArmoredKey)
+
+	s.T().Logf("Initializing attester node %s", attesterNode.Name())
+	err = attesterNode.Init(ctx, attesterConfig.ChainID, attesterConfig.GMNodeURL)
+	require.NoError(s.T(), err)
 
 	s.T().Logf("Starting attester node %s", attesterNode.Name())
 	err = attesterNode.Start(ctx, attesterConfig)
@@ -116,17 +97,21 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	hermes, err := relayer.NewHermes(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
 	require.NoError(s.T(), err, "failed to create hermes relayer")
 
-	err = hermes.Init(ctx, []types.Chain{s.celestiaChain, gmChain})
+	err = hermes.Init(ctx, []types.Chain{s.celestiaChain, gmChain}, func(cfg *relayer.HermesConfig) {
+		for i := range cfg.Chains {
+			// switch hermes to pull mode to avoid WebSocket connection issues
+			cfg.Chains[i].EventSource = map[string]interface{}{
+				"mode":     "pull",
+				"interval": "200ms",
+			}
+			cfg.Chains[i].ClockDrift = "60s"
+		}
+	})
 	require.NoError(s.T(), err, "failed to initialize relayer")
-
-	// Switch hermes to pull mode to avoid WebSocket connection issues
-	err = s.configureHermesForPullMode(ctx, hermes)
-	require.NoError(s.T(), err, "failed to configure hermes for pull mode")
 
 	connection, channel := setupIBCConnection(s.T(), ctx, s.celestiaChain, gmChain, hermes)
 	s.T().Logf("Established IBC connection %s and channel %s between Celestia and GM chain", connection.ConnectionID, channel.ChannelID)
 
-	// Test IBC transfers
 	s.testIBCTransfers(ctx, s.celestiaChain, gmChain, channel, hermes)
 }
 
@@ -235,54 +220,6 @@ func deriveAttesterAccountFromArmor(armoredKey string) (sdk.AccAddress, error) {
 	return keyAddr, nil
 }
 
-func (s *DockerIntegrationTestSuite) configureHermesForPullMode(ctx context.Context, hermes *relayer.Hermes) error {
-	s.T().Log("Configuring hermes to use pull mode and increased clock drift...")
-
-	// Read the current config
-	configBz, err := hermes.ReadFile(ctx, ".hermes/config.toml")
-	if err != nil {
-		return fmt.Errorf("failed to read hermes config: %w", err)
-	}
-
-	// Unmarshal into map
-	var c map[string]interface{}
-	if err := toml.Unmarshal(configBz, &c); err != nil {
-		return fmt.Errorf("failed to unmarshal hermes config: %w", err)
-	}
-
-	// Update chains to use pull mode and increase clock drift
-	chains, ok := c["chains"].([]map[string]interface{})
-	if !ok {
-		return fmt.Errorf("chains not found in config or not in expected format")
-	}
-
-	for i := range chains {
-		// Update event_source to pull mode with tighter interval
-		chains[i]["event_source"] = map[string]interface{}{
-			"mode":     "pull",
-			"interval": "200ms",
-		}
-
-		// Update clock_drift to handle timing differences between chains
-		chains[i]["clock_drift"] = "60s"
-	}
-
-	// Remarshal into bytes
-	updatedConfigBz, err := toml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("failed to marshal updated hermes config: %w", err)
-	}
-
-	// Write the updated config
-	err = hermes.WriteFile(ctx, ".hermes/config.toml", updatedConfigBz)
-	if err != nil {
-		return fmt.Errorf("failed to write updated hermes config: %w", err)
-	}
-
-	s.T().Log("Successfully configured hermes to use pull mode with 60s clock drift tolerance")
-	return nil
-}
-
 func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Chain {
 	daAddress, authToken, _, err := s.getDANetworkParams(ctx)
 	require.NoError(s.T(), err)
@@ -319,42 +256,6 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--minimum-gas-prices", "0.001stake",
 			"--log_level", "*:info",
 		).
-		WithPostInit(func(ctx context.Context, node *cosmos.ChainNode) error {
-			// 1) Ensure ABCI responses and tx events are retained and indexed for Hermes
-			if err := config.Modify(ctx, node, "config/config.toml", func(cfg *cometcfg.Config) {
-				cfg.Storage.DiscardABCIResponses = false
-				// Enable key-value tx indexer so Hermes can query IBC packet events
-				cfg.TxIndex.Indexer = "kv"
-				// Increase RPC BroadcastTxCommit timeout to accommodate CI slowness
-				if cfg.RPC != nil {
-					cfg.RPC.TimeoutBroadcastTxCommit = 120000000000 // 120s in nanoseconds
-				}
-			}); err != nil {
-				return err
-			}
-			// 2) Ensure app-level index-events include IBC packet events
-			appToml, err := node.ReadFile(ctx, "config/app.toml")
-			if err != nil {
-				return err
-			}
-			var appCfg map[string]interface{}
-			if err := toml.Unmarshal(appToml, &appCfg); err != nil {
-				return err
-			}
-			appCfg["index-events"] = []string{
-				"message.action",
-				"send_packet",
-				"recv_packet",
-				"write_acknowledgement",
-				"acknowledge_packet",
-				"timeout_packet",
-			}
-			updated, err := toml.Marshal(appCfg)
-			if err != nil {
-				return err
-			}
-			return node.WriteFile(ctx, "config/app.toml", updated)
-		}).
 		WithNode(cosmos.NewChainNodeConfigBuilder().
 			WithPostInit(AddSingleSequencer, writePasshraseFile("12345678")).
 			Build()).
@@ -407,17 +308,16 @@ func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
 
 // setupIBCConnection establishes a complete IBC connection and channel
 func setupIBCConnection(t *testing.T, ctx context.Context, chainA, chainB types.Chain, hermes *relayer.Hermes) (ibc.Connection, ibc.Channel) {
-	// create clients
 	err := hermes.CreateClients(ctx, chainA, chainB)
 	require.NoError(t, err)
 
-	// create connections
 	connection, err := hermes.CreateConnections(ctx, chainA, chainB)
 	require.NoError(t, err)
 	require.NotEmpty(t, connection.ConnectionID, "Connection ID should not be empty")
 
 	// give chains a moment to persist connection state and client updates
-	_ = wait.ForBlocks(ctx, 2, chainA, chainB)
+	err = wait.ForBlocks(ctx, 2, chainA, chainB)
+	require.NoError(t, err)
 
 	// Create an ICS20 channel for token transfers
 	channelOpts := ibc.CreateChannelOptions{
@@ -440,15 +340,14 @@ func setupIBCConnection(t *testing.T, ctx context.Context, chainA, chainB types.
 
 // testIBCTransfers performs bidirectional IBC transfers and validates they succeed
 func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celestiaChain, gmChain *cosmos.Chain, channel ibc.Channel, hermes *relayer.Hermes) {
-	// Transfer amount
 	transferAmount := sdkmath.NewInt(1_000_000)
 
-	// Get wallets for both chains
 	celestiaWallet := celestiaChain.GetFaucetWallet()
 	gmWallet := gmChain.GetFaucetWallet()
 
 	celestiaAddr, err := sdkacc.AddressFromWallet(celestiaWallet)
 	require.NoError(s.T(), err)
+
 	gmAddr, err := sdkacc.AddressFromWallet(gmWallet)
 	require.NoError(s.T(), err)
 
@@ -461,13 +360,13 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 	// Calculate IBC denom for GM chain receiving Celestia tokens
 	celestiaToGMIBCDenom := s.calculateIBCDenom(channel.CounterpartyPort, channel.CounterpartyID, "utia")
 
-	// Start Hermes relayer
 	s.T().Log("Starting Hermes relayer...")
 	err = hermes.Start(ctx)
 	require.NoError(s.T(), err)
 
 	// Allow Hermes to sync initial heights before sending packets
-	_ = wait.ForBlocks(ctx, 2, celestiaChain, gmChain)
+	err = wait.ForBlocks(ctx, 2, celestiaChain, gmChain)
+	require.NoError(s.T(), err)
 
 	// Test 1: Transfer from Celestia to GM chain
 	s.T().Log("=== Testing transfer from Celestia to GM chain ===")
@@ -492,6 +391,7 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 	ctxTx, cancelTx := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancelTx()
 	resp, err := celestiaChain.BroadcastMessages(ctxTx, celestiaWallet, transferMsg)
+
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), uint32(0), resp.Code, "IBC transfer failed: %s", resp.RawLog)
 
