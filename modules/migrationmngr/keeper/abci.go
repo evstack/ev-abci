@@ -97,15 +97,6 @@ func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 		return nil, err
 	}
 
-	// TODO: HACK - when staying on CometBFT, we unbond delegations and let staking module handle
-	// validator updates naturally. This is a temporary workaround - the N→1 validator migration
-	// use case should be its own separate command/message type.
-	if migration.StayOnComet {
-		// unbond delegations to validators being removed, let staking module handle validator updates
-		return k.migrateWithUnbonding(ctx, migration, validatorSet)
-	}
-
-	// rollup migration: return validator updates directly without unbonding
 	var updates []abci.ValidatorUpdate
 	if !k.isIBCEnabled(ctx) {
 		// if IBC is not enabled, we can migrate immediately

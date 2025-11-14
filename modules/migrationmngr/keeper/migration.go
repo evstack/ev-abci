@@ -18,6 +18,8 @@ var IBCSmoothingFactor uint64 = 30
 
 // migrateNow migrates the chain to evolve immediately.
 // this method is used when ibc is not enabled, so no migration smoothing is needed.
+// If StayOnComet is true, delegations are unbonded and empty updates returned.
+// Otherwise, ABCI ValidatorUpdates are returned directly for rollup migration.
 func (k Keeper) migrateNow(
 	ctx context.Context,
 	migrationData types.EvolveMigration,
@@ -28,6 +30,20 @@ func (k Keeper) migrateNow(
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
 	}
 
+	if migrationData.StayOnComet {
+		// unbond delegations, let staking module handle validator updates
+		k.Logger(ctx).Info("Unbonding all validators immediately (StayOnComet, IBC not enabled)")
+		validatorsToRemove := getValidatorsToRemove(migrationData, lastValidatorSet)
+		for _, val := range validatorsToRemove {
+			if err := k.unbondValidatorDelegations(ctx, val); err != nil {
+				return nil, err
+			}
+		}
+		// return empty updates - staking module will update CometBFT
+		return []abci.ValidatorUpdate{}, nil
+	}
+
+	// rollup migration: build and return ABCI updates directly
 	switch len(migrationData.Attesters) {
 	case 0:
 		// no attesters, we are migrating to a single sequencer
@@ -121,6 +137,8 @@ func migrateToAttesters(
 // migrateOver migrates the chain to evolve over a period of blocks.
 // this is to ensure ibc light client verification keep working while changing the whole validator set.
 // the migration step is tracked in store.
+// If StayOnComet is true, delegations are unbonded gradually and empty updates returned.
+// Otherwise, ABCI ValidatorUpdates are returned directly for rollup migration.
 func (k Keeper) migrateOver(
 	ctx context.Context,
 	migrationData types.EvolveMigration,
@@ -132,13 +150,27 @@ func (k Keeper) migrateOver(
 	}
 
 	if step >= IBCSmoothingFactor {
-		// migration complete, just return the final set (same as migrateNow)
+		// migration complete
 		if err := k.MigrationStep.Remove(ctx); err != nil {
 			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to remove migration step: %v", err)
 		}
+
+		if migrationData.StayOnComet {
+			// unbonding was already completed gradually over previous blocks, just return empty updates
+			k.Logger(ctx).Info("Migration complete, all validators unbonded gradually")
+			return []abci.ValidatorUpdate{}, nil
+		}
+
+		// rollup migration: return final ABCI validator updates
 		return k.migrateNow(ctx, migrationData, lastValidatorSet)
 	}
 
+	if migrationData.StayOnComet {
+		// unbond delegations gradually, let staking module handle validator updates
+		return k.migrateOverWithUnbonding(ctx, migrationData, lastValidatorSet, step)
+	}
+
+	// rollup migration: build and return ABCI updates directly
 	switch len(migrationData.Attesters) {
 	case 0:
 		// no attesters, migrate to a single sequencer over smoothing period
@@ -255,78 +287,62 @@ func (k Keeper) unbondValidatorDelegations(ctx context.Context, validator stakin
 	for _, delegation := range delegations {
 		delAddr, err := sdk.AccAddressFromBech32(delegation.DelegatorAddress)
 		if err != nil {
-			k.Logger(ctx).Error("failed to parse delegator address", "address", delegation.DelegatorAddress, "error", err)
-			continue
+			return sdkerrors.ErrInvalidAddress.Wrapf("invalid delegator address: %v", err)
 		}
 
 		// unbond all shares from this delegation
 		_, _, err = k.stakingKeeper.Undelegate(ctx, delAddr, valAddr, delegation.Shares)
 		if err != nil {
-			k.Logger(ctx).Error("failed to undelegate",
-				"delegator", delegation.DelegatorAddress,
-				"validator", validator.OperatorAddress,
-				"error", err)
-			continue
+			return sdkerrors.ErrLogic.Wrapf("failed to undelegate: %v", err)
 		}
 	}
 
 	return nil
 }
 
-// migrateWithUnbonding migrates by unbonding delegations to validators being removed.
-// This is used when StayOnComet is true to properly return tokens to delegators.
-// Returns empty ValidatorUpdates since the staking module will handle validator set changes.
-func (k Keeper) migrateWithUnbonding(
-	ctx context.Context,
-	migrationData types.EvolveMigration,
-	lastValidatorSet []stakingtypes.Validator,
-) ([]abci.ValidatorUpdate, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	currentHeight := uint64(sdkCtx.BlockHeight())
 
-	// ensure sequencer pubkey is unpacked
-	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
-		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)
+// getValidatorsToRemove returns validators that should be removed during migration.
+// For sequencer-only migration: all validators except the sequencer.
+// For attester migration: all validators not in the attester set.
+func getValidatorsToRemove(migrationData types.EvolveMigration, lastValidatorSet []stakingtypes.Validator) []stakingtypes.Validator {
+	if len(migrationData.Attesters) == 0 {
+		// sequencer-only: remove all except sequencer
+		var validatorsToRemove []stakingtypes.Validator
+		for _, val := range lastValidatorSet {
+			if !val.ConsensusPubkey.Equal(migrationData.Sequencer.ConsensusPubkey) {
+				validatorsToRemove = append(validatorsToRemove, val)
+			}
+		}
+		return validatorsToRemove
 	}
 
-	// determine which validators to remove (all except sequencer)
+	// attester migration: remove all not in attester set
+	attesterPubKeys := make(map[string]bool)
+	for _, attester := range migrationData.Attesters {
+		attesterPubKeys[attester.ConsensusPubkey.String()] = true
+	}
+
 	var validatorsToRemove []stakingtypes.Validator
 	for _, val := range lastValidatorSet {
-		if !val.ConsensusPubkey.Equal(migrationData.Sequencer.ConsensusPubkey) {
+		if !attesterPubKeys[val.ConsensusPubkey.String()] {
 			validatorsToRemove = append(validatorsToRemove, val)
 		}
 	}
+	return validatorsToRemove
+}
+
+// migrateOverWithUnbonding unbonds validators gradually over the smoothing period.
+// This is used when StayOnComet is true with IBC enabled.
+func (k Keeper) migrateOverWithUnbonding(
+	ctx context.Context,
+	migrationData types.EvolveMigration,
+	lastValidatorSet []stakingtypes.Validator,
+	step uint64,
+) ([]abci.ValidatorUpdate, error) {
+	validatorsToRemove := getValidatorsToRemove(migrationData, lastValidatorSet)
 
 	if len(validatorsToRemove) == 0 {
 		k.Logger(ctx).Info("No validators to remove, migration complete")
-		return []abci.ValidatorUpdate{}, nil
-	}
-
-	// if IBC is not enabled, unbond all immediately
-	if !k.isIBCEnabled(ctx) {
-		if currentHeight == migrationData.BlockHeight {
-			k.Logger(ctx).Info("Unbonding all validators immediately (IBC not enabled)",
-				"validators_to_remove", len(validatorsToRemove))
-			for _, val := range validatorsToRemove {
-				if err := k.unbondValidatorDelegations(ctx, val); err != nil {
-					k.Logger(ctx).Error("failed to unbond validator", "validator", val.OperatorAddress, "error", err)
-				}
-			}
-		}
-		return []abci.ValidatorUpdate{}, nil
-	}
-
-	// IBC enabled: unbond gradually over smoothing period
-	step, err := k.MigrationStep.Get(ctx)
-	if err != nil && !errors.Is(err, collections.ErrNotFound) {
-		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to get migration step: %v", err)
-	}
-
-	if step >= IBCSmoothingFactor {
-		// migration complete
-		if err := k.MigrationStep.Remove(ctx); err != nil {
-			return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to remove migration step: %v", err)
-		}
 		return []abci.ValidatorUpdate{}, nil
 	}
 
@@ -335,7 +351,7 @@ func (k Keeper) migrateWithUnbonding(
 	startRemove := int(step) * removePerStep
 	endRemove := min(startRemove+removePerStep, len(validatorsToRemove))
 
-	k.Logger(ctx).Info("Unbonding validators",
+	k.Logger(ctx).Info("Unbonding validators gradually",
 		"step", step,
 		"start_index", startRemove,
 		"end_index", endRemove,
@@ -343,7 +359,7 @@ func (k Keeper) migrateWithUnbonding(
 
 	for _, val := range validatorsToRemove[startRemove:endRemove] {
 		if err := k.unbondValidatorDelegations(ctx, val); err != nil {
-			k.Logger(ctx).Error("failed to unbond validator", "validator", val.OperatorAddress, "error", err)
+			return nil, err
 		}
 	}
 

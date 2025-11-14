@@ -36,11 +36,8 @@ type EvolveMigration struct {
 	Sequencer Sequencer `protobuf:"bytes,3,opt,name=sequencer,proto3" json:"sequencer"`
 	// attesters is the list of attesters that will attest to blocks.
 	Attesters []Attester `protobuf:"bytes,4,rep,name=attesters,proto3" json:"attesters"`
-	// TODO: HACK - this boolean is a temporary workaround. The N→1 validator migration
-	// use case (staying on CometBFT) should be its own separate command/message type,
-	// not a flag on MsgMigrateToEvolve which is designed for rollup migration.
-	// stay_on_comet indicates whether to continue on CometBFT after migration
-	// instead of halting for a binary switch to rollup.
+	// stay_on_comet can be specified to prevent the chain from halting, and just switch out to
+	// a single validator.
 	StayOnComet bool `protobuf:"varint,5,opt,name=stay_on_comet,json=stayOnComet,proto3" json:"stay_on_comet,omitempty"`
 }
 
