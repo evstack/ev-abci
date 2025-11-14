@@ -300,7 +300,6 @@ func (k Keeper) unbondValidatorDelegations(ctx context.Context, validator stakin
 	return nil
 }
 
-
 // getValidatorsToRemove returns validators that should be removed during migration.
 // For sequencer-only migration: all validators except the sequencer.
 // For attester migration: all validators not in the attester set.

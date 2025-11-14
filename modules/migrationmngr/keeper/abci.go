@@ -44,11 +44,8 @@ func (k Keeper) PreBlock(ctx context.Context) (appmodule.ResponsePreBlock, error
 			return nil, sdkerrors.ErrLogic.Wrapf("failed to get migration state: %v", err)
 		}
 
-		// TODO: HACK - this check is a temporary workaround. The N→1 validator migration
-		// use case (staying on CometBFT) should be its own separate command/message type,
-		// not a flag on MsgMigrateToEvolve which is designed for rollup migration.
 		if migration.StayOnComet {
-			k.Logger(ctx).Info("Migration complete, staying on CometBFT (no binary switch)")
+			k.Logger(ctx).Info("Migration complete, staying on CometBFT")
 
 			// remove the migration state from the store
 			if err := k.Migration.Remove(ctx); err != nil {
