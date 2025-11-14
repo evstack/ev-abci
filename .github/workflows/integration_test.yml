@@ -41,9 +41,9 @@ jobs:
         id: tag
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "tag=ghcr.io/evstack/evolve-gm:pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "tag=ghcr.io/01builders/evolve-gm:pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=ghcr.io/evstack/evolve-gm:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "tag=ghcr.io/01builders/evolve-gm:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build and push GM image
