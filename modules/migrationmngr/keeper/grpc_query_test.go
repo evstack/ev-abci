@@ -25,16 +25,44 @@ import (
 
 // mockStakingKeeper is a minimal mock for stakingKeeper used in Attesters tests.
 type mockStakingKeeper struct {
-	vals []stakingtypes.Validator
-	err  error
+	vals        []stakingtypes.Validator
+	err         error
+	delegations map[string][]stakingtypes.Delegation // validator address -> delegations
+	undelegated []undelegateRecord                   // track unbonding operations
+}
+
+type undelegateRecord struct {
+	delegator sdk.AccAddress
+	validator sdk.ValAddress
+	shares    math.LegacyDec
 }
 
 func (m *mockStakingKeeper) GetValidatorDelegations(ctx context.Context, valAddr sdk.ValAddress) ([]stakingtypes.Delegation, error) {
-	return nil, nil
+	if m.delegations == nil {
+		return []stakingtypes.Delegation{}, nil
+	}
+	delegs, ok := m.delegations[valAddr.String()]
+	if !ok {
+		return []stakingtypes.Delegation{}, nil
+	}
+	return delegs, nil
 }
 
 func (m *mockStakingKeeper) Undelegate(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, sharesAmount math.LegacyDec) (time.Time, math.Int, error) {
-	return time.Now(), math.ZeroInt(), nil
+	// record the unbonding operation
+	if m.undelegated == nil {
+		m.undelegated = []undelegateRecord{}
+	}
+	m.undelegated = append(m.undelegated, undelegateRecord{
+		delegator: delAddr,
+		validator: valAddr,
+		shares:    sharesAmount,
+	})
+
+	// return unbonding completion time (21 days from now) and amount
+	unbondingTime := time.Now().Add(21 * 24 * time.Hour)
+	amount := math.NewInt(sharesAmount.TruncateInt64())
+	return unbondingTime, amount, nil
 }
 
 func (m *mockStakingKeeper) GetValidatorByConsAddr(ctx context.Context, consAddr sdk.ConsAddress) (stakingtypes.Validator, error) {
