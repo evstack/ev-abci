@@ -283,7 +283,7 @@ func (k Keeper) migrateWithUnbonding(
 ) ([]abci.ValidatorUpdate, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	currentHeight := uint64(sdkCtx.BlockHeight())
-	
+
 	// ensure sequencer pubkey is unpacked
 	if err := migrationData.Sequencer.UnpackInterfaces(k.cdc); err != nil {
 		return nil, sdkerrors.ErrInvalidRequest.Wrapf("failed to unpack sequencer pubkey: %v", err)

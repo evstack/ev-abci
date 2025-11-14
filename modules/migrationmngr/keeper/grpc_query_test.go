@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	addresscodec "github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -25,6 +27,14 @@ import (
 type mockStakingKeeper struct {
 	vals []stakingtypes.Validator
 	err  error
+}
+
+func (m *mockStakingKeeper) GetValidatorDelegations(ctx context.Context, valAddr sdk.ValAddress) ([]stakingtypes.Delegation, error) {
+	return nil, nil
+}
+
+func (m *mockStakingKeeper) Undelegate(ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, sharesAmount math.LegacyDec) (time.Time, math.Int, error) {
+	return time.Now(), math.ZeroInt(), nil
 }
 
 func (m *mockStakingKeeper) GetValidatorByConsAddr(ctx context.Context, consAddr sdk.ConsAddress) (stakingtypes.Validator, error) {

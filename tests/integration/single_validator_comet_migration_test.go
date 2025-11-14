@@ -44,12 +44,12 @@ type SingleValidatorSuite struct {
 	chain *cosmos.Chain
 
 	// IBC counterparty chain
-	ibcCounterpartyChain *cosmos.Chain
-	hermes               *relayer.Hermes
-	ibcConnection        ibc.Connection
-	ibcChannel           ibc.Channel
-	ibcDenom             string
-	preMigrationIBCBal   sdk.Coin
+	counterpartyChain  *cosmos.Chain
+	hermes             *relayer.Hermes
+	ibcConnection      ibc.Connection
+	ibcChannel         ibc.Channel
+	ibcDenom           string
+	preMigrationIBCBal sdk.Coin
 
 	migrationHeight uint64
 }
@@ -71,8 +71,8 @@ func (s *SingleValidatorSuite) TearDownTest() {
 			s.T().Logf("failed to remove chain: %s", err)
 		}
 	}
-	if s.ibcCounterpartyChain != nil {
-		if err := s.ibcCounterpartyChain.Remove(context.Background()); err != nil {
+	if s.counterpartyChain != nil {
+		if err := s.counterpartyChain.Remove(context.Background()); err != nil {
 			s.T().Logf("failed to remove IBC counterparty chain: %s", err)
 		}
 	}
@@ -92,12 +92,12 @@ func (s *SingleValidatorSuite) TestNTo1() {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			s.chain = s.createAndStartChain(ctx, 3, "gm-1", "gm-1")
+			s.chain = s.createAndStartChain(ctx, 5, "gm-1")
 		}()
 
 		go func() {
 			defer wg.Done()
-			s.ibcCounterpartyChain = s.createAndStartChain(ctx, 1, "gm-2", "gm-2")
+			s.counterpartyChain = s.createAndStartChain(ctx, 1, "gm-2")
 		}()
 
 		wg.Wait()
@@ -133,7 +133,7 @@ func (s *SingleValidatorSuite) TestNTo1() {
 }
 
 // createAndStartChain creates a cosmos-sdk chain
-func (s *SingleValidatorSuite) createAndStartChain(ctx context.Context, numValidators int, name, chainID string) *cosmos.Chain {
+func (s *SingleValidatorSuite) createAndStartChain(ctx context.Context, numValidators int, chainID string) *cosmos.Chain {
 	s.T().Logf("Creating chain with %d validators...", numValidators)
 
 	testEncCfg := testutil.MakeTestEncodingConfig(
@@ -154,7 +154,7 @@ func (s *SingleValidatorSuite) createAndStartChain(ctx context.Context, numValid
 		WithImage(getCosmosSDKAppContainer()).
 		WithDenom("stake").
 		WithDockerClient(s.dockerClient).
-		WithName(name).
+		WithName(chainID).
 		WithDockerNetworkID(s.networkID).
 		WithChainID(chainID).
 		WithBech32Prefix("gm").
@@ -183,7 +183,7 @@ func (s *SingleValidatorSuite) setupIBCConnection(ctx context.Context) {
 	s.hermes, err = relayer.NewHermes(ctx, s.dockerClient, "single-val-test", s.networkID, 0, s.logger)
 	s.Require().NoError(err)
 
-	err = s.hermes.Init(ctx, []types.Chain{s.ibcCounterpartyChain, s.chain}, func(cfg *relayer.HermesConfig) {
+	err = s.hermes.Init(ctx, []types.Chain{s.counterpartyChain, s.chain}, func(cfg *relayer.HermesConfig) {
 		for i := range cfg.Chains {
 			cfg.Chains[i].EventSource = map[string]interface{}{
 				"mode":     "pull",
@@ -194,13 +194,13 @@ func (s *SingleValidatorSuite) setupIBCConnection(ctx context.Context) {
 	})
 	s.Require().NoError(err)
 
-	err = s.hermes.CreateClients(ctx, s.ibcCounterpartyChain, s.chain)
+	err = s.hermes.CreateClients(ctx, s.counterpartyChain, s.chain)
 	s.Require().NoError(err)
 
-	s.ibcConnection, err = s.hermes.CreateConnections(ctx, s.ibcCounterpartyChain, s.chain)
+	s.ibcConnection, err = s.hermes.CreateConnections(ctx, s.counterpartyChain, s.chain)
 	s.Require().NoError(err)
 
-	err = wait.ForBlocks(ctx, 2, s.ibcCounterpartyChain, s.chain)
+	err = wait.ForBlocks(ctx, 2, s.counterpartyChain, s.chain)
 	s.Require().NoError(err)
 
 	channelOpts := ibc.CreateChannelOptions{
@@ -210,7 +210,7 @@ func (s *SingleValidatorSuite) setupIBCConnection(ctx context.Context) {
 		Version:        "ics20-1",
 	}
 
-	s.ibcChannel, err = s.hermes.CreateChannel(ctx, s.ibcCounterpartyChain, s.ibcConnection, channelOpts)
+	s.ibcChannel, err = s.hermes.CreateChannel(ctx, s.counterpartyChain, s.ibcConnection, channelOpts)
 	s.Require().NoError(err)
 
 	s.T().Logf("IBC connection established: %s <-> %s", s.ibcConnection.ConnectionID, s.ibcConnection.CounterpartyID)
@@ -221,7 +221,7 @@ func (s *SingleValidatorSuite) performIBCTransfers(ctx context.Context) {
 	s.T().Log("Performing IBC transfer...")
 
 	transferAmount := math.NewInt(1_000_000)
-	ibcChainWallet := s.ibcCounterpartyChain.GetFaucetWallet()
+	ibcChainWallet := s.counterpartyChain.GetFaucetWallet()
 	gmWallet := s.chain.GetFaucetWallet()
 
 	s.ibcDenom = s.calculateIBCDenom(s.ibcChannel.CounterpartyPort, s.ibcChannel.CounterpartyID, "stake")
@@ -229,7 +229,7 @@ func (s *SingleValidatorSuite) performIBCTransfers(ctx context.Context) {
 	err := s.hermes.Start(ctx)
 	s.Require().NoError(err)
 
-	err = wait.ForBlocks(ctx, 2, s.ibcCounterpartyChain, s.chain)
+	err = wait.ForBlocks(ctx, 2, s.counterpartyChain, s.chain)
 	s.Require().NoError(err)
 
 	transferMsg := transfertypes.NewMsgTransfer(
@@ -245,7 +245,8 @@ func (s *SingleValidatorSuite) performIBCTransfers(ctx context.Context) {
 
 	ctxTx, cancelTx := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancelTx()
-	resp, err := s.ibcCounterpartyChain.BroadcastMessages(ctxTx, ibcChainWallet, transferMsg)
+
+	resp, err := s.counterpartyChain.BroadcastMessages(ctxTx, ibcChainWallet, transferMsg)
 	s.Require().NoError(err)
 	s.Require().Equal(uint32(0), resp.Code)
 
@@ -397,7 +398,7 @@ func (s *SingleValidatorSuite) validateSingleValidatorSet(ctx context.Context) {
 	})
 	s.Require().NoError(err)
 	s.T().Logf("Bonded validators: %d", len(bondedResp.Validators))
-	s.Require().Equal(1, len(bondedResp.Validators), "should have exactly 1 bonded validator")
+	s.Require().Len(bondedResp.Validators, 1, "should have exactly 1 bonded validator")
 
 	// check unbonding validators
 	unbondingResp, err := stakeQC.Validators(ctx, &stakingtypes.QueryValidatorsRequest{
@@ -454,10 +455,10 @@ func (s *SingleValidatorSuite) validateIBCStatePreserved(ctx context.Context) {
 	s.T().Log("Performing IBC transfer back to verify IBC functionality...")
 
 	transferAmount := math.NewInt(100_000)
-	ibcChainWallet := s.ibcCounterpartyChain.GetFaucetWallet()
+	ibcChainWallet := s.counterpartyChain.GetFaucetWallet()
 
 	// get counterparty network info to query balance
-	counterpartyNetworkInfo, err := s.ibcCounterpartyChain.GetNode().GetNetworkInfo(ctx)
+	counterpartyNetworkInfo, err := s.counterpartyChain.GetNode().GetNetworkInfo(ctx)
 	s.Require().NoError(err)
 
 	// get initial balance on counterparty chain
