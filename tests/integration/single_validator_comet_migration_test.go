@@ -78,12 +78,12 @@ func (s *SingleValidatorSuite) TearDownTest() {
 	}
 }
 
-// TestNTo1Migration tests reducing N validators to 1 validator while staying on CometBFT
+// TestNTo1StayOnCometMigration tests reducing N validators to 1 validator while staying on CometBFT
 //
 // Running locally pre-requisites:
 // from root of repo, build images with ibc enabled.
 // - docker build . -f Dockerfile.cosmos-sdk -t cosmos-gm:test --build-arg ENABLE_IBC=true
-func (s *SingleValidatorSuite) TestNTo1() {
+func (s *SingleValidatorSuite) TestNTo1StayOnCometMigration() {
 	ctx := context.Background()
 	t := s.T()
 
