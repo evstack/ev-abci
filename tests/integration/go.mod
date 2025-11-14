@@ -4,7 +4,7 @@ go 1.24.6
 
 require (
 	github.com/celestiaorg/tastora v0.8.0
-	github.com/moby/moby v27.5.1+incompatible
+	github.com/moby/moby v27.5.1+incompatible // indirect
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
 )
@@ -12,7 +12,6 @@ require (
 require (
 	connectrpc.com/connect v1.19.1
 	cosmossdk.io/math v1.5.3
-	github.com/BurntSushi/toml v1.5.0
 	github.com/cometbft/cometbft v0.38.17
 	github.com/cosmos/cosmos-sdk v0.50.14
 	github.com/cosmos/ibc-go/v8 v8.7.0
@@ -97,7 +96,7 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
+	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -220,6 +219,7 @@ require (
 
 require (
 	cosmossdk.io/api v0.9.2 // indirect
+	github.com/BurntSushi/toml v1.5.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
