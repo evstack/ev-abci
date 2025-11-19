@@ -1,34 +1,27 @@
 package server
 
 import (
-	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"time"
 
-	cmtcfg "github.com/cometbft/cometbft/config"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
+	evblock "github.com/evstack/ev-node/block"
 	"github.com/evstack/ev-node/core/da"
 	"github.com/evstack/ev-node/da/jsonrpc"
-	"github.com/evstack/ev-node/pkg/cmd"
 	rollconf "github.com/evstack/ev-node/pkg/config"
+	seqcommon "github.com/evstack/ev-node/sequencers/common"
 	"github.com/evstack/ev-node/types"
 )
 
 const (
 	flagNamespace  = "namespace"
 	flagGasPrice   = "gas-price"
-	flagTimeout    = "timeout"
 	flagSubmitOpts = "submit-options"
-
-	defaultTimeout = 60 * time.Second
 )
 
 // PostTxCmd returns a command to post a signed transaction to a Celestia namespace
@@ -63,7 +56,6 @@ Examples:
 	// Add command-specific flags
 	cobraCmd.Flags().String(flagNamespace, "", "Celestia namespace ID (if not provided, uses config namespace)")
 	cobraCmd.Flags().Float64(flagGasPrice, -1, "Gas price for DA submission (if not provided, uses config gas price)")
-	cobraCmd.Flags().Duration(flagTimeout, defaultTimeout, "Timeout for DA submission")
 	cobraCmd.Flags().String(flagSubmitOpts, "", "Additional submit options (if not provided, uses config submit options)")
 
 	return cobraCmd
@@ -74,16 +66,7 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	clientCtx := client.GetClientContextFromCmd(cobraCmd)
 	serverCtx := server.GetServerContextFromCmd(cobraCmd)
 
-	timeout, err := cobraCmd.Flags().GetDuration(flagTimeout)
-	if err != nil {
-		return fmt.Errorf("failed to get timeout flag: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(cobraCmd.Context(), timeout)
-	defer cancel()
-
 	txInput := args[0]
-
 	if txInput == "" {
 		return fmt.Errorf("transaction cannot be empty")
 	}
@@ -118,11 +101,7 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	}
 
 	// Get namespace (use flag if provided, otherwise use config)
-	namespace, err := cobraCmd.Flags().GetString(flagNamespace)
-	if err != nil {
-		return fmt.Errorf("failed to get namespace flag: %w", err)
-	}
-
+	namespace, _ := cobraCmd.Flags().GetString(flagNamespace)
 	if namespace == "" {
 		namespace = cfg.DA.GetForcedInclusionNamespace()
 	}
@@ -154,16 +133,12 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 
 	logger.Info("posting transaction to Celestia", "namespace", namespace, "gas_price", gasPrice, "tx_size", len(txData))
 
-	// Create DA client
-	submitCtx, submitCancel := context.WithTimeout(ctx, timeout)
-	defer submitCancel()
-
 	daClient, err := jsonrpc.NewClient(
-		submitCtx,
+		cobraCmd.Context(),
 		*zlLogger,
 		cfg.DA.Address,
 		cfg.DA.AuthToken,
-		cmd.DefaultMaxBlobSize,
+		seqcommon.AbsoluteMaxBlobSize,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create DA client: %w", err)
@@ -175,7 +150,8 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	blobs := [][]byte{txData}
 	options := []byte(submitOpts)
 
-	result := types.SubmitWithHelpers(submitCtx, &daClient.DA, *zlLogger, blobs, gasPrice, namespaceBz, options)
+	dac := evblock.NewDAClient(&daClient.DA, cfg, *zlLogger)
+	result := dac.Submit(cobraCmd.Context(), blobs, gasPrice, namespaceBz, options)
 
 	// Check result
 	switch result.Code {
@@ -262,25 +238,4 @@ func decodeTxFromJSON(clientCtx client.Context, jsonStr string) ([]byte, error) 
 	}
 
 	return txBytes, nil
-}
-
-// getDaEpoch parses the da_start_height from the genesis file.
-func getDaEpoch(cfg *cmtcfg.Config) (uint64, error) {
-	const daEpochFieldName = "da_epoch_forced_inclusion"
-
-	genFile, err := os.Open(filepath.Clean(cfg.GenesisFile()))
-	if err != nil {
-		return 0, fmt.Errorf("failed to open genesis file %s: %w", cfg.GenesisFile(), err)
-	}
-
-	daStartHeight, err := parseFieldFromGenesis(bufio.NewReader(genFile), daEpochFieldName)
-	if err != nil {
-		return 0, err
-	}
-
-	if err := genFile.Close(); err != nil {
-		return 0, fmt.Errorf("failed to close genesis file %s: %v", genFile.Name(), err)
-	}
-
-	return daStartHeight, nil
 }

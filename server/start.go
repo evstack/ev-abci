@@ -47,7 +47,6 @@ import (
 	coresequencer "github.com/evstack/ev-node/core/sequencer"
 	"github.com/evstack/ev-node/da/jsonrpc"
 	"github.com/evstack/ev-node/node"
-	"github.com/evstack/ev-node/pkg/cmd"
 	"github.com/evstack/ev-node/pkg/config"
 	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/evstack/ev-node/pkg/p2p"
@@ -55,6 +54,7 @@ import (
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
 	basedsequencer "github.com/evstack/ev-node/sequencers/based"
+	seqcommon "github.com/evstack/ev-node/sequencers/common"
 	singlesequencer "github.com/evstack/ev-node/sequencers/single"
 	rollkittypes "github.com/evstack/ev-node/types"
 
@@ -394,12 +394,17 @@ func setupNodeAndExecutor(
 			return nil, nil, cleanupFn, err
 		}
 
+		daEpochSize, err := getDaEpoch(cfg)
+		if err != nil {
+			return nil, nil, cleanupFn, err
+		}
+
 		cmtGenDoc, err := appGenesis.ToGenesisDoc()
 		if err != nil {
 			return nil, nil, cleanupFn, err
 		}
 
-		evGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc, daStartHeight)
+		evGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc, daStartHeight, daEpochSize)
 
 		sdkLogger.Info("created evolve genesis from cometbft genesis",
 			"chain_id", cmtGenDoc.ChainID,
@@ -462,7 +467,7 @@ func setupNodeAndExecutor(
 		*evLogger,
 		evcfg.DA.Address,
 		evcfg.DA.AuthToken,
-		cmd.DefaultMaxBlobSize,
+		seqcommon.AbsoluteMaxBlobSize,
 	)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
@@ -574,10 +579,8 @@ func createSequencer(
 	genesis genesis.Genesis,
 	singleMetrics *singlesequencer.Metrics,
 ) (coresequencer.Sequencer, error) {
-	daRetriever, err := evblock.NewDARetriever(da, nodeConfig, genesis, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create DA retriever: %w", err)
-	}
+	daClient := evblock.NewDAClient(da, nodeConfig, logger)
+	fiRetriever := evblock.NewForcedInclusionRetriever(daClient, genesis, logger)
 
 	if nodeConfig.Node.BasedSequencer {
 		// Based sequencer mode - fetch transactions only from DA
@@ -585,7 +588,7 @@ func createSequencer(
 			return nil, fmt.Errorf("based sequencer mode requires aggregator mode to be enabled")
 		}
 
-		basedSeq := basedsequencer.NewBasedSequencer(daRetriever, da, nodeConfig, genesis, logger)
+		basedSeq := basedsequencer.NewBasedSequencer(fiRetriever, da, nodeConfig, genesis, logger)
 
 		logger.Info().
 			Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
@@ -605,7 +608,7 @@ func createSequencer(
 		singleMetrics,
 		nodeConfig.Node.Aggregator,
 		1000,
-		daRetriever,
+		fiRetriever,
 		genesis,
 	)
 	if err != nil {
@@ -613,7 +616,6 @@ func createSequencer(
 	}
 
 	logger.Info().
-		Bool("forced_inclusion_enabled", daRetriever != nil).
 		Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
 		Msg("single sequencer initialized")
 
@@ -691,6 +693,27 @@ func getDaStartHeight(cfg *cmtcfg.Config) (uint64, error) {
 	}
 
 	return daStartHeight, nil
+}
+
+// getDaEpoch parses the da_start_height from the genesis file.
+func getDaEpoch(cfg *cmtcfg.Config) (uint64, error) {
+	const daEpochFieldName = "da_epoch_forced_inclusion"
+
+	genFile, err := os.Open(filepath.Clean(cfg.GenesisFile()))
+	if err != nil {
+		return 0, fmt.Errorf("failed to open genesis file %s: %w", cfg.GenesisFile(), err)
+	}
+
+	daEpochSize, err := parseFieldFromGenesis(bufio.NewReader(genFile), daEpochFieldName)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := genFile.Close(); err != nil {
+		return 0, fmt.Errorf("failed to close genesis file %s: %v", genFile.Name(), err)
+	}
+
+	return daEpochSize, nil
 }
 
 // parseFieldFromGenesis parses given fields from a genesis JSON file, aborting early after finding the field.
@@ -844,7 +867,7 @@ func loadEvolveMigrationGenesis(rootDir string) (*evolveMigrationGenesis, error)
 // createEvolveGenesisFromCometBFT creates a evolve genesis from cometbft genesis.
 // This is used for normal startup scenarios where a full cometbft genesis document
 // is available and contains all the necessary information.
-func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc, daStartHeight uint64) *genesis.Genesis {
+func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc, daStartHeight, forcedInclusionEpochSize uint64) *genesis.Genesis {
 	gen := genesis.NewGenesis(
 		cmtGenDoc.ChainID,
 		uint64(cmtGenDoc.InitialHeight),
@@ -854,6 +877,10 @@ func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc, daStartHeig
 
 	if daStartHeight > 0 {
 		gen.DAStartHeight = daStartHeight
+	}
+
+	if forcedInclusionEpochSize > 0 {
+		gen.DAEpochForcedInclusion = forcedInclusionEpochSize
 	}
 
 	return &gen
