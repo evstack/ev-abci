@@ -6,9 +6,9 @@ replace github.com/celestiaorg/go-header => github.com/julienrbrt/go-header v0.0
 
 // TODO: remove after https://github.com/evstack/ev-node/pull/2797
 replace (
-	github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.9.0.20251113110405-0d790efaf5b7
-	github.com/evstack/ev-node/core => github.com/evstack/ev-node/core v1.0.0-beta.4.0.20251113110405-0d790efaf5b7
-	github.com/evstack/ev-node/da => github.com/evstack/ev-node/da v1.0.0-beta.4.0.20251113110405-0d790efaf5b7
+	github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.9.0.20251117194831-a076cb95854e
+	github.com/evstack/ev-node/core => github.com/evstack/ev-node/core v1.0.0-beta.4.0.20251117194831-a076cb95854e
+	github.com/evstack/ev-node/da => github.com/evstack/ev-node/da v1.0.0-beta.5.0.20251117194831-a076cb95854e
 )
 
 replace (
