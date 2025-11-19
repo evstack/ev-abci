@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,6 +80,52 @@ func TestParseDAStartHeightFromGenesis(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tc.expDAStartHeight, chainID)
+			}
+		})
+	}
+}
+
+func TestGetJSONTag(t *testing.T) {
+	testCases := []struct {
+		name      string
+		fieldName string
+		expTag    string
+		expError  bool
+	}{
+		{
+			name:      "DAStartHeight field",
+			fieldName: "DAStartHeight",
+			expTag:    "da_start_height",
+			expError:  false,
+		},
+		{
+			name:      "DAEpochForcedInclusion field",
+			fieldName: "DAEpochForcedInclusion",
+			expTag:    "da_epoch_forced_inclusion",
+			expError:  false,
+		},
+		{
+			name:      "ChainID field",
+			fieldName: "ChainID",
+			expTag:    "chain_id",
+			expError:  false,
+		},
+		{
+			name:      "non-existent field",
+			fieldName: "NonExistentField",
+			expTag:    "",
+			expError:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tag, err := getJSONTag(genesis.Genesis{}, tc.fieldName)
+			if tc.expError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.expTag, tag)
 			}
 		})
 	}
