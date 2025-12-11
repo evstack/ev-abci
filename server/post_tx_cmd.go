@@ -156,25 +156,22 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	// Check result
 	switch result.Code {
 	case da.StatusSuccess:
-		logger.Info("transaction successfully submitted to DA layer")
 		cobraCmd.Printf("\n✓ Transaction posted successfully\n\n")
 		cobraCmd.Printf("Namespace:  %s\n", namespace)
 		cobraCmd.Printf("DA Height:  %d\n", result.Height)
 		cobraCmd.Printf("Data Size:  %d bytes\n", len(txData))
 
-		// Calculate when transaction will be included based on DA epochs
 		daStartHeight, err := getDaStartHeight(serverCtx.Config)
 		if err != nil {
-			cobraCmd.Printf("Failed to get DA start height: %v\n", err)
-			daStartHeight = 0
-		}
-		epochSize, err := getDaEpoch(serverCtx.Config)
-		if err != nil {
-			cobraCmd.Printf("Failed to get DA epoch size: %v\n", err)
-			epochSize = 0
+			return fmt.Errorf("failed to get DA start height: %w", err)
 		}
 
-		_, epochEnd := types.CalculateEpochBoundaries(result.Height, daStartHeight, epochSize)
+		daEpochForcedInclusion, err := getDaEpoch(serverCtx.Config)
+		if err != nil {
+			return fmt.Errorf("failed to get DA epoch forced inclusion: %w", err)
+		}
+
+		_, epochEnd, _ := types.CalculateEpochBoundaries(result.Height, daStartHeight, daEpochForcedInclusion)
 		cobraCmd.Printf(
 			"DA Blocks until inclusion: %d (at DA height %d)\n",
 			epochEnd-(result.Height+1),
@@ -218,7 +215,7 @@ func decodeTxFromFile(clientCtx client.Context, filePath string) ([]byte, error)
 // decodeTxFromJSON decodes a JSON transaction string to bytes
 func decodeTxFromJSON(clientCtx client.Context, jsonStr string) ([]byte, error) {
 	// First try to decode as a Cosmos SDK transaction JSON
-	var txJSON map[string]interface{}
+	var txJSON map[string]any
 	if err := json.Unmarshal([]byte(jsonStr), &txJSON); err != nil {
 		return nil, fmt.Errorf("parsing JSON: %w", err)
 	}

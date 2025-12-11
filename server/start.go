@@ -469,19 +469,7 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
 	}
 
-	singleMetrics, err := singlesequencer.NopMetrics()
-	if err != nil {
-		return nil, nil, cleanupFn, err
-	}
-
-	if evcfg.Instrumentation.IsPrometheusEnabled() {
-		singleMetrics, err = singlesequencer.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", evGenesis.ChainID)
-		if err != nil {
-			return nil, nil, cleanupFn, err
-		}
-	}
-
-	sequencer, err := createSequencer(ctx, *evLogger, database, &daClient.DA, evcfg, *evGenesis, singleMetrics)
+	sequencer, err := createSequencer(ctx, *evLogger, database, &daClient.DA, evcfg, *evGenesis)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -573,7 +561,6 @@ func createSequencer(
 	da da.DA,
 	nodeConfig config.Config,
 	genesis genesis.Genesis,
-	singleMetrics *singlesequencer.Metrics,
 ) (coresequencer.Sequencer, error) {
 	daClient := evblock.NewDAClient(da, nodeConfig, logger)
 	fiRetriever := evblock.NewForcedInclusionRetriever(daClient, genesis, logger)
@@ -584,7 +571,10 @@ func createSequencer(
 			return nil, fmt.Errorf("based sequencer mode requires aggregator mode to be enabled")
 		}
 
-		basedSeq := basedsequencer.NewBasedSequencer(fiRetriever, da, nodeConfig, genesis, logger)
+		basedSeq, err := basedsequencer.NewBasedSequencer(ctx, fiRetriever, datastore, genesis, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create based sequencer: %w", err)
+		}
 
 		logger.Info().
 			Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
@@ -601,7 +591,6 @@ func createSequencer(
 		da,
 		[]byte(genesis.ChainID),
 		nodeConfig.Node.BlockTime.Duration,
-		singleMetrics,
 		nodeConfig.Node.Aggregator,
 		1000,
 		fiRetriever,
