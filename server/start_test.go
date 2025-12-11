@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/stretchr/testify/require"
+
+	"github.com/evstack/ev-node/pkg/genesis"
 )
 
 func TestParseDAStartHeightFromGenesis(t *testing.T) {
