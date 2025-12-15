@@ -116,14 +116,11 @@ The core of the migration is handled by returning `abci.ValidatorUpdate` message
 -   **Removing Old Validators**: The existing validators that are not part of the new sequencer/attester set have their power reduced to `0`.
 -   **Adding New Participants**: The new sequencer and/or attesters are added to the consensus set with a power of `1`.
 
-### IBC-Aware Migrations
+### Migration Execution
 
-A critical feature of the migration manager is its awareness of the Inter-Blockchain Communication (IBC) protocol. A sudden, drastic change in the validator set can cause IBC light clients on other chains to fail their verification checks, leading to a broken connection.
+The migration is performed in a single, atomic step. At the migration start height, all old validators are removed, and the new sequencer/attesters are added in one atomic update.
 
-To prevent this, the module first checks if IBC is enabled by verifying the existence of the IBC module's store key.
-
--   **If IBC is Enabled**: The migration is "smoothed" over a period of blocks (currently `30` blocks, defined by `IBCSmoothingFactor`). In each block during this period, a fraction of the old validators are removed, and a fraction of the new attesters are added. This gradual change ensures that IBC light clients can safely update their trusted validator sets without interruption. On the first block of the migration, all validators are set to have an equal power of `1` to prevent any single validator from having a disproportionate amount of power during the transition.
--   **If IBC is Not Enabled**: The migration can be performed "immediately" in a single block. All old validators are removed, and the new sequencer/attesters are added in one atomic update at the migration start height.
+**Note:** IBC light client updates must be performed at height H+1 (one block after the migration) to ensure proper verification of the validator set changes.
 
 ### The Chain Halt: A Coordinated Upgrade
 
@@ -143,7 +140,7 @@ If you are a validator or node operator on a chain using this module, you must b
 
 1.  **Monitor Governance**: The migration will be initiated by a governance proposal. Stay informed about upcoming proposals. The proposal will define the target block height for the migration.
 
-2.  **Prepare for the Chain Halt**: Your node **will stop** at a predictable block height, calculated from the migration's start height (`block_height` in the proposal). With IBC enabled, the halt is at `block_height + 31`; without IBC, it is `block_height + 2`. This is expected. Check your node's logs for the specific "MIGRATE" error message.
+2.  **Prepare for the Chain Halt**: Your node **will stop** at a predictable block height, calculated from the migration's start height (`block_height` in the proposal). The halt occurs at `block_height + 2`. This is expected. Check your node's logs for the specific "MIGRATE" error message.
 
 3.  **Perform the Upgrade**: Once the chain has halted, you must perform the following steps:
     a. **Install the New Binary**: You will need to replace your current node software (e.g., `gmd`) with the new version required for the rollup.

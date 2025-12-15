@@ -74,7 +74,6 @@ func initFixture(tb testing.TB) *fixture {
 		storeService,
 		addressCodec,
 		stakingKeeper,
-		nil,
 		sdk.AccAddress(address.Module(types.ModuleName)).String(),
 	)
 
@@ -144,7 +143,6 @@ func TestIsMigrating_IBCEnabled(t *testing.T) {
 		storeService,
 		addressCodec,
 		stakingKeeper,
-		func() *storetypes.KVStoreKey { return key },
 		sdk.AccAddress(address.Module(types.ModuleName)).String(),
 	)
 
@@ -159,7 +157,7 @@ func TestIsMigrating_IBCEnabled(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, resp.IsMigrating)
 	require.Equal(t, uint64(1), resp.StartBlockHeight)
-	require.Equal(t, 1+keeper.IBCSmoothingFactor, resp.EndBlockHeight)
+	require.Equal(t, uint64(2), resp.EndBlockHeight)
 }
 
 func TestSequencer_Migrating(t *testing.T) {
