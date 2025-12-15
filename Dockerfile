@@ -28,10 +28,13 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
-    go mod edit -replace github.com/libp2p/go-libp2p-quic-transport=github.com/libp2p/go-libp2p-quic-transport@v0.33.1 && \
-    go mod edit -replace github.com/libp2p/go-libp2p=github.com/libp2p/go-libp2p@v0.43.0 && \
-    go mod edit -replace github.com/quic-go/quic-go=github.com/quic-go/quic-go@v0.54.1 && \
-    go mod edit -replace github.com/quic-go/webtransport-go=github.com/quic-go/webtransport-go@v0.9.0 && \
+    go get github.com/quic-go/quic-go@v0.45.2 && \
+    go mod edit -replace github.com/quic-go/quic-go=github.com/quic-go/quic-go@v0.45.2 && \
+    go get github.com/quic-go/webtransport-go@v0.8.0 && \
+    go mod edit -replace github.com/quic-go/webtransport-go=github.com/quic-go/webtransport-go@v0.8.0 && \
+    go get github.com/libp2p/go-libp2p@v0.40.0 && \
+    go mod edit -replace github.com/libp2p/go-libp2p=github.com/libp2p/go-libp2p@v0.40.0 && \
+    go get buf.build/go/protovalidate@v0.12.0 && \
     go mod tidy
 
 # TODO: replace this with proper ignite flag to skip IBC registration when available
