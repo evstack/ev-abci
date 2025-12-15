@@ -32,9 +32,10 @@ RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$
     go mod edit -replace github.com/libp2p/go-libp2p=github.com/libp2p/go-libp2p@v0.43.0 && \
     go mod edit -replace github.com/quic-go/quic-go=github.com/quic-go/quic-go@v0.54.1 && \
     go mod edit -replace github.com/quic-go/webtransport-go=github.com/quic-go/webtransport-go@v0.9.0 && \
+    go mod edit -replace github.com/multiformats/go-multiaddr=github.com/multiformats/go-multiaddr@v0.16.1 && \
     go mod edit -replace buf.build/go/protovalidate=buf.build/go/protovalidate@v0.12.0 && \
-    go mod download && \
-    go mod tidy
+    go mod tidy && \
+    go mod download
 
 # Verify pinned module versions are effective in build context
 RUN go list -m all | grep -E 'github.com/libp2p/go-libp2p|github.com/multiformats/go-multiaddr'
