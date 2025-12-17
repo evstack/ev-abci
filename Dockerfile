@@ -27,6 +27,7 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
     ignite evolve add-migrate
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
+    go mod edit -replace github.com/evstack/ev-node/core=github.com/evstack/ev-node/core@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
     go mod tidy && \
     go mod download
