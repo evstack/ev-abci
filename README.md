@@ -70,7 +70,7 @@ ignite app install -g github.com/ignite/apps/evolve@latest
 ignite evolve add
 ignite chain build --skip-proto
 ignite evolve init
-go tool github.com/evstack/ev-node/da/cmd/local-da &
+go tool github.com/evstack/ev-node/tools/local-da &
 gmd start --rollkit.node.aggregator
 ```
 

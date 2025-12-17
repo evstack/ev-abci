@@ -144,7 +144,7 @@ jobs:
         run: |
           cd gm
           # start the local da in the background
-          go tool github.com/evstack/ev-node/da/cmd/local-da &
+          go tool github.com/evstack/ev-node/tools/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start
@@ -360,9 +360,9 @@ jobs:
           cd /tmp/da-tool
           go mod init temp
           go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
-          go get github.com/evstack/ev-node/da/cmd/local-da
+          go get github.com/evstack/ev-node/tools/local-da
           # start the local da in the background
-          go tool github.com/evstack/ev-node/da/cmd/local-da &
+          go tool github.com/evstack/ev-node/tools/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start

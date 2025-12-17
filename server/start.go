@@ -39,18 +39,16 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	evblock "github.com/evstack/ev-node/block"
-	"github.com/evstack/ev-node/core/da"
 	coresequencer "github.com/evstack/ev-node/core/sequencer"
-	"github.com/evstack/ev-node/da/jsonrpc"
 	"github.com/evstack/ev-node/node"
 	"github.com/evstack/ev-node/pkg/config"
+	"github.com/evstack/ev-node/pkg/da/jsonrpc"
 	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/evstack/ev-node/pkg/p2p"
 	"github.com/evstack/ev-node/pkg/p2p/key"
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
 	basedsequencer "github.com/evstack/ev-node/sequencers/based"
-	seqcommon "github.com/evstack/ev-node/sequencers/common"
 	singlesequencer "github.com/evstack/ev-node/sequencers/single"
 	rollkittypes "github.com/evstack/ev-node/types"
 
@@ -458,18 +456,19 @@ func setupNodeAndExecutor(
 	executor.SetMempool(mempool)
 
 	// create the DA client
-	daClient, err := jsonrpc.NewClient(
+	daJsonRPC, err := jsonrpc.NewClient(
 		ctx,
-		*evLogger,
 		evcfg.DA.Address,
 		evcfg.DA.AuthToken,
-		seqcommon.AbsoluteMaxBlobSize,
+		"",
 	)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
 	}
 
-	sequencer, err := createSequencer(ctx, *evLogger, database, &daClient.DA, evcfg, *evGenesis)
+	daClient := evblock.NewDAClient(daJsonRPC, evcfg, *evLogger)
+
+	sequencer, err := createSequencer(ctx, *evLogger, database, daClient, evcfg, *evGenesis)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -491,7 +490,7 @@ func setupNodeAndExecutor(
 		evcfg,
 		executor,
 		sequencer,
-		&daClient.DA,
+		daClient,
 		signer,
 		p2pClient,
 		*evGenesis,
@@ -558,11 +557,10 @@ func createSequencer(
 	ctx context.Context,
 	logger zerolog.Logger,
 	datastore ds.Batching,
-	da da.DA,
+	daClient evblock.FullDAClient,
 	nodeConfig config.Config,
 	genesis genesis.Genesis,
 ) (coresequencer.Sequencer, error) {
-	daClient := evblock.NewDAClient(da, nodeConfig, logger)
 	fiRetriever := evblock.NewForcedInclusionRetriever(daClient, genesis, logger)
 
 	if nodeConfig.Node.BasedSequencer {
@@ -588,7 +586,7 @@ func createSequencer(
 		ctx,
 		logger,
 		datastore,
-		da,
+		daClient,
 		[]byte(genesis.ChainID),
 		nodeConfig.Node.BlockTime.Duration,
 		nodeConfig.Node.Aggregator,

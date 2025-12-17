@@ -11,10 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	evblock "github.com/evstack/ev-node/block"
-	"github.com/evstack/ev-node/core/da"
-	"github.com/evstack/ev-node/da/jsonrpc"
 	rollconf "github.com/evstack/ev-node/pkg/config"
-	seqcommon "github.com/evstack/ev-node/sequencers/common"
+	"github.com/evstack/ev-node/pkg/da/jsonrpc"
+	da "github.com/evstack/ev-node/pkg/da/types"
 	"github.com/evstack/ev-node/types"
 )
 
@@ -133,12 +132,11 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 
 	logger.Info("posting transaction to Celestia", "namespace", namespace, "gas_price", gasPrice, "tx_size", len(txData))
 
-	daClient, err := jsonrpc.NewClient(
+	daJsonRpc, err := jsonrpc.NewClient(
 		cobraCmd.Context(),
-		*zlLogger,
 		cfg.DA.Address,
 		cfg.DA.AuthToken,
-		seqcommon.AbsoluteMaxBlobSize,
+		"",
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create DA client: %w", err)
@@ -150,7 +148,7 @@ func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	blobs := [][]byte{txData}
 	options := []byte(submitOpts)
 
-	dac := evblock.NewDAClient(&daClient.DA, cfg, *zlLogger)
+	dac := evblock.NewDAClient(daJsonRpc, cfg, *zlLogger)
 	result := dac.Submit(cobraCmd.Context(), blobs, gasPrice, namespaceBz, options)
 
 	// Check result

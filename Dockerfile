@@ -28,7 +28,12 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
+<<<<<<< Updated upstream
     go mod tidy
+=======
+    go mod tidy && \
+    go mod download
+>>>>>>> Stashed changes
 
 # TODO: replace this with proper ignite flag to skip IBC registration when available
 # Patch out IBC registration (comment out the call and its error handling)
