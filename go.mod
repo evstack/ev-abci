@@ -7,6 +7,10 @@ replace github.com/celestiaorg/go-header => github.com/julienrbrt/go-header v0.0
 replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
 	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
+	github.com/libp2p/go-libp2p => github.com/libp2p/go-libp2p v0.43.0
+	github.com/libp2p/go-libp2p-quic-transport => github.com/libp2p/go-libp2p-quic-transport v0.33.1
+	github.com/quic-go/quic-go => github.com/quic-go/quic-go v0.54.1
+	github.com/quic-go/webtransport-go => github.com/quic-go/webtransport-go v0.9.0
 )
 
 exclude github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2
