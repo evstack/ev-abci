@@ -77,17 +77,9 @@ func (k Keeper) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 	}
 
 	var updates []abci.ValidatorUpdate
-	if !k.isIBCEnabled(ctx) {
-		// if IBC is not enabled, we can migrate immediately
-		// but only return updates on the first block of migration (start height)
-		if uint64(sdkCtx.BlockHeight()) == start {
-			updates, err = k.migrateNow(ctx, migration, validatorSet)
-			if err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		updates, err = k.migrateOver(sdkCtx, migration, validatorSet)
+	// Always perform immediate migration updates at the start height.
+	if uint64(sdkCtx.BlockHeight()) == start {
+		updates, err = k.migrateNow(ctx, migration, validatorSet)
 		if err != nil {
 			return nil, err
 		}
