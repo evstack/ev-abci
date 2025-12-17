@@ -35,7 +35,6 @@ evabcid post-tx <json-file-or-string> [flags]
 
 - `--gas-price`: Gas price for DA submission
   - Default: `-1` (uses config value)
-  - If set to `-1`, uses `evnode.da.gas_price` from config
   - If config also uses auto pricing, DA layer determines the price
 
 - `--timeout`: Timeout duration for the submission
@@ -52,7 +51,6 @@ The command also accepts all Evolve configuration flags (prefixed with `--evnode
 - `--evnode.da.address`: DA layer RPC address (default: `http://localhost:7980`)
 - `--evnode.da.auth_token`: Authentication token for DA layer
 - `--evnode.da.block_time`: DA chain block time (default: `6s`)
-- `--evnode.da.gas_multiplier`: Gas price multiplier for retries
 - And many more... (see `--help` for complete list)
 
 ## Examples
@@ -278,52 +276,9 @@ da:
   auth_token: "your-token-here"
   namespace: "M21eldetxV"
   gas_price: 0.025
-  gas_multiplier: 1.1
   block_time: 6s
   submit_options: ""
 ```
-
-## Return Codes
-
-- `0`: Success - transaction posted successfully
-- `1`: Error - invalid input, configuration error, or DA submission failure
-
-## Technical Details
-
-### DA Submission Flow
-
-1. Parse `--tx` flag value
-2. Check if value is an existing file path
-3. If file: read and decode JSON; if not: decode value as JSON
-4. Encode transaction from JSON to bytes using Cosmos SDK encoder
-5. Load Evolve configuration
-6. Create DA client with configured parameters
-7. Submit bytes as a blob to Celestia
-8. Return submission result with DA height
-
-### Interface Registration
-
-The command registers the following module interfaces for proper transaction decoding:
-
-- Migration Manager module types (`migrationmngr`)
-- Network module types (`network`)
-- Standard Cosmos SDK types
-
-### Retry Behavior
-
-The command uses the DA client's built-in retry logic:
-
-- Retries on transient failures (network issues, mempool full)
-- Increases gas price on retries (based on `gas_multiplier`)
-- Respects the configured `max_submit_attempts`
-- Backs off exponentially between retries
-
-### Blob Size Limits
-
-The maximum blob size is determined by the DA layer (Celestia). Currently:
-
-- Default max blob size: ~1.5 MB
-- If transaction exceeds this, you'll receive a `StatusTooBig` error
 
 ## Workflow
 

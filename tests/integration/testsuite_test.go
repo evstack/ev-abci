@@ -225,7 +225,6 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 					"--evnode.node.aggregator",
 					"--evnode.signer.passphrase_file", "/var/cosmos-chain/evolve/passhrase.txt",
 					"--evnode.da.address", daAddress,
-					"--evnode.da.gas_price", "0.000001",
 					"--evnode.da.auth_token", authToken,
 					"--evnode.rpc.address", "0.0.0.0:7331",
 					"--evnode.da.namespace", "ev-header",
@@ -313,7 +312,6 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 	err := evolveChain.AddNode(ctx, cosmos.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",
