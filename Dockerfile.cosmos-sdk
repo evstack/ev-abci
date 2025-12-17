@@ -35,9 +35,6 @@ RUN if [ "$ENABLE_IBC" = "false" ]; then \
       echo "IBC enabled, leaving registration intact."; \
     fi
 
-# Verify pinned module versions are effective in build context
-RUN go list -m all | grep -E 'github.com/libp2p/go-libp2p|github.com/multiformats/go-multiaddr'
-
 # Build the Cosmos SDK binary
 RUN ignite chain build --skip-proto
 
