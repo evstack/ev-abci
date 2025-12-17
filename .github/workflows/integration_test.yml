@@ -196,7 +196,7 @@ jobs:
           echo "GMD_HOME=$GMD_HOME" >> $GITHUB_OUTPUT
 
       - name: Upload gm Binary and gmd Home Directory
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: gmd
           include-hidden-files: true
