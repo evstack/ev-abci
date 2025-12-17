@@ -84,7 +84,6 @@ jobs:
           build-args: |
             IGNITE_VERSION=${{ env.IGNITE_VERSION }}
             ENABLE_IBC=${{ matrix.enable_ibc }}
-            IGNITE_EVOLVE_APP_VERSION=${{ env.IGNITE_EVOLVE_APP_VERSION }}
           push: true
           tags: ${{ env.COSMOS_SDK_IMAGE_REPO }}:${{ needs.determine-tag.outputs.image_tag }}${{ matrix.tag_suffix }}
           cache-from: type=gha
