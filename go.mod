@@ -10,13 +10,6 @@ replace (
 	github.com/evstack/ev-node/core => github.com/evstack/ev-node/core v1.0.0-beta.5.0.20251216132820-afcd6bd9b354
 )
 
-replace (
-	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.0-beta
-	github.com/cosmos/cosmos-sdk => github.com/cosmos/cosmos-sdk v0.50.14
-)
-
-exclude github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2
-
 require (
 	cosmossdk.io/api v0.9.2
 	cosmossdk.io/collections v1.3.1
@@ -27,11 +20,11 @@ require (
 	cosmossdk.io/math v1.5.3
 	cosmossdk.io/store v1.1.2
 	github.com/celestiaorg/go-header v0.7.4
-	github.com/cometbft/cometbft v0.38.19
+	github.com/cometbft/cometbft v0.38.20
 	github.com/cometbft/cometbft-db v0.14.1
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
-	github.com/cosmos/cosmos-sdk v0.50.14
+	github.com/cosmos/cosmos-sdk v0.50.15
 	github.com/cosmos/gogoproto v1.7.2
 	github.com/evstack/ev-node v1.0.0-beta.10
 	github.com/evstack/ev-node/core v1.0.0-beta.5
@@ -347,6 +340,8 @@ require (
 	pluginrpc.com/pluginrpc v0.5.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+exclude github.com/btcsuite/btcd/chaincfg/chainhash v1.0.2
 
 tool (
 	github.com/bufbuild/buf/cmd/buf
