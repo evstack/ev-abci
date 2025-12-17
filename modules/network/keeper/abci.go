@@ -13,17 +13,6 @@ import (
 	"github.com/evstack/ev-abci/modules/network/types"
 )
 
-// BeginBlocker handles begin block logic for the network module
-func (k Keeper) BeginBlocker(ctx sdk.Context) error {
-	//params := k.GetParams(ctx)
-
-	// Only process if sign mode is IBC_ONLY and we have outbound IBC packets
-	//if params.SignMode == types.SignMode_SIGN_MODE_IBC_ONLY {
-	//	return errors.New("IBC only sign mode not yet implemented")
-	//}
-	return nil
-}
-
 // EndBlocker handles end block logic for the network module
 func (k Keeper) EndBlocker(ctx sdk.Context) error {
 	height := ctx.BlockHeight()
