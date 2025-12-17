@@ -14,7 +14,7 @@ permissions:
 env:
   EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
   IGNITE_VERSION: "v29.6.1"
-  IGNITE_EVOLVE_APP_VERSION: "d02e4975a7030d0cd4a15680d534ee51b1952950" # use tagged when apps has tagged (blocked on things)
+  IGNITE_EVOLVE_APP_VERSION: "main"
   EVOLVE_IMAGE_REPO: "ghcr.io/evstack/evolve-abci-gm"
   COSMOS_SDK_IMAGE_REPO: "ghcr.io/evstack/cosmos-sdk-gm"
 

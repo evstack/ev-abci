@@ -4,16 +4,6 @@ import (
 	"fmt"
 
 	"cosmossdk.io/math"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
-)
-
-var (
-	KeyEpochLength      = []byte("EpochLength")
-	KeyQuorumFraction   = []byte("QuorumFraction")
-	KeyMinParticipation = []byte("MinParticipation")
-	KeyPruneAfter       = []byte("PruneAfter")
-	KeyEmergencyMode    = []byte("EmergencyMode")
-	KeySignMode         = []byte("SignMode")
 )
 
 // Default parameter values
@@ -51,17 +41,6 @@ func DefaultParams() Params {
 		DefaultPruneAfter,
 		DefaultSignMode,
 	)
-}
-
-// ParamSetPairs implements params.ParamSet
-func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
-	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyEpochLength, &p.EpochLength, validateEpochLength),
-		paramtypes.NewParamSetPair(KeyQuorumFraction, &p.QuorumFraction, validateQuorumFraction),
-		paramtypes.NewParamSetPair(KeyMinParticipation, &p.MinParticipation, validateMinParticipation),
-		paramtypes.NewParamSetPair(KeyPruneAfter, &p.PruneAfter, validatePruneAfter),
-		paramtypes.NewParamSetPair(KeySignMode, &p.SignMode, validateSignMode),
-	}
 }
 
 // Validate validates the parameter set
@@ -161,9 +140,4 @@ func validateSignMode(i interface{}) error {
 	}
 
 	return nil
-}
-
-// ParamKeyTable returns the parameter key table
-func ParamKeyTable() paramtypes.KeyTable {
-	return paramtypes.NewKeyTable().RegisterParamSet(&Params{})
 }
