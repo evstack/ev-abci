@@ -432,7 +432,6 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 			// the filepath is determined based on the name in the chain builder.
 			"--evnode.signer.passphrase_file", fmt.Sprintf("/var/cosmos-chain/evolve/%s", passphraseFile),
 			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",
@@ -446,7 +445,6 @@ func (s *MigrationTestSuite) createEvolveChain(ctx context.Context, authToken, d
 	for i := 1; i < numNodes; i++ {
 		nodeConfigs = append(nodeConfigs, cosmos.NewChainNodeConfigBuilder().WithAdditionalStartArgs(
 			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",

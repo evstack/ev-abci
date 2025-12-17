@@ -243,7 +243,6 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--evnode.node.aggregator",
 			"--evnode.signer.passphrase_file", fmt.Sprintf("/var/cosmos-chain/gm/%s", passphraseFile),
 			"--evnode.da.address", daAddress,
-			"--evnode.da.gas_price", "0.000001",
 			"--evnode.da.auth_token", authToken,
 			"--evnode.rpc.address", "0.0.0.0:7331",
 			"--evnode.da.namespace", "ev-header",

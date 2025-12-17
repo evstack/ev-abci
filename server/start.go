@@ -1,20 +1,16 @@
 package server
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"time"
 
 	"cosmossdk.io/log"
 	cmtcfg "github.com/cometbft/cometbft/config"
-	cmtjson "github.com/cometbft/cometbft/libs/json"
 	"github.com/cometbft/cometbft/mempool"
 	cmtp2p "github.com/cometbft/cometbft/p2p"
 	pvm "github.com/cometbft/cometbft/privval"
@@ -43,16 +39,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	evblock "github.com/evstack/ev-node/block"
-	"github.com/evstack/ev-node/da/jsonrpc"
+	coresequencer "github.com/evstack/ev-node/core/sequencer"
 	"github.com/evstack/ev-node/node"
-	"github.com/evstack/ev-node/pkg/cmd"
 	"github.com/evstack/ev-node/pkg/config"
+	"github.com/evstack/ev-node/pkg/da/jsonrpc"
 	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/evstack/ev-node/pkg/p2p"
 	"github.com/evstack/ev-node/pkg/p2p/key"
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
-	"github.com/evstack/ev-node/sequencers/single"
+	basedsequencer "github.com/evstack/ev-node/sequencers/based"
+	singlesequencer "github.com/evstack/ev-node/sequencers/single"
 	rollkittypes "github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
@@ -391,12 +388,17 @@ func setupNodeAndExecutor(
 			return nil, nil, cleanupFn, err
 		}
 
+		daEpochSize, err := getDaEpoch(cfg)
+		if err != nil {
+			return nil, nil, cleanupFn, err
+		}
+
 		cmtGenDoc, err := appGenesis.ToGenesisDoc()
 		if err != nil {
 			return nil, nil, cleanupFn, err
 		}
 
-		evGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc, daStartHeight)
+		evGenesis = createEvolveGenesisFromCometBFT(cmtGenDoc, daStartHeight, daEpochSize)
 
 		sdkLogger.Info("created evolve genesis from cometbft genesis",
 			"chain_id", cmtGenDoc.ChainID,
@@ -454,41 +456,19 @@ func setupNodeAndExecutor(
 	executor.SetMempool(mempool)
 
 	// create the DA client
-	daClient, err := jsonrpc.NewClient(
+	daJsonRPC, err := jsonrpc.NewClient(
 		ctx,
-		*evLogger,
 		evcfg.DA.Address,
 		evcfg.DA.AuthToken,
-		evcfg.DA.GasPrice,
-		evcfg.DA.GasMultiplier,
-		cmd.DefaultMaxBlobSize,
+		"",
 	)
 	if err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to create DA client: %w", err)
 	}
 
-	singleMetrics, err := single.NopMetrics()
-	if err != nil {
-		return nil, nil, cleanupFn, err
-	}
+	daClient := evblock.NewDAClient(daJsonRPC, evcfg, *evLogger)
 
-	if evcfg.Instrumentation.IsPrometheusEnabled() {
-		singleMetrics, err = single.PrometheusMetrics(config.DefaultInstrumentationConfig().Namespace, "chain_id", evGenesis.ChainID)
-		if err != nil {
-			return nil, nil, cleanupFn, err
-		}
-	}
-
-	sequencer, err := single.NewSequencer(
-		ctx,
-		*evLogger,
-		database,
-		&daClient.DA,
-		[]byte(evGenesis.ChainID),
-		evcfg.Node.BlockTime.Duration,
-		singleMetrics,
-		evcfg.Node.Aggregator,
-	)
+	sequencer, err := createSequencer(ctx, *evLogger, database, daClient, evcfg, *evGenesis)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -510,7 +490,7 @@ func setupNodeAndExecutor(
 		evcfg,
 		executor,
 		sequencer,
-		&daClient.DA,
+		daClient,
 		signer,
 		p2pClient,
 		*evGenesis,
@@ -570,6 +550,61 @@ func setupNodeAndExecutor(
 	return rolllkitNode, executor, cleanupFn, nil
 }
 
+// createSequencer creates a sequencer based on the configuration.
+// If BasedSequencer is enabled, it creates a based sequencer that fetches transactions from DA.
+// Otherwise, it creates a single (traditional) sequencer.
+func createSequencer(
+	ctx context.Context,
+	logger zerolog.Logger,
+	datastore ds.Batching,
+	daClient evblock.FullDAClient,
+	nodeConfig config.Config,
+	genesis genesis.Genesis,
+) (coresequencer.Sequencer, error) {
+	fiRetriever := evblock.NewForcedInclusionRetriever(daClient, genesis, logger)
+
+	if nodeConfig.Node.BasedSequencer {
+		// Based sequencer mode - fetch transactions only from DA
+		if !nodeConfig.Node.Aggregator {
+			return nil, fmt.Errorf("based sequencer mode requires aggregator mode to be enabled")
+		}
+
+		basedSeq, err := basedsequencer.NewBasedSequencer(ctx, fiRetriever, datastore, genesis, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create based sequencer: %w", err)
+		}
+
+		logger.Info().
+			Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
+			Uint64("da_epoch", genesis.DAEpochForcedInclusion).
+			Msg("based sequencer initialized")
+
+		return basedSeq, nil
+	}
+
+	sequencer, err := singlesequencer.NewSequencer(
+		ctx,
+		logger,
+		datastore,
+		daClient,
+		[]byte(genesis.ChainID),
+		nodeConfig.Node.BlockTime.Duration,
+		nodeConfig.Node.Aggregator,
+		1000,
+		fiRetriever,
+		genesis,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create single sequencer: %w", err)
+	}
+
+	logger.Info().
+		Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
+		Msg("single sequencer initialized")
+
+	return sequencer, nil
+}
+
 func createAndStartEventBus(logger log.Logger) (*cmttypes.EventBus, error) {
 	eventBus := cmttypes.NewEventBus()
 	eventBus.SetLogger(servercmtlog.CometLoggerWrapper{Logger: logger}.With("module", "events"))
@@ -610,80 +645,6 @@ func createAndStartIndexerService(
 	}
 
 	return indexerService, txIndexer, blockIndexer, nil
-}
-
-// getAppGenesis returns the app genesis based on its location in the config.
-func getAppGenesis(cfg *cmtcfg.Config) (*genutiltypes.AppGenesis, error) {
-	appGenesis, err := genutiltypes.AppGenesisFromFile(cfg.GenesisFile())
-	if err != nil {
-		return nil, fmt.Errorf("failed to read genesis from file %s: %w", cfg.GenesisFile(), err)
-	}
-
-	return appGenesis, nil
-}
-
-// getDaStartHeight parses the da_start_height from the genesis file.
-func getDaStartHeight(cfg *cmtcfg.Config) (uint64, error) {
-	genFile, err := os.Open(filepath.Clean(cfg.GenesisFile()))
-	if err != nil {
-		return 0, fmt.Errorf("failed to open genesis file %s: %w", cfg.GenesisFile(), err)
-	}
-
-	daStartHeight, err := parseDAStartHeightFromGenesis(bufio.NewReader(genFile))
-	if err != nil {
-		return 0, err
-	}
-
-	if err := genFile.Close(); err != nil {
-		return 0, fmt.Errorf("failed to close genesis file %s: %v", genFile.Name(), err)
-	}
-
-	return daStartHeight, nil
-}
-
-// parseDAStartHeightFromGenesis parses the `da_start_height` from a genesis JSON file, aborting early after finding the `da_start_height`.
-// For efficiency, it's recommended to place the `da_start_height` field before any large entries in the JSON file.
-// Returns no error when the `da_start_height` field is not found.
-// Logic based on https://github.com/cosmos/cosmos-sdk/blob/v0.50.14/x/genutil/types/chain_id.go#L18.
-func parseDAStartHeightFromGenesis(r io.Reader) (uint64, error) {
-	const dAStartHeightFieldName = "da_start_height"
-
-	dec := json.NewDecoder(r)
-
-	t, err := dec.Token()
-	if err != nil {
-		return 0, err
-	}
-	if t != json.Delim('{') {
-		return 0, fmt.Errorf("expected {, got %s", t)
-	}
-
-	for dec.More() {
-		t, err = dec.Token()
-		if err != nil {
-			return 0, err
-		}
-		key, ok := t.(string)
-		if !ok {
-			return 0, fmt.Errorf("expected string for the key type, got %s", t)
-		}
-
-		if key == dAStartHeightFieldName {
-			var chainID uint64
-			if err := dec.Decode(&chainID); err != nil {
-				return 0, err
-			}
-			return chainID, nil
-		}
-
-		// skip the value
-		var value json.RawMessage
-		if err := dec.Decode(&value); err != nil {
-			return 0, err
-		}
-	}
-
-	return 0, nil
 }
 
 func getAndValidateConfig(svrCtx *server.Context) (serverconfig.Config, error) {
@@ -765,48 +726,6 @@ func initProxyApp(clientCreator proxy.ClientCreator, logger log.Logger, metrics 
 		return nil, fmt.Errorf("error while starting proxy app connections: %w", err)
 	}
 	return proxyApp, nil
-}
-
-const evolveGenesisFilename = "ev_genesis.json"
-
-// loadEvolveMigrationGenesis loads a minimal evolve genesis from a migration genesis file.
-// Returns nil if no migration genesis is found (normal startup scenario).
-func loadEvolveMigrationGenesis(rootDir string) (*evolveMigrationGenesis, error) {
-	genesisPath := filepath.Join(rootDir, evolveGenesisFilename)
-	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
-		return nil, nil // no migration genesis found
-	}
-
-	genesisBytes, err := os.ReadFile(genesisPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read evolve migration genesis: %w", err)
-	}
-
-	var migrationGenesis evolveMigrationGenesis
-	// using cmtjson for unmarshalling to ensure compatibility with cometbft genesis format
-	if err := cmtjson.Unmarshal(genesisBytes, &migrationGenesis); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal evolve migration genesis: %w", err)
-	}
-
-	return &migrationGenesis, nil
-}
-
-// createEvolveGenesisFromCometBFT creates a evolve genesis from cometbft genesis.
-// This is used for normal startup scenarios where a full cometbft genesis document
-// is available and contains all the necessary information.
-func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc, daStartHeight uint64) *genesis.Genesis {
-	gen := genesis.NewGenesis(
-		cmtGenDoc.ChainID,
-		uint64(cmtGenDoc.InitialHeight),
-		cmtGenDoc.GenesisTime,
-		cmtGenDoc.Validators[0].Address.Bytes(), // use the first validator as sequencer
-	)
-
-	if daStartHeight > 0 {
-		gen.DAStartHeight = daStartHeight
-	}
-
-	return &gen
 }
 
 func openRawEvolveDB(rootDir string) (ds.Batching, error) {

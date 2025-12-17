@@ -22,8 +22,8 @@ jobs:
       image_tag: ${{ steps.tag.outputs.tag }}
     env:
       IGNITE_VERSION: v29.3.0 # the gm build script depends on some annotations
-      IGNITE_EVOLVE_APP_VERSION: main
-      EVNODE_VERSION: v1.0.0-beta.9
+      IGNITE_EVOLVE_APP_VERSION: "d02e4975a7030d0cd4a15680d534ee51b1952950" # use tagged when apps has tagged (blocked on things)
+      EVNODE_VERSION: v1.0.0-beta.10.0.20251216132820-afcd6bd9b354
     steps:
       - uses: actions/checkout@v5
 
@@ -63,9 +63,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EVNODE_VERSION: "v1.0.0-beta.9"
+      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
       IGNITE_VERSION: "v29.6.1"
-      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "d02e4975a7030d0cd4a15680d534ee51b1952950" # use tagged when apps has tagged (blocked on things)
       EVOLVE_IMAGE_REPO: "evolve-gm"
       EVOLVE_IMAGE_TAG: "latest"
 
@@ -106,9 +106,9 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.9"
+      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
       IGNITE_VERSION: "v29.6.1"
-      IGNITE_EVOLVE_APP_VERSION: "main" # use tagged when apps has tagged (blocked on things)
+      IGNITE_EVOLVE_APP_VERSION: "d02e4975a7030d0cd4a15680d534ee51b1952950" # use tagged when apps has tagged (blocked on things)
     outputs:
       carol_mnemonic: ${{ steps.save_mnemonic.outputs.carol_mnemonic }}
       gmd_home: ${{ steps.paths.outputs.GMD_HOME }}
@@ -144,7 +144,7 @@ jobs:
         run: |
           cd gm
           # start the local da in the background
-          go tool github.com/evstack/ev-node/da/cmd/local-da &
+          go tool github.com/evstack/ev-node/tools/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start
@@ -161,17 +161,10 @@ jobs:
 
           # replace the github.com/evstack/ev-node module with tagged version
           go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
+          go mod edit -replace github.com/evstack/ev-node/core=github.com/evstack/ev-node/core@v1.0.0-beta.5.0.20251216132820-afcd6bd9b354 # TODO REMOVE AFTER TAG
 
           # replace the github.com/evstack/ev-abci module with the local version
           go mod edit -replace github.com/evstack/ev-abci=$GO_EXECUTION_ABCI_DIR
-
-          # pin dependency versions to avoid compatibility issues
-          go mod edit -replace github.com/libp2p/go-libp2p-quic-transport=github.com/libp2p/go-libp2p-quic-transport@v0.33.1
-          go mod edit -replace github.com/libp2p/go-libp2p=github.com/libp2p/go-libp2p@v0.43.0
-          go mod edit -replace github.com/quic-go/quic-go=github.com/quic-go/quic-go@v0.54.1
-          go mod edit -replace github.com/quic-go/webtransport-go=github.com/quic-go/webtransport-go@v0.9.0
-          go mod edit -replace github.com/multiformats/go-multiaddr=github.com/multiformats/go-multiaddr@v0.16.1
-          go mod edit -replace buf.build/go/protovalidate=buf.build/go/protovalidate@v0.12.0
 
           # download dependencies and update go.mod/go.sum
           go mod tidy
@@ -321,7 +314,7 @@ jobs:
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
       GAIA_VERSION: "v25.1.0"
-      EVNODE_VERSION: "v1.0.0-beta.9"
+      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
     steps:
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -368,9 +361,10 @@ jobs:
           cd /tmp/da-tool
           go mod init temp
           go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@$EVNODE_VERSION
-          go get github.com/evstack/ev-node/da/cmd/local-da
+          go mod edit -replace github.com/evstack/ev-node/core=github.com/evstack/ev-node/core@v1.0.0-beta.5.0.20251216132820-afcd6bd9b354 # TODO REMOVE AFTER TAG
+          go get github.com/evstack/ev-node/tools/local-da
           # start the local da in the background
-          go tool github.com/evstack/ev-node/da/cmd/local-da &
+          go tool github.com/evstack/ev-node/tools/local-da &
           # capture the background process PID
           echo "DA_PID=$!" >> $GITHUB_ENV
           # give it a moment to start
@@ -548,9 +542,9 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.9"
+      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
       IGNITE_VERSION: "v29.6.1"
-      IGNITE_EVOLVE_APP_VERSION: "main"
+      IGNITE_EVOLVE_APP_VERSION: "d02e4975a7030d0cd4a15680d534ee51b1952950" # use tagged when apps has tagged (blocked on things)
       GAIA_VERSION: "v25.1.0"
       EVOLVE_IMAGE_REPO: "evabci/gm"
       EVOLVE_IMAGE_TAG: "local"

@@ -8,9 +8,9 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-beta.9
+ENV EVNODE_VERSION=v1.0.0-beta.10.0.20251216132820-afcd6bd9b354
 ENV IGNITE_VERSION=v29.6.1
-ENV IGNITE_EVOLVE_APP_VERSION=main
+ENV IGNITE_EVOLVE_APP_VERSION=d02e4975a7030d0cd4a15680d534ee51b1952950
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
@@ -27,18 +27,10 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
     ignite evolve add-migrate
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
+    go mod edit -replace github.com/evstack/ev-node/core=github.com/evstack/ev-node/core@v1.0.0-beta.5.0.20251216132820-afcd6bd9b354 && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
-    go mod edit -replace github.com/libp2p/go-libp2p-quic-transport=github.com/libp2p/go-libp2p-quic-transport@v0.33.1 && \
-    go mod edit -replace github.com/libp2p/go-libp2p=github.com/libp2p/go-libp2p@v0.43.0 && \
-    go mod edit -replace github.com/quic-go/quic-go=github.com/quic-go/quic-go@v0.54.1 && \
-    go mod edit -replace github.com/quic-go/webtransport-go=github.com/quic-go/webtransport-go@v0.9.0 && \
-    go mod edit -replace github.com/multiformats/go-multiaddr=github.com/multiformats/go-multiaddr@v0.16.1 && \
-    go mod edit -replace buf.build/go/protovalidate=buf.build/go/protovalidate@v0.12.0 && \
     go mod tidy && \
     go mod download
-
-# Verify pinned module versions are effective in build context
-RUN go list -m all | grep -E 'github.com/libp2p/go-libp2p|github.com/multiformats/go-multiaddr'
 
 # TODO: replace this with proper ignite flag to skip IBC registration when available
 # Patch out IBC registration (comment out the call and its error handling)
