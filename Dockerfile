@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS ignite-builder
+FROM golang:1.25-alpine AS ignite-builder
 ARG ENABLE_IBC=true
 
 # Install dependencies needed for ignite and building
