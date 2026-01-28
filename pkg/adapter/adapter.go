@@ -20,13 +20,11 @@ import (
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	ds "github.com/ipfs/go-datastore"
-	kt "github.com/ipfs/go-datastore/keytransform"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	host "github.com/libp2p/go-libp2p/core/host"
 	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/evstack/ev-node/core/execution"
-	rollnode "github.com/evstack/ev-node/node"
 	rollkitp2p "github.com/evstack/ev-node/pkg/p2p"
 	rstore "github.com/evstack/ev-node/pkg/store"
 	"github.com/evstack/ev-node/types"
@@ -102,11 +100,8 @@ func NewABCIExecutor(
 	appGenesis *genutiltypes.AppGenesis,
 	opts ...Option,
 ) *Adapter {
-	rollkitPrefixStore := kt.Wrap(store, &kt.PrefixTransform{
-		Prefix: ds.NewKey(rollnode.EvPrefix),
-	})
+	rollkitPrefixStore := rstore.NewEvNodeKVStore(store)
 	rollkitStore := rstore.New(rollkitPrefixStore)
-
 	abciStore := execstore.NewExecABCIStore(store)
 
 	a := &Adapter{
@@ -214,7 +209,7 @@ func (a *Adapter) newTxValidator(ctx context.Context) p2p.GossipValidator {
 }
 
 // InitChain implements execution.Executor.
-func (a *Adapter) InitChain(ctx context.Context, genesisTime time.Time, initialHeight uint64, chainID string) ([]byte, uint64, error) {
+func (a *Adapter) InitChain(ctx context.Context, genesisTime time.Time, initialHeight uint64, chainID string) ([]byte, error) {
 	initChainStart := time.Now()
 	defer func() {
 		a.metrics.InitChainDurationSeconds.Observe(time.Since(initChainStart).Seconds())
@@ -223,22 +218,22 @@ func (a *Adapter) InitChain(ctx context.Context, genesisTime time.Time, initialH
 
 	if a.AppGenesis == nil {
 		err := fmt.Errorf("app genesis not loaded")
-		return nil, 0, err
+		return nil, err
 	}
 
 	if a.AppGenesis.GenesisTime != genesisTime {
 		err := fmt.Errorf("genesis time mismatch: expected %s, got %s", a.AppGenesis.GenesisTime, genesisTime)
-		return nil, 0, err
+		return nil, err
 	}
 
 	if a.AppGenesis.ChainID != chainID {
 		err := fmt.Errorf("chain ID mismatch: expected %s, got %s", a.AppGenesis.ChainID, chainID)
-		return nil, 0, err
+		return nil, err
 	}
 
 	if initialHeight != uint64(a.AppGenesis.InitialHeight) {
 		err := fmt.Errorf("initial height mismatch: expected %d, got %d", a.AppGenesis.InitialHeight, initialHeight)
-		return nil, 0, err
+		return nil, err
 	}
 
 	validators := make([]*cmttypes.Validator, len(a.AppGenesis.Consensus.Validators))
@@ -257,7 +252,7 @@ func (a *Adapter) InitChain(ctx context.Context, genesisTime time.Time, initialH
 		InitialHeight:   int64(initialHeight),
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("app initialize chain: %w", err)
+		return nil, fmt.Errorf("app initialize chain: %w", err)
 	}
 
 	s := &cmtstate.State{}
@@ -270,14 +265,14 @@ func (a *Adapter) InitChain(ctx context.Context, genesisTime time.Time, initialH
 
 	vals, err := cmttypes.PB2TM.ValidatorUpdates(res.Validators)
 	if err != nil {
-		return nil, 0, fmt.Errorf("validator updates: %w", err)
+		return nil, fmt.Errorf("validator updates: %w", err)
 	}
 
 	nValSet := cmttypes.NewValidatorSet(vals)
 
 	if len(nValSet.Validators) != 1 {
 		err := fmt.Errorf("expected exactly one validator")
-		return nil, 0, err
+		return nil, err
 	}
 
 	s.Validators = cmttypes.NewValidatorSet(nValSet.Validators)
@@ -288,11 +283,11 @@ func (a *Adapter) InitChain(ctx context.Context, genesisTime time.Time, initialH
 	s.AppHash = res.AppHash
 
 	if err := a.Store.SaveState(ctx, s); err != nil {
-		return nil, 0, fmt.Errorf("save initial state: %w", err)
+		return nil, fmt.Errorf("save initial state: %w", err)
 	}
 
 	a.Logger.Info("chain initialized successfully", "appHash", fmt.Sprintf("%X", res.AppHash))
-	return res.AppHash, uint64(s.ConsensusParams.Block.MaxBytes), nil
+	return res.AppHash, nil
 }
 
 // ExecuteTxs implements execution.Executor.
@@ -302,7 +297,7 @@ func (a *Adapter) ExecuteTxs(
 	blockHeight uint64,
 	timestamp time.Time,
 	_ []byte,
-) ([]byte, uint64, error) {
+) ([]byte, error) {
 	execStart := time.Now()
 	defer func() {
 		a.metrics.BlockExecutionDurationSeconds.Observe(time.Since(execStart).Seconds())
@@ -312,22 +307,22 @@ func (a *Adapter) ExecuteTxs(
 
 	s, err := a.Store.LoadState(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("load state: %w", err)
+		return nil, fmt.Errorf("load state: %w", err)
 	}
 
 	header, ok := types.HeaderFromContext(ctx)
 	if !ok {
-		return nil, 0, fmt.Errorf("ev-node header not found in context")
+		return nil, fmt.Errorf("ev-node header not found in context")
 	}
 
 	lastCommit, err := a.GetLastCommit(ctx, blockHeight)
 	if err != nil {
-		return nil, 0, fmt.Errorf("get last commit: %w", err)
+		return nil, fmt.Errorf("get last commit: %w", err)
 	}
 
 	abciHeader, err := ToABCIHeader(header, lastCommit)
 	if err != nil {
-		return nil, 0, fmt.Errorf("compute header hash: %w", err)
+		return nil, fmt.Errorf("compute header hash: %w", err)
 	}
 
 	cmtTxs := make(cmttypes.Txs, len(txs))
@@ -337,7 +332,7 @@ func (a *Adapter) ExecuteTxs(
 
 	abciBlock, currentBlockID, err := MakeABCIBlock(blockHeight, cmtTxs, s, abciHeader, lastCommit)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	ppResp, err := a.App.ProcessProposal(&abci.RequestProcessProposal{
@@ -351,11 +346,11 @@ func (a *Adapter) ExecuteTxs(
 		NextValidatorsHash: s.NextValidators.Hash(),
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	if ppResp.Status != abci.ResponseProcessProposal_ACCEPT {
-		return nil, 0, fmt.Errorf("proposal rejected by app")
+		return nil, fmt.Errorf("proposal rejected by app")
 	}
 
 	fbResp, err := a.App.FinalizeBlock(&abci.RequestFinalizeBlock{
@@ -368,7 +363,7 @@ func (a *Adapter) ExecuteTxs(
 		Txs:                txs,
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	for i, tx := range txs {
@@ -383,7 +378,7 @@ func (a *Adapter) ExecuteTxs(
 
 	validatorUpdates, err := cmttypes.PB2TM.ValidatorUpdates(fbResp.ValidatorUpdates)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	lastHeightValsChanged := s.LastHeightValidatorsChanged
@@ -391,7 +386,7 @@ func (a *Adapter) ExecuteTxs(
 		a.metrics.ValidatorUpdatesTotal.Add(float64(len(validatorUpdates)))
 		err := nValSet.UpdateWithChangeSet(validatorUpdates)
 		if err != nil {
-			return nil, 0, fmt.Errorf("changing validator set: %w", err)
+			return nil, fmt.Errorf("changing validator set: %w", err)
 		}
 		lastHeightValsChanged = int64(blockHeight) + 2
 	}
@@ -403,12 +398,12 @@ func (a *Adapter) ExecuteTxs(
 		nextParams := s.ConsensusParams.Update(fbResp.ConsensusParamUpdates)
 		err := nextParams.ValidateBasic()
 		if err != nil {
-			return nil, 0, fmt.Errorf("validating new consensus params: %w", err)
+			return nil, fmt.Errorf("validating new consensus params: %w", err)
 		}
 
 		err = s.ConsensusParams.ValidateUpdate(fbResp.ConsensusParamUpdates, int64(blockHeight))
 		if err != nil {
-			return nil, 0, fmt.Errorf("updating consensus params: %w", err)
+			return nil, fmt.Errorf("updating consensus params: %w", err)
 		}
 
 		s.ConsensusParams = nextParams
@@ -422,7 +417,7 @@ func (a *Adapter) ExecuteTxs(
 	s.AppHash = fbResp.AppHash
 
 	if err := a.Store.SaveState(ctx, s); err != nil {
-		return nil, 0, fmt.Errorf("save state: %w", err)
+		return nil, fmt.Errorf("save state: %w", err)
 	}
 
 	err = func() error { // Lock mempool and commit
@@ -455,29 +450,52 @@ func (a *Adapter) ExecuteTxs(
 		return nil
 	}()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	// saving data to ev-abci store
 
 	if err := a.Store.SaveBlockID(ctx, blockHeight, currentBlockID); err != nil {
-		return nil, 0, fmt.Errorf("save block ID: %w", err)
+		return nil, fmt.Errorf("save block ID: %w", err)
 	}
 
 	// TODO: are we sure we can really get a soft confirmation here? Other attesters have not yet received the block
 	//if a.blockFilter.IsPublishable(ctx, int64(header.Height())) {
 	// save response before the events are fired (current behaviour in CometBFT)
 	if err := a.Store.SaveBlockResponse(ctx, blockHeight, fbResp); err != nil {
-		return nil, 0, fmt.Errorf("save block response: %w", err)
+		return nil, fmt.Errorf("save block response: %w", err)
 	}
 
 	if err := fireEvents(a.EventBus, abciBlock, currentBlockID, fbResp, validatorUpdates); err != nil {
-		return nil, 0, fmt.Errorf("fire events: %w", err)
+		return nil, fmt.Errorf("fire events: %w", err)
 	}
 
 	a.Logger.Info("block executed successfully", "height", blockHeight, "appHash", fmt.Sprintf("%X", fbResp.AppHash))
 
-	return fbResp.AppHash, uint64(s.ConsensusParams.Block.MaxBytes), nil
+	return fbResp.AppHash, nil
+}
+
+// GetExecutionInfo implements execution.Executor.
+func (a *Adapter) GetExecutionInfo(ctx context.Context) (execution.ExecutionInfo, error) {
+	s, err := a.Store.LoadState(ctx)
+	if err != nil {
+		return execution.ExecutionInfo{}, fmt.Errorf("load state: %w", err)
+	}
+
+	return execution.ExecutionInfo{
+		MaxGas: uint64(s.ConsensusParams.Block.MaxGas),
+	}, nil
+}
+
+// FilterTxs implements execution.Executor.
+// TODO: to implement for force inclusion
+func (a *Adapter) FilterTxs(ctx context.Context, txs [][]byte, maxBytes, maxGas uint64, hasForceIncludedTransaction bool) ([]execution.FilterStatus, error) {
+	noFilter := make([]execution.FilterStatus, len(txs))
+	for i := range txs {
+		noFilter[i] = execution.FilterOK
+	}
+
+	return noFilter, nil
 }
 
 func fireEvents(
