@@ -182,23 +182,37 @@ func (s *Store) Prune(ctx context.Context, height uint64) error {
 		return nil
 	}
 
+	// Use a batch to atomically delete all per-height ABCI metadata and
+	// update the last pruned height in a single transaction. This avoids
+	// leaving the store in a partially pruned state if an error occurs
+	// midway through the operation.
+	batch, err := s.prefixedStore.Batch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create batch for pruning: %w", err)
+	}
+
 	// Delete per-height ABCI metadata (block IDs and block responses) for
 	// heights in (lastPruned, height]. Missing keys are ignored.
 	for h := lastPruned + 1; h <= height; h++ {
-		bidKey := ds.NewKey(blockIDKey).ChildString(strconv.FormatUint(h, 10))
-		if err := s.prefixedStore.Delete(ctx, bidKey); err != nil && !errors.Is(err, ds.ErrNotFound) {
-			return fmt.Errorf("failed to delete block ID at height %d during pruning: %w", h, err)
+		hStr := strconv.FormatUint(h, 10)
+		bidKey := ds.NewKey(blockIDKey).ChildString(hStr)
+		if err := batch.Delete(ctx, bidKey); err != nil && !errors.Is(err, ds.ErrNotFound) {
+			return fmt.Errorf("failed to add block ID deletion to batch at height %d: %w", h, err)
 		}
 
-		brKey := ds.NewKey(blockResponseKey).ChildString(strconv.FormatUint(h, 10))
-		if err := s.prefixedStore.Delete(ctx, brKey); err != nil && !errors.Is(err, ds.ErrNotFound) {
-			return fmt.Errorf("failed to delete block response at height %d during pruning: %w", h, err)
+		brKey := ds.NewKey(blockResponseKey).ChildString(hStr)
+		if err := batch.Delete(ctx, brKey); err != nil && !errors.Is(err, ds.ErrNotFound) {
+			return fmt.Errorf("failed to add block response deletion to batch at height %d: %w", h, err)
 		}
 	}
 
-	// Persist the updated last pruned height.
-	if err := s.prefixedStore.Put(ctx, ds.NewKey(lastPrunedHeightKey), []byte(strconv.FormatUint(height, 10))); err != nil {
-		return fmt.Errorf("failed to update last pruned height: %w", err)
+	// Persist the updated last pruned height in the same batch.
+	if err := batch.Put(ctx, ds.NewKey(lastPrunedHeightKey), []byte(strconv.FormatUint(height, 10))); err != nil {
+		return fmt.Errorf("failed to add last pruned height update to batch: %w", err)
+	}
+
+	if err := batch.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit pruning batch: %w", err)
 	}
 
 	return nil
