@@ -4,7 +4,7 @@ go 1.25.0
 
 // TODO: remove after https://github.com/evstack/ev-node/pull/2797
 replace (
-	github.com/evstack/ev-node => github.com/evstack/ev-node v1.0.0-beta.10.0.20251216132820-afcd6bd9b354
+	github.com/evstack/ev-node => github.com/evstack/ev-node v0.0.0-20251216132820-afcd6bd9b354
 	github.com/evstack/ev-node/core => github.com/evstack/ev-node/core v1.0.0-beta.5.0.20251216132820-afcd6bd9b354
 )
 

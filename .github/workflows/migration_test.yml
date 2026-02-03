@@ -12,9 +12,9 @@ permissions:
   actions: write
 
 env:
-  EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
+  EVNODE_VERSION: "v0.0.0-20251216132820-afcd6bd9b354"
   IGNITE_VERSION: "v29.6.1"
-  IGNITE_EVOLVE_APP_VERSION: "main"
+  IGNITE_EVOLVE_APP_VERSION: "097513a38337"
   EVOLVE_IMAGE_REPO: "ghcr.io/evstack/evolve-abci-gm"
   COSMOS_SDK_IMAGE_REPO: "ghcr.io/evstack/cosmos-sdk-gm"
 

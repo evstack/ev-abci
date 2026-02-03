@@ -1,16 +1,18 @@
 FROM golang:1.25-alpine AS ignite-builder
 ARG ENABLE_IBC=true
+ARG IGNITE_EVOLVE_APP_VERSION=097513a38337
 
 # Install dependencies needed for ignite and building
 RUN apk add --no-cache \
     libc6-compat \
     curl \
-    bash
+    bash \
+    git
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-beta.10.0.20251216132820-afcd6bd9b354
+ENV EVNODE_VERSION=v0.0.0-20251216132820-afcd6bd9b354
 ENV IGNITE_VERSION=v29.6.1
-ENV IGNITE_EVOLVE_APP_VERSION=main
+ENV IGNITE_EVOLVE_APP_VERSION=${IGNITE_EVOLVE_APP_VERSION}
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
@@ -27,7 +29,11 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
     ignite evolve add-migrate
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
+    go mod edit -replace github.com/evstack/ev-node/core=github.com/evstack/ev-node/core@${EVNODE_VERSION} && \
+    go mod edit -replace github.com/evstack/ev-node/execution/grpc=github.com/evstack/ev-node/execution/grpc@${EVNODE_VERSION} && \
+    go mod edit -replace github.com/evstack/ev-node/execution/evm=github.com/evstack/ev-node/execution/evm@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
+    go mod edit -replace github.com/quic-go/quic-go=github.com/quic-go/quic-go@v0.57.1 && \
     go mod tidy && \
     go mod download
 

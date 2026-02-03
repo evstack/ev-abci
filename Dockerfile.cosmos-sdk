@@ -1,5 +1,6 @@
 FROM golang:1.25-alpine AS ignite-builder
 ARG ENABLE_IBC=true
+ARG IGNITE_EVOLVE_APP_VERSION=097513a38337
 
 # Install dependencies needed for ignite and building
 RUN apk add --no-cache \
@@ -10,6 +11,7 @@ RUN apk add --no-cache \
 
 # Set environment variables
 ENV IGNITE_VERSION=v29.5.0
+ENV IGNITE_EVOLVE_APP_VERSION=${IGNITE_EVOLVE_APP_VERSION}
 
 RUN curl -sSL https://get.ignite.com/cli@${IGNITE_VERSION}! | bash
 
@@ -20,7 +22,11 @@ RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 
 WORKDIR /workspace/gm
 
-RUN ignite app install -g github.com/ignite/apps/evolve@main
+RUN ignite app install -g github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION}
+
+# ensure modern quic-go so webtransport-go builds cleanly
+RUN go mod edit -replace github.com/quic-go/quic-go=github.com/quic-go/quic-go@v0.57.1 && \
+    go mod tidy
 
 # Add only the evolve migrate command (do not scaffold full evolve integration)
 RUN ignite evolve add-migrate
