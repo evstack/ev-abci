@@ -156,17 +156,32 @@ func startInProcess(svrCtx *server.Context, svrCfg serverconfig.Config, clientCt
 			return nil
 		})
 
-		// Wait for the node to start p2p before attempting to start the gossiper
-		time.Sleep(1 * time.Second)
+		// Wait for the node to start p2p before attempting to start the gossiper.
+		// Retry with backoff to ensure PubSub is properly initialized.
+		const maxRetries = 10
+		const retryInterval = 500 * time.Millisecond
 
-		// Start the executor (Adapter) AFTER launching the node goroutine.
-		// Assumption: rollkitNode.Run initializes PubSub quickly enough.
-		svrCtx.Logger.Info("attempting to start executor (Adapter.Start)")
-		if err := executor.Start(ctx); err != nil {
-			svrCtx.Logger.Error("failed to start executor", "error", err)
-			// If this fails, the node goroutine might still be running.
-			// The errgroup context cancellation should handle shutdown.
-			return fmt.Errorf("failed to start executor: %w", err)
+		var startErr error
+		for i := range maxRetries {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			svrCtx.Logger.Info("attempting to start executor (Adapter.Start)", "attempt", i+1, "max_attempts", maxRetries)
+			startErr = executor.Start(ctx)
+			if startErr == nil {
+				break
+			}
+
+			svrCtx.Logger.Warn("executor start failed, retrying...", "error", startErr, "attempt", i+1)
+			time.Sleep(retryInterval)
+		}
+
+		if startErr != nil {
+			svrCtx.Logger.Error("failed to start executor after retries", "error", startErr)
+			return fmt.Errorf("failed to start executor after %d attempts: %w", maxRetries, startErr)
 		}
 		svrCtx.Logger.Info("executor started successfully")
 

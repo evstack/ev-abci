@@ -129,9 +129,23 @@ func (a *Adapter) SetMempool(mempool mempool.Mempool) {
 }
 
 func (a *Adapter) Start(ctx context.Context) error {
+	if a.P2PClient == nil {
+		return errors.New("P2PClient is nil, cannot start gossiper")
+	}
+
+	host := a.P2PClient.Host()
+	ps := a.P2PClient.PubSub()
+
+	if host == nil {
+		return errors.New("P2P host is nil, cannot start gossiper")
+	}
+	if ps == nil {
+		return errors.New("PubSub is nil, cannot start gossiper")
+	}
+
 	var err error
 	topic := fmt.Sprintf("%s-tx", a.AppGenesis.ChainID)
-	a.TxGossiper, err = p2p.NewGossiper(a.P2PClient.Host(), a.P2PClient.PubSub(), topic, a.Logger, p2p.WithValidator(
+	a.TxGossiper, err = p2p.NewGossiper(host, ps, topic, a.Logger, p2p.WithValidator(
 		a.newTxValidator(ctx),
 	))
 	if err != nil {
