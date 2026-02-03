@@ -25,6 +25,11 @@ RUN ignite app install -g github.com/ignite/apps/evolve@097513a38337cae4f0ca2d2d
 # Add only the evolve migrate command (do not scaffold full evolve integration)
 RUN ignite evolve add-migrate
 
+# webtransport-go v0.9.0 (pulled in transitively via ev-abci) was built against
+# quic-go v0.53 but MVS selects v0.57+, breaking compilation.  Bump the trio to
+# mutually-compatible versions before building.
+RUN go get github.com/quic-go/webtransport-go@v0.10.0 github.com/libp2p/go-libp2p@v0.47.0 && go mod tidy
+
 # TODO: replace this with proper ignite flag to skip IBC registration when available
 # Patch out IBC registration (comment out the call and its error handling)
 RUN if [ "$ENABLE_IBC" = "false" ]; then \
