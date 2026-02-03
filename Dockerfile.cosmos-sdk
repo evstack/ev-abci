@@ -20,7 +20,7 @@ RUN ignite scaffold chain gm --no-module --skip-git --address-prefix gm
 
 WORKDIR /workspace/gm
 
-RUN ignite app install -g github.com/ignite/apps/evolve@main
+RUN ignite app install -g github.com/ignite/apps/evolve@097513a38337cae4f0ca2d2d31bb5b12c2759a72
 
 # Add only the evolve migrate command (do not scaffold full evolve integration)
 RUN ignite evolve add-migrate
