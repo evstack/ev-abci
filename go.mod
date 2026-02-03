@@ -18,7 +18,7 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.15
 	github.com/cosmos/gogoproto v1.7.2
-	github.com/evstack/ev-node v1.0.0-rc.1
+	github.com/evstack/ev-node v1.0.0-rc.2
 	github.com/evstack/ev-node/core v1.0.0-rc.1
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
