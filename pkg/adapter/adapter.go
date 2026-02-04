@@ -90,6 +90,19 @@ type Adapter struct {
 	stackedEvents []StackedEvent
 }
 
+// PruneExecMeta implements execution.ExecMetaPruner for the ABCI adapter by
+// delegating to the underlying ev-abci exec store. It prunes per-height ABCI
+// execution metadata (block IDs and block responses) up to the given height.
+// The method is safe to call multiple times with the same or increasing
+// heights.
+func (a *Adapter) PruneExecMeta(ctx context.Context, height uint64) error {
+	if a.Store == nil {
+		return nil
+	}
+
+	return a.Store.Prune(ctx, height)
+}
+
 // NewABCIExecutor creates a new Adapter instance that implements the go-execution.Executor interface.
 // The Adapter wraps the provided ABCI application and delegates execution-related operations to it.
 func NewABCIExecutor(
