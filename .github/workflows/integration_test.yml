@@ -23,7 +23,7 @@ jobs:
     env:
       IGNITE_VERSION: v29.3.0 # the gm build script depends on some annotations
       IGNITE_EVOLVE_APP_VERSION: 097513a38337cae4f0ca2d2d31bb5b12c2759a72
-      EVNODE_VERSION: v1.0.0-rc.2
+      EVNODE_VERSION: v1.0.0-rc.3
     steps:
       - uses: actions/checkout@v5
 
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EVNODE_VERSION: "v1.0.0-rc.2"
+      EVNODE_VERSION: "v1.0.0-rc.3"
       IGNITE_VERSION: "v29.6.1"
       IGNITE_EVOLVE_APP_VERSION: "097513a38337cae4f0ca2d2d31bb5b12c2759a72"
       EVOLVE_IMAGE_REPO: "evolve-gm"
@@ -106,7 +106,7 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-rc.2"
+      EVNODE_VERSION: "v1.0.0-rc.3"
       IGNITE_VERSION: "v29.6.1"
       IGNITE_EVOLVE_APP_VERSION: "097513a38337cae4f0ca2d2d31bb5b12c2759a72"
     outputs:
@@ -313,7 +313,7 @@ jobs:
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
       GAIA_VERSION: "v25.1.0"
-      EVNODE_VERSION: "v1.0.0-rc.2"
+      EVNODE_VERSION: "v1.0.0-rc.3"
     steps:
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -540,7 +540,7 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-rc.2"
+      EVNODE_VERSION: "v1.0.0-rc.3"
       IGNITE_VERSION: "v29.6.1"
       IGNITE_EVOLVE_APP_VERSION: "097513a38337cae4f0ca2d2d31bb5b12c2759a72"
       GAIA_VERSION: "v25.1.0"
