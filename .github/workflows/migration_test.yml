@@ -14,7 +14,7 @@ permissions:
 env:
   EVNODE_VERSION: "v1.0.0-rc.3"
   IGNITE_VERSION: "v29.6.1"
-  IGNITE_EVOLVE_APP_VERSION: "1260ab02b391c7d70af6d0b8de2dee6929adc00d"
+  IGNITE_EVOLVE_APP_VERSION: "main"
   EVOLVE_IMAGE_REPO: "ghcr.io/evstack/evolve-abci-gm"
   COSMOS_SDK_IMAGE_REPO: "ghcr.io/evstack/cosmos-sdk-gm"
 
