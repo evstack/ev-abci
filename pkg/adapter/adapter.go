@@ -133,9 +133,41 @@ func (a *Adapter) Start(ctx context.Context) error {
 		return errors.New("P2PClient is nil, cannot start gossiper")
 	}
 
-	var err error
+	// P2P host and pubsub are initialized asynchronously by the node's Run
+	// loop, so they may not be available yet. Poll until they are ready or
+	// the context is cancelled.
+	const (
+		maxRetries    = 25
+		retryInterval = 500 * time.Millisecond
+	)
+
+	var h host.Host
+	var ps *pubsub.PubSub
+	for i := range maxRetries {
+		h = a.P2PClient.Host()
+		ps = a.P2PClient.PubSub()
+		if h != nil && ps != nil {
+			break
+		}
+
+		a.Logger.Info("waiting for P2P host/pubsub to be ready",
+			"attempt", i+1, "max_attempts", maxRetries,
+			"host_ready", h != nil, "pubsub_ready", ps != nil)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(retryInterval):
+		}
+	}
+
+	if h == nil || ps == nil {
+		return fmt.Errorf("P2P not ready after %d attempts (host=%v, pubsub=%v)", maxRetries, h != nil, ps != nil)
+	}
+
 	topic := fmt.Sprintf("%s-tx", a.AppGenesis.ChainID)
-	a.TxGossiper, err = p2p.NewGossiper(a.P2PClient.Host(), a.P2PClient.PubSub(), topic, a.Logger, p2p.WithValidator(
+	var err error
+	a.TxGossiper, err = p2p.NewGossiper(h, ps, topic, a.Logger, p2p.WithValidator(
 		a.newTxValidator(ctx),
 	))
 	if err != nil {

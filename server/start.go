@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"time"
 
 	"cosmossdk.io/log"
 	cmtcfg "github.com/cometbft/cometbft/config"
@@ -156,32 +155,8 @@ func startInProcess(svrCtx *server.Context, svrCfg serverconfig.Config, clientCt
 			return nil
 		})
 
-		// Wait for the node to start p2p before attempting to start the gossiper.
-		// Retry with backoff to ensure PubSub is properly initialized.
-		const maxRetries = 10
-		const retryInterval = 500 * time.Millisecond
-
-		var startErr error
-		for i := range maxRetries {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			svrCtx.Logger.Info("attempting to start executor (Adapter.Start)", "attempt", i+1, "max_attempts", maxRetries)
-			startErr = executor.Start(ctx)
-			if startErr == nil {
-				break
-			}
-
-			svrCtx.Logger.Warn("executor start failed, retrying...", "error", startErr, "attempt", i+1)
-			time.Sleep(retryInterval)
-		}
-
-		if startErr != nil {
-			svrCtx.Logger.Error("failed to start executor after retries", "error", startErr)
-			return fmt.Errorf("failed to start executor after %d attempts: %w", maxRetries, startErr)
+		if err := executor.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start executor: %w", err)
 		}
 		svrCtx.Logger.Info("executor started successfully")
 
