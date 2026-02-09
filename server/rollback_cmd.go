@@ -11,11 +11,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/cosmos/cosmos-sdk/server/types"
-	ds "github.com/ipfs/go-datastore"
-	kt "github.com/ipfs/go-datastore/keytransform"
 	"github.com/spf13/cobra"
 
-	"github.com/evstack/ev-node/node"
 	"github.com/evstack/ev-node/pkg/store"
 	evtypes "github.com/evstack/ev-node/types"
 )
@@ -69,10 +66,7 @@ The application also rolls back to height n - 1. If a --height flag is specified
 			}()
 
 			// prefixed evolve db
-			evolveDB := kt.Wrap(rawEvolveDB, &kt.PrefixTransform{
-				Prefix: ds.NewKey(node.EvPrefix),
-			})
-
+			evolveDB := store.NewEvNodeKVStore(rawEvolveDB)
 			evolveStore := store.New(evolveDB)
 			if height == 0 {
 				currentHeight, err := evolveStore.Height(goCtx)

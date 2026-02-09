@@ -125,7 +125,7 @@ func TestExecuteFiresEvents(t *testing.T) {
 
 			// when
 			ctx = context.WithValue(ctx, types.HeaderContextKey, signedHeader.Header)
-			_, _, err = adapter.ExecuteTxs(ctx, spec.txs, 1, timestamp, bytes.Repeat([]byte{1}, 32))
+			_, err = adapter.ExecuteTxs(ctx, spec.txs, 1, timestamp, bytes.Repeat([]byte{1}, 32))
 			if spec.expErr {
 				require.Error(t, err)
 				blockMx.RLock()

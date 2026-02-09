@@ -44,6 +44,14 @@ type Gossiper struct {
 //
 // Returned Gossiper object can be used for sending (Publishing) and receiving messages in topic identified by topicStr.
 func NewGossiper(host host.Host, ps *pubsub.PubSub, topicStr string, logger log.Logger, options ...GossiperOption) (*Gossiper, error) {
+	if ps == nil {
+		return nil, errors.New("pubsub instance is nil")
+	}
+
+	if host == nil {
+		return nil, errors.New("host instance is nil")
+	}
+
 	topic, err := ps.Join(topicStr)
 	if err != nil {
 		return nil, err

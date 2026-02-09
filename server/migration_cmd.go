@@ -21,11 +21,8 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
-	ds "github.com/ipfs/go-datastore"
-	ktds "github.com/ipfs/go-datastore/keytransform"
 	"github.com/spf13/cobra"
 
-	rollkitnode "github.com/evstack/ev-node/node"
 	rollkitgenesis "github.com/evstack/ev-node/pkg/genesis"
 	rollkitstore "github.com/evstack/ev-node/pkg/store"
 	rollkittypes "github.com/evstack/ev-node/types"
@@ -347,10 +344,7 @@ func loadRollkitStores(rootDir string) (rollkitStores, error) {
 	if err != nil {
 		return rollkitStores{}, fmt.Errorf("failed to create rollkit store: %w", err)
 	}
-
-	rollkitPrefixStore := ktds.Wrap(store, &ktds.PrefixTransform{
-		Prefix: ds.NewKey(rollkitnode.EvPrefix),
-	})
+	rollkitPrefixStore := rollkitstore.NewEvNodeKVStore(store)
 
 	ds, err := goheaderstore.NewStore[*rollkittypes.Data](
 		rollkitPrefixStore,
