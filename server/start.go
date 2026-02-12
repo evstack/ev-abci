@@ -483,7 +483,7 @@ func setupNodeAndExecutor(
 		sequencer,
 		daClient,
 		signer,
-		nodeKey,
+		p2pClient,
 		*evGenesis,
 		database,
 		metrics,
