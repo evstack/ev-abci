@@ -59,14 +59,14 @@ require (
 	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.2.0 // indirect
-	github.com/bytedance/sonic v1.14.0 // indirect
-	github.com/bytedance/sonic/loader v0.3.0 // indirect
+	github.com/bytedance/sonic v1.15.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/celestiaorg/go-square/v3 v3.0.2 // indirect
 	github.com/celestiaorg/nmt v0.24.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
-	github.com/cloudwego/base64x v0.1.5 // indirect
+	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cockroachdb/errors v1.12.0 // indirect
 	github.com/cockroachdb/fifo v0.0.0-20240606204812-0bbfbd93a7ce // indirect
 	github.com/cockroachdb/logtags v0.0.0-20241215232642-bb51bb14a506 // indirect
@@ -220,6 +220,7 @@ require (
 require (
 	cosmossdk.io/api v0.9.2 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
+	github.com/bytedance/gopkg v0.1.3 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
