@@ -34,6 +34,7 @@ RUN chmod +x /workspace/patch-app-wiring.sh && \
 # Align module versions like in CI
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} \
     && go mod edit -replace github.com/evstack/ev-abci=../ev-abci \
+    && go get github.com/bytedance/sonic@v1.15.0 \
     && go mod tidy
 
 # Build gmd binary
