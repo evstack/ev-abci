@@ -12,7 +12,7 @@ permissions:
   actions: write
 
 env:
-  EVNODE_VERSION: "v1.0.0-rc.4.0.20260212142321-387c3fb9dc67"
+  EVNODE_VERSION: "v1.0.0-rc.4.0.20260216131057-1da76345e4b9"
   IGNITE_VERSION: "v29.6.1"
   IGNITE_EVOLVE_APP_VERSION: "main"
   EVOLVE_IMAGE_REPO: "ghcr.io/evstack/evolve-abci-gm"

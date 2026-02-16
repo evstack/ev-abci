@@ -18,8 +18,8 @@ require (
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.50.15
 	github.com/cosmos/gogoproto v1.7.2
-	github.com/evstack/ev-node v1.0.0-rc.4.0.20260212142321-387c3fb9dc67
-	github.com/evstack/ev-node/core v1.0.0-rc.1.0.20260212142321-387c3fb9dc67
+	github.com/evstack/ev-node v1.0.0-rc.4.0.20260216131057-1da76345e4b9
+	github.com/evstack/ev-node/core v1.0.0-rc.1.0.20260216131057-1da76345e4b9
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
@@ -247,10 +247,10 @@ require (
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
-	github.com/pion/dtls/v3 v3.0.6 // indirect
+	github.com/pion/dtls/v3 v3.0.11 // indirect
 	github.com/pion/ice/v4 v4.0.10 // indirect
 	github.com/pion/interceptor v0.1.40 // indirect
-	github.com/pion/logging v0.2.3 // indirect
+	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.15 // indirect
@@ -262,6 +262,7 @@ require (
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pion/transport/v2 v2.2.10 // indirect
 	github.com/pion/transport/v3 v3.0.7 // indirect
+	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/pion/turn/v4 v4.0.2 // indirect
 	github.com/pion/webrtc/v4 v4.1.2 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
