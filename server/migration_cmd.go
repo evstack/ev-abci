@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pelletier/go-toml/v2"
-
 	goheaderstore "github.com/celestiaorg/go-header/store"
 	cmtdbm "github.com/cometbft/cometbft-db"
 	cometbftcmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
@@ -23,6 +21,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 
 	rollkitgenesis "github.com/evstack/ev-node/pkg/genesis"
