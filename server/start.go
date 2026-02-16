@@ -33,6 +33,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/rs/zerolog"
+	"github.com/spf13/viper"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -314,6 +315,9 @@ func setupNodeAndExecutor(
 	}
 
 	nodeKey := &key.NodeKey{PrivKey: signingKey, PubKey: signingKey.GetPublic()}
+
+	// Clear cosmos-sdk pruning keys that conflict with ev-node's config.
+	clearConflictingViperKeys(srvCtx.Viper)
 
 	evcfg, err := config.LoadFromViper(srvCtx.Viper)
 	if err != nil {
@@ -718,4 +722,15 @@ func openRawEvolveDB(rootDir string) (ds.Batching, error) {
 	}
 
 	return database, nil
+}
+
+// clearConflictingViperKeys overrides cosmos-sdk config keys that conflict with
+func clearConflictingViperKeys(v *viper.Viper) {
+	conflictingKeys := []string{"pruning", "pruning-keep-recent", "pruning-interval"}
+	for _, k := range conflictingKeys {
+		val := v.Get(k)
+		if _, isString := val.(string); isString {
+			v.Set(k, map[string]interface{}{})
+		}
+	}
 }
