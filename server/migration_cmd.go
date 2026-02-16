@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+
 	goheaderstore "github.com/celestiaorg/go-header/store"
 	cmtdbm "github.com/cometbft/cometbft-db"
 	cometbftcmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
@@ -238,6 +240,12 @@ After migration, start the node normally - it will automatically detect and use 
 				return fmt.Errorf("failed to cleanup migration state: %w", err)
 			}
 			cmd.Println("Cleaned up migration state from application database")
+
+			// Sanitize app.toml to remove conflicting cosmos-sdk keys
+			if err := sanitizeAppConfig(config.RootDir); err != nil {
+				return fmt.Errorf("failed to sanitize app config: %w", err)
+			}
+			cmd.Println("Sanitized app.toml (removed conflicting cosmos-sdk keys)")
 
 			// Defer cleanup above will stop/close stores in correct order
 			cmd.Println("Migration completed successfully")
@@ -612,4 +620,50 @@ func fileExists(filename string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// sanitizeAppConfig removes conflicting or unused cosmos-sdk keys
+func sanitizeAppConfig(rootDir string) error {
+	appTomlPath := filepath.Join(rootDir, "config", "app.toml")
+
+	data, err := os.ReadFile(appTomlPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read app.toml: %w", err)
+	}
+
+	var appCfg map[string]interface{}
+	if err := toml.Unmarshal(data, &appCfg); err != nil {
+		return fmt.Errorf("parse app.toml: %w", err)
+	}
+
+	// Remove cosmos-sdk pruning keys that conflict with ev-node's struct-typed
+	// Pruning config. Only remove them if they are strings (the conflicting type).
+	conflictingKeys := []string{"pruning", "pruning-keep-recent", "pruning-interval"}
+	modified := false
+	for _, key := range conflictingKeys {
+		if val, ok := appCfg[key]; ok {
+			if _, isString := val.(string); isString {
+				delete(appCfg, key)
+				modified = true
+			}
+		}
+	}
+
+	if !modified {
+		return nil
+	}
+
+	updated, err := toml.Marshal(appCfg)
+	if err != nil {
+		return fmt.Errorf("marshal sanitized app.toml: %w", err)
+	}
+
+	if err := os.WriteFile(appTomlPath, updated, 0o644); err != nil {
+		return fmt.Errorf("write sanitized app.toml: %w", err)
+	}
+
+	return nil
 }
