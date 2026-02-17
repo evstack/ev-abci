@@ -9,7 +9,7 @@ import (
 	goheaderstore "github.com/celestiaorg/go-header/store"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/server"
+	sdkserver "github.com/cosmos/cosmos-sdk/server"
 	"github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/spf13/cobra"
 
@@ -39,7 +39,7 @@ Rollback overwrites a state at height n with the state at height n - 1.
 The application also rolls back to height n - 1. If a --height flag is specified, the rollback will be performed to that height. No rollback can be performed if the height has been committed to the DA layer.
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := server.GetServerContextFromCmd(cmd)
+			ctx := sdkserver.GetServerContextFromCmd(cmd)
 			cfg := ctx.Config
 			home := cfg.RootDir
 
@@ -49,7 +49,7 @@ The application also rolls back to height n - 1. If a --height flag is specified
 			}
 
 			// app db
-			db, err := openDB(home, server.GetAppDBBackend(ctx.Viper))
+			db, err := openDB(home, sdkserver.GetAppDBBackend(ctx.Viper))
 			if err != nil {
 				return err
 			}

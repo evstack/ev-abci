@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/server"
+	sdkserver "github.com/cosmos/cosmos-sdk/server"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
@@ -63,7 +63,7 @@ Examples:
 // postTxRunE executes the post-tx command
 func postTxRunE(cobraCmd *cobra.Command, args []string) error {
 	clientCtx := client.GetClientContextFromCmd(cobraCmd)
-	serverCtx := server.GetServerContextFromCmd(cobraCmd)
+	serverCtx := sdkserver.GetServerContextFromCmd(cobraCmd)
 
 	txInput := args[0]
 	if txInput == "" {
