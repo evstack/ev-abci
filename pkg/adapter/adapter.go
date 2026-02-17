@@ -33,7 +33,10 @@ import (
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
-var _ execution.Executor = &Adapter{}
+var (
+	_ execution.Executor   = &Adapter{}
+	_ execution.ExecPruner = &Adapter{}
+)
 
 type P2PClientInfo interface {
 	Info() (string, string, string, error)
@@ -86,6 +89,15 @@ type Adapter struct {
 
 	blockFilter   BlockFilter
 	stackedEvents []StackedEvent
+}
+
+// PruneExec implements execution.ExecMetaPruner.
+func (a *Adapter) PruneExec(ctx context.Context, height uint64) error {
+	if a.Store == nil {
+		return nil
+	}
+
+	return a.Store.Prune(ctx, height)
 }
 
 // NewABCIExecutor creates a new Adapter instance that implements the go-execution.Executor interface.

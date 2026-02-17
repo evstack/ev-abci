@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -24,6 +25,8 @@ const (
 	blockResponseKey = "br"
 	// blockIDKey is the key used for storing block IDs
 	blockIDKey = "bid"
+	// lastPrunedHeightKey tracks the highest height that has been pruned.
+	lastPrunedHeightKey = "lphk"
 )
 
 // Store wraps a datastore with ABCI-specific functionality
@@ -146,4 +149,69 @@ func (s *Store) GetBlockResponse(ctx context.Context, height uint64) (*abci.Resp
 	}
 
 	return resp, nil
+}
+
+// Prune deletes per-height ABCI execution metadata (block IDs and block
+// responses) for all heights up to and including the provided target
+// height. The current ABCI state (stored under stateKey) is never pruned,
+// as it is maintained separately by the application.
+//
+// Pruning is idempotent: the store tracks the highest pruned height and
+// will skip work for already-pruned ranges.
+func (s *Store) Prune(ctx context.Context, height uint64) error {
+	// Load the last pruned height, if any.
+	data, err := s.prefixedStore.Get(ctx, ds.NewKey(lastPrunedHeightKey))
+	if err != nil {
+		if !errors.Is(err, ds.ErrNotFound) {
+			return fmt.Errorf("failed to get last pruned height: %w", err)
+		}
+	}
+
+	var lastPruned uint64
+	if len(data) > 0 {
+		lastPruned, err = strconv.ParseUint(string(data), 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid last pruned height value %q: %w", string(data), err)
+		}
+	}
+
+	// Nothing to do if we've already pruned up to at least this height.
+	if height <= lastPruned {
+		return nil
+	}
+
+	// Use a batch to atomically delete all per-height ABCI metadata and
+	// update the last pruned height in a single transaction. This avoids
+	// leaving the store in a partially pruned state if an error occurs
+	// midway through the operation.
+	batch, err := s.prefixedStore.Batch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create batch for pruning: %w", err)
+	}
+
+	// Delete per-height ABCI metadata (block IDs and block responses) for
+	// heights in (lastPruned, height]. Missing keys are ignored.
+	for h := lastPruned + 1; h <= height; h++ {
+		hStr := strconv.FormatUint(h, 10)
+		bidKey := ds.NewKey(blockIDKey).ChildString(hStr)
+		if err := batch.Delete(ctx, bidKey); err != nil && !errors.Is(err, ds.ErrNotFound) {
+			return fmt.Errorf("failed to add block ID deletion to batch at height %d: %w", h, err)
+		}
+
+		brKey := ds.NewKey(blockResponseKey).ChildString(hStr)
+		if err := batch.Delete(ctx, brKey); err != nil && !errors.Is(err, ds.ErrNotFound) {
+			return fmt.Errorf("failed to add block response deletion to batch at height %d: %w", h, err)
+		}
+	}
+
+	// Persist the updated last pruned height in the same batch.
+	if err := batch.Put(ctx, ds.NewKey(lastPrunedHeightKey), []byte(strconv.FormatUint(height, 10))); err != nil {
+		return fmt.Errorf("failed to add last pruned height update to batch: %w", err)
+	}
+
+	if err := batch.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit pruning batch: %w", err)
+	}
+
+	return nil
 }
