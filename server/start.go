@@ -735,6 +735,11 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 	cosmosKeepRecent := v.GetString(sdkserver.FlagPruningKeepRecent)
 	cosmosInterval := v.GetString(sdkserver.FlagPruningInterval)
 
+	// unset keys
+	for _, k := range []string{sdkserver.FlagPruning, sdkserver.FlagPruningKeepRecent, sdkserver.FlagPruningInterval} {
+		v.Set(k, map[string]interface{}{})
+	}
+
 	// Map cosmos-sdk pruning mode to ev-node pruning mode
 	var evnodePruningMode string
 	switch cosmosPruning {
