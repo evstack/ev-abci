@@ -741,7 +741,7 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 	case "default", "everything", "custom":
 		evnodePruningMode = "all"
 	default:
-		// If empty or unknown, don't set a mapping
+		// If empty, don't set a mapping; unknown values default to "all"
 		if cosmosPruning != "" {
 			evnodePruningMode = "all"
 		}
