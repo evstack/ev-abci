@@ -736,15 +736,16 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 	// Map cosmos-sdk pruning mode to ev-node pruning mode
 	var evnodePruningMode string
 	switch cosmosPruning {
+	case "":
+		// Empty value, don't set a mapping
+		evnodePruningMode = ""
 	case "nothing":
 		evnodePruningMode = "disabled"
 	case "default", "everything", "custom":
 		evnodePruningMode = "all"
 	default:
-		// If empty, don't set a mapping; unknown values default to "all"
-		if cosmosPruning != "" {
-			evnodePruningMode = "all"
-		}
+		// Unknown values default to "all"
+		evnodePruningMode = "all"
 	}
 
 	// Only set ev-node config if cosmos config was present

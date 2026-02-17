@@ -228,3 +228,25 @@ func TestMapCosmosPruningToEvNode(t *testing.T) {
 		})
 	}
 }
+
+func TestMapCosmosPruningToEvNode_WithExistingEvnodeSettings(t *testing.T) {
+	// Test that cosmos settings override existing evnode settings
+	v := viper.New()
+	
+	// Set existing evnode settings
+	v.Set("evnode.pruning.pruning_mode", "metadata")
+	v.Set("evnode.pruning.pruning_keep_recent", "999")
+	v.Set("evnode.pruning.pruning_interval", "60")
+	
+	// Set cosmos settings
+	v.Set("pruning", "default")
+	v.Set("pruning-keep-recent", "100")
+	v.Set("pruning-interval", "10")
+	
+	mapCosmosPruningToEvNode(v)
+	
+	// Verify cosmos settings were mapped and override existing evnode settings
+	require.Equal(t, "all", v.GetString("evnode.pruning.pruning_mode"))
+	require.Equal(t, "100", v.GetString("evnode.pruning.pruning_keep_recent"))
+	require.Equal(t, "10", v.GetString("evnode.pruning.pruning_interval"))
+}
