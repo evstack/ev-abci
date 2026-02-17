@@ -84,13 +84,16 @@ func MakeABCIBlock(
 	abciHeader cmttypes.Header,
 	lastCommit *cmttypes.Commit,
 ) (*cmttypes.Block, *cmttypes.BlockID, error) {
-	abciBlock := currentState.MakeBlock(
+	abciBlock, err := currentState.MakeBlock(
 		int64(blockHeight),
 		cmtTxs,
 		lastCommit,
 		nil,
 		currentState.Validators.Proposer.Address,
 	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("make block: %w", err)
+	}
 
 	blockParts, err := abciBlock.MakePartSet(cmttypes.BlockPartSizeBytes)
 	if err != nil {

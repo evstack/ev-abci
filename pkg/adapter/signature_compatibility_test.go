@@ -22,11 +22,18 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 	p2pPrivKey, err := crypto.UnmarshalEd25519PrivateKey(cmtPrivKey.Bytes())
 	require.NoError(t, err)
 
-	// Create a test store
+	// Create a test store and state first to get the validator address
 	dsStore := ds.NewMapDatastore()
 	storeOnlyAdapter := NewABCIExecutor(nil, dsStore, nil, nil, nil, nil, nil)
 
-	validatorAddress := make([]byte, 20)
+	// Create and save state to get the validator address
+	state := store.TestingStateFixture()
+	state.LastBlockHeight = 0 // Start fresh
+	err = storeOnlyAdapter.Store.SaveState(context.Background(), state)
+	require.NoError(t, err)
+
+	// Use the validator address from the state fixture
+	validatorAddress := state.Validators.Validators[0].Address
 	chainID := "test-chain"
 
 	// Create a test header
@@ -59,15 +66,12 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 	require.Equal(t, 64, len(signature)) // Ed25519 signature length
 
 	// Test 3: Set up proper state and create consistent BlockID for both providers (at height > 2)
-	state := store.TestingStateFixture()
 	state.LastBlockHeight = 2
-	err = storeOnlyAdapter.Store.SaveState(context.Background(), store.TestingStateFixture())
+	err = storeOnlyAdapter.Store.SaveState(context.Background(), state)
 	require.NoError(t, err)
 
 	// Create BlockID using the same method that SyncNodeSignatureBytesProvider uses
 	currentState, err := storeOnlyAdapter.Store.LoadState(context.Background())
-	require.NoError(t, err)
-
 	require.NoError(t, err)
 
 	// Save the properly generated BlockID to the store

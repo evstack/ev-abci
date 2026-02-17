@@ -8,7 +8,7 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-beta.10.0.20251216132820-afcd6bd9b354
+ENV EVNODE_VERSION=v1.0.0-rc.4.0.20260216131057-1da76345e4b9
 ENV IGNITE_VERSION=v29.6.1
 ENV IGNITE_EVOLVE_APP_VERSION=main
 
@@ -28,6 +28,7 @@ RUN ignite app install github.com/ignite/apps/evolve@${IGNITE_EVOLVE_APP_VERSION
 
 RUN go mod edit -replace github.com/evstack/ev-node=github.com/evstack/ev-node@${EVNODE_VERSION} && \
     go mod edit -replace github.com/evstack/ev-abci=/workspace/ev-abci && \
+    go get github.com/bytedance/sonic@v1.15.0 && \
     go mod tidy && \
     go mod download
 
