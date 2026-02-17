@@ -316,8 +316,8 @@ func setupNodeAndExecutor(
 
 	nodeKey := &key.NodeKey{PrivKey: signingKey, PubKey: signingKey.GetPublic()}
 
-	// Clear cosmos-sdk pruning keys that conflict with ev-node's config.
-	clearConflictingViperKeys(srvCtx.Viper)
+	// Map cosmos-sdk pruning keys to ev-node's config format.
+	mapCosmosPruningToEvNode(srvCtx.Viper)
 
 	evcfg, err := config.LoadFromViper(srvCtx.Viper)
 	if err != nil {
@@ -724,13 +724,37 @@ func openRawEvolveDB(rootDir string) (ds.Batching, error) {
 	return database, nil
 }
 
-// clearConflictingViperKeys overrides cosmos-sdk config keys that conflict with
-func clearConflictingViperKeys(v *viper.Viper) {
-	conflictingKeys := []string{"pruning", "pruning-keep-recent", "pruning-interval"}
-	for _, k := range conflictingKeys {
-		val := v.Get(k)
-		if _, isString := val.(string); isString {
-			v.Set(k, map[string]interface{}{})
+// mapCosmosPruningToEvNode maps cosmos-sdk pruning configuration keys to ev-node format.
+// Cosmos SDK uses: "pruning", "pruning-keep-recent", "pruning-interval"
+// ev-node expects: "evnode.pruning.pruning_mode", "evnode.pruning.pruning_keep_recent", "evnode.pruning.pruning_interval"
+func mapCosmosPruningToEvNode(v *viper.Viper) {
+	// Get cosmos-sdk pruning configuration
+	cosmosPruning := v.GetString("pruning")
+	cosmosKeepRecent := v.GetString("pruning-keep-recent")
+	cosmosInterval := v.GetString("pruning-interval")
+
+	// Map cosmos-sdk pruning mode to ev-node pruning mode
+	var evnodePruningMode string
+	switch cosmosPruning {
+	case "nothing":
+		evnodePruningMode = "disabled"
+	case "default", "everything", "custom":
+		evnodePruningMode = "all"
+	default:
+		// If empty or unknown, don't set a mapping
+		if cosmosPruning != "" {
+			evnodePruningMode = "all"
 		}
+	}
+
+	// Only set ev-node config if cosmos config was present
+	if evnodePruningMode != "" {
+		v.Set("evnode.pruning.pruning_mode", evnodePruningMode)
+	}
+	if cosmosKeepRecent != "" {
+		v.Set("evnode.pruning.pruning_keep_recent", cosmosKeepRecent)
+	}
+	if cosmosInterval != "" {
+		v.Set("evnode.pruning.pruning_interval", cosmosInterval)
 	}
 }

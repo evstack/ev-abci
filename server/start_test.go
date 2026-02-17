@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
 	"github.com/evstack/ev-node/pkg/genesis"
@@ -127,6 +128,102 @@ func TestGetJSONTag(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tc.expTag, tag)
+			}
+		})
+	}
+}
+
+func TestMapCosmosPruningToEvNode(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		cosmosPruning          string
+		cosmosKeepRecent       string
+		cosmosInterval         string
+		expEvnodePruningMode   string
+		expEvnodeKeepRecent    string
+		expEvnodeInterval      string
+	}{
+		{
+			name:                   "nothing maps to disabled",
+			cosmosPruning:          "nothing",
+			cosmosKeepRecent:       "0",
+			cosmosInterval:         "0",
+			expEvnodePruningMode:   "disabled",
+			expEvnodeKeepRecent:    "0",
+			expEvnodeInterval:      "0",
+		},
+		{
+			name:                   "default maps to all",
+			cosmosPruning:          "default",
+			cosmosKeepRecent:       "362880",
+			cosmosInterval:         "10",
+			expEvnodePruningMode:   "all",
+			expEvnodeKeepRecent:    "362880",
+			expEvnodeInterval:      "10",
+		},
+		{
+			name:                   "everything maps to all",
+			cosmosPruning:          "everything",
+			cosmosKeepRecent:       "2",
+			cosmosInterval:         "10",
+			expEvnodePruningMode:   "all",
+			expEvnodeKeepRecent:    "2",
+			expEvnodeInterval:      "10",
+		},
+		{
+			name:                   "custom maps to all",
+			cosmosPruning:          "custom",
+			cosmosKeepRecent:       "100",
+			cosmosInterval:         "5",
+			expEvnodePruningMode:   "all",
+			expEvnodeKeepRecent:    "100",
+			expEvnodeInterval:      "5",
+		},
+		{
+			name:                   "empty values are not mapped",
+			cosmosPruning:          "",
+			cosmosKeepRecent:       "",
+			cosmosInterval:         "",
+			expEvnodePruningMode:   "",
+			expEvnodeKeepRecent:    "",
+			expEvnodeInterval:      "",
+		},
+		{
+			name:                   "unknown value maps to all",
+			cosmosPruning:          "unknown",
+			cosmosKeepRecent:       "50",
+			cosmosInterval:         "15",
+			expEvnodePruningMode:   "all",
+			expEvnodeKeepRecent:    "50",
+			expEvnodeInterval:      "15",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := viper.New()
+			v.Set("pruning", tc.cosmosPruning)
+			v.Set("pruning-keep-recent", tc.cosmosKeepRecent)
+			v.Set("pruning-interval", tc.cosmosInterval)
+
+			mapCosmosPruningToEvNode(v)
+
+			if tc.expEvnodePruningMode != "" {
+				require.Equal(t, tc.expEvnodePruningMode, v.GetString("evnode.pruning.pruning_mode"))
+			} else {
+				require.Empty(t, v.GetString("evnode.pruning.pruning_mode"))
+			}
+
+			if tc.expEvnodeKeepRecent != "" {
+				require.Equal(t, tc.expEvnodeKeepRecent, v.GetString("evnode.pruning.pruning_keep_recent"))
+			} else {
+				require.Empty(t, v.GetString("evnode.pruning.pruning_keep_recent"))
+			}
+
+			if tc.expEvnodeInterval != "" {
+				require.Equal(t, tc.expEvnodeInterval, v.GetString("evnode.pruning.pruning_interval"))
+			} else {
+				require.Empty(t, v.GetString("evnode.pruning.pruning_interval"))
 			}
 		})
 	}
