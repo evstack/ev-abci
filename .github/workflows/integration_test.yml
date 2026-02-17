@@ -23,7 +23,7 @@ jobs:
     env:
       IGNITE_VERSION: v29.3.0 # the gm build script depends on some annotations
       IGNITE_EVOLVE_APP_VERSION: main
-      EVNODE_VERSION: v1.0.0-beta.10.0.20251216132820-afcd6bd9b354
+      EVNODE_VERSION: v1.0.0-rc.4.0.20260216131057-1da76345e4b9
     steps:
       - uses: actions/checkout@v5
 
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
+      EVNODE_VERSION: "v1.0.0-rc.4.0.20260216131057-1da76345e4b9"
       IGNITE_VERSION: "v29.6.1"
       IGNITE_EVOLVE_APP_VERSION: "main"
       EVOLVE_IMAGE_REPO: "evolve-gm"
@@ -77,7 +77,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "stable"
+          go-version: "1.25"
           cache: true
 
       - name: Set up Docker Buildx
@@ -106,7 +106,7 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
+      EVNODE_VERSION: "v1.0.0-rc.4.0.20260216131057-1da76345e4b9"
       IGNITE_VERSION: "v29.6.1"
       IGNITE_EVOLVE_APP_VERSION: "main"
     outputs:
@@ -121,7 +121,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "stable"
+          go-version: "1.25"
           cache: true
 
       - name: Install Ignite CLI
@@ -313,12 +313,12 @@ jobs:
       GMD_HOME: ${{ needs.liveness.outputs.gmd_home }}
       HERMES_VERSION: "v1.13.1"
       GAIA_VERSION: "v25.1.0"
-      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
+      EVNODE_VERSION: "v1.0.0-rc.4.0.20260216131057-1da76345e4b9"
     steps:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: stable
+          go-version: "1.25"
 
       - name: Download gm Binary and gmd Home Directory
         uses: actions/download-artifact@v4 # keep v4.
@@ -540,7 +540,7 @@ jobs:
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: true
-      EVNODE_VERSION: "v1.0.0-beta.10.0.20251216132820-afcd6bd9b354"
+      EVNODE_VERSION: "v1.0.0-rc.4.0.20260216131057-1da76345e4b9"
       IGNITE_VERSION: "v29.6.1"
       IGNITE_EVOLVE_APP_VERSION: "main"
       GAIA_VERSION: "v25.1.0"

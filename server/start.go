@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"time"
 
 	"cosmossdk.io/log"
 	cmtcfg "github.com/cometbft/cometbft/config"
@@ -34,11 +33,13 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/rs/zerolog"
+	"github.com/spf13/viper"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	evblock "github.com/evstack/ev-node/block"
+	"github.com/evstack/ev-node/core/execution"
 	coresequencer "github.com/evstack/ev-node/core/sequencer"
 	"github.com/evstack/ev-node/node"
 	"github.com/evstack/ev-node/pkg/config"
@@ -46,10 +47,10 @@ import (
 	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/evstack/ev-node/pkg/p2p"
 	"github.com/evstack/ev-node/pkg/p2p/key"
+	basedsequencer "github.com/evstack/ev-node/pkg/sequencers/based"
+	singlesequencer "github.com/evstack/ev-node/pkg/sequencers/single"
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
-	basedsequencer "github.com/evstack/ev-node/sequencers/based"
-	singlesequencer "github.com/evstack/ev-node/sequencers/single"
 	rollkittypes "github.com/evstack/ev-node/types"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
@@ -155,16 +156,7 @@ func startInProcess(svrCtx *server.Context, svrCfg serverconfig.Config, clientCt
 			return nil
 		})
 
-		// Wait for the node to start p2p before attempting to start the gossiper
-		time.Sleep(1 * time.Second)
-
-		// Start the executor (Adapter) AFTER launching the node goroutine.
-		// Assumption: rollkitNode.Run initializes PubSub quickly enough.
-		svrCtx.Logger.Info("attempting to start executor (Adapter.Start)")
 		if err := executor.Start(ctx); err != nil {
-			svrCtx.Logger.Error("failed to start executor", "error", err)
-			// If this fails, the node goroutine might still be running.
-			// The errgroup context cancellation should handle shutdown.
 			return fmt.Errorf("failed to start executor: %w", err)
 		}
 		svrCtx.Logger.Info("executor started successfully")
@@ -324,6 +316,9 @@ func setupNodeAndExecutor(
 
 	nodeKey := &key.NodeKey{PrivKey: signingKey, PubKey: signingKey.GetPublic()}
 
+	// Clear cosmos-sdk pruning keys that conflict with ev-node's config.
+	clearConflictingViperKeys(srvCtx.Viper)
+
 	evcfg, err := config.LoadFromViper(srvCtx.Viper)
 	if err != nil {
 		return nil, nil, cleanupFn, err
@@ -468,7 +463,7 @@ func setupNodeAndExecutor(
 
 	daClient := evblock.NewDAClient(daJsonRPC, evcfg, *evLogger)
 
-	sequencer, err := createSequencer(ctx, *evLogger, database, daClient, evcfg, *evGenesis)
+	sequencer, err := createSequencer(*evLogger, database, evcfg, *evGenesis, daClient, executor)
 	if err != nil {
 		return nil, nil, cleanupFn, err
 	}
@@ -554,22 +549,20 @@ func setupNodeAndExecutor(
 // If BasedSequencer is enabled, it creates a based sequencer that fetches transactions from DA.
 // Otherwise, it creates a single (traditional) sequencer.
 func createSequencer(
-	ctx context.Context,
 	logger zerolog.Logger,
 	datastore ds.Batching,
-	daClient evblock.FullDAClient,
 	nodeConfig config.Config,
 	genesis genesis.Genesis,
+	daClient evblock.FullDAClient,
+	executor execution.Executor,
 ) (coresequencer.Sequencer, error) {
-	fiRetriever := evblock.NewForcedInclusionRetriever(daClient, genesis, logger)
-
 	if nodeConfig.Node.BasedSequencer {
 		// Based sequencer mode - fetch transactions only from DA
 		if !nodeConfig.Node.Aggregator {
 			return nil, fmt.Errorf("based sequencer mode requires aggregator mode to be enabled")
 		}
 
-		basedSeq, err := basedsequencer.NewBasedSequencer(ctx, fiRetriever, datastore, genesis, logger)
+		basedSeq, err := basedsequencer.NewBasedSequencer(daClient, nodeConfig, datastore, genesis, logger, executor)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create based sequencer: %w", err)
 		}
@@ -583,24 +576,18 @@ func createSequencer(
 	}
 
 	sequencer, err := singlesequencer.NewSequencer(
-		ctx,
 		logger,
 		datastore,
 		daClient,
+		nodeConfig,
 		[]byte(genesis.ChainID),
-		nodeConfig.Node.BlockTime.Duration,
-		nodeConfig.Node.Aggregator,
 		1000,
-		fiRetriever,
 		genesis,
+		executor,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create single sequencer: %w", err)
 	}
-
-	logger.Info().
-		Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
-		Msg("single sequencer initialized")
 
 	return sequencer, nil
 }
@@ -735,4 +722,15 @@ func openRawEvolveDB(rootDir string) (ds.Batching, error) {
 	}
 
 	return database, nil
+}
+
+// clearConflictingViperKeys overrides cosmos-sdk config keys that conflict with
+func clearConflictingViperKeys(v *viper.Viper) {
+	conflictingKeys := []string{"pruning", "pruning-keep-recent", "pruning-interval"}
+	for _, k := range conflictingKeys {
+		val := v.Get(k)
+		if _, isString := val.(string); isString {
+			v.Set(k, map[string]interface{}{})
+		}
+	}
 }
