@@ -22,7 +22,7 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/server"
+	sdkserver "github.com/cosmos/cosmos-sdk/server"
 	"github.com/cosmos/cosmos-sdk/server/api"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	servergrpc "github.com/cosmos/cosmos-sdk/server/grpc"
@@ -69,16 +69,16 @@ const (
 
 // StartCommandHandler is the type that must implement nova to match Cosmos SDK start logic.
 type StartCommandHandler = func(
-	svrCtx *server.Context,
+	svrCtx *sdkserver.Context,
 	clientCtx client.Context,
 	appCreator sdktypes.AppCreator,
 	withCmt bool,
-	opts server.StartCmdOptions,
+	opts sdkserver.StartCmdOptions,
 ) error
 
 // StartHandler starts the Rollkit server with the provided application and options.
 func StartHandler() StartCommandHandler {
-	return func(svrCtx *server.Context, clientCtx client.Context, appCreator sdktypes.AppCreator, inProcess bool, opts server.StartCmdOptions) error {
+	return func(svrCtx *sdkserver.Context, clientCtx client.Context, appCreator sdktypes.AppCreator, inProcess bool, opts sdkserver.StartCmdOptions) error {
 		svrCfg, err := getAndValidateConfig(svrCtx)
 		if err != nil {
 			return err
@@ -101,14 +101,14 @@ func StartHandler() StartCommandHandler {
 	}
 }
 
-func startApp(svrCtx *server.Context, appCreator sdktypes.AppCreator, opts server.StartCmdOptions) (app sdktypes.Application, cleanupFn func(), err error) {
+func startApp(svrCtx *sdkserver.Context, appCreator sdktypes.AppCreator, opts sdkserver.StartCmdOptions) (app sdktypes.Application, cleanupFn func(), err error) {
 	traceWriter, traceCleanupFn, err := setupTraceWriter(svrCtx)
 	if err != nil {
 		return app, traceCleanupFn, err
 	}
 
 	home := svrCtx.Config.RootDir
-	db, err := opts.DBOpener(home, server.GetAppDBBackend(svrCtx.Viper))
+	db, err := opts.DBOpener(home, sdkserver.GetAppDBBackend(svrCtx.Viper))
 	if err != nil {
 		return app, traceCleanupFn, err
 	}
@@ -124,8 +124,8 @@ func startApp(svrCtx *server.Context, appCreator sdktypes.AppCreator, opts serve
 	return app, cleanupFn, nil
 }
 
-func startInProcess(svrCtx *server.Context, svrCfg serverconfig.Config, clientCtx client.Context, app sdktypes.Application,
-	metrics *telemetry.Metrics, opts server.StartCmdOptions,
+func startInProcess(svrCtx *sdkserver.Context, svrCfg serverconfig.Config, clientCtx client.Context, app sdktypes.Application,
+	metrics *telemetry.Metrics, opts sdkserver.StartCmdOptions,
 ) error {
 	cmtCfg := svrCtx.Config
 	g, ctx, cancelFn := getCtx(svrCtx)
@@ -200,7 +200,7 @@ func startGrpcServer(
 	g *errgroup.Group,
 	config serverconfig.GRPCConfig,
 	clientCtx client.Context,
-	svrCtx *server.Context,
+	svrCtx *sdkserver.Context,
 	app sdktypes.Application,
 ) (*grpc.Server, client.Context, error) {
 	if !config.Enable {
@@ -258,7 +258,7 @@ func startAPIServer(
 	g *errgroup.Group,
 	svrCfg serverconfig.Config,
 	clientCtx client.Context,
-	svrCtx *server.Context,
+	svrCtx *sdkserver.Context,
 	app sdktypes.Application,
 	home string,
 	grpcSrv *grpc.Server,
@@ -294,7 +294,7 @@ func startTelemetry(cfg serverconfig.Config) (*telemetry.Metrics, error) {
 
 func setupNodeAndExecutor(
 	ctx context.Context,
-	srvCtx *server.Context,
+	srvCtx *sdkserver.Context,
 	cfg *cmtcfg.Config,
 	app sdktypes.Application,
 ) (rolllkitNode node.Node, executor *adapter.Adapter, cleanupFn func(), err error) {
@@ -437,7 +437,7 @@ func setupNodeAndExecutor(
 		opts...,
 	)
 
-	cmtApp := server.NewCometABCIWrapper(app)
+	cmtApp := sdkserver.NewCometABCIWrapper(app)
 	clientCreator := proxy.NewLocalClientCreator(cmtApp)
 
 	proxyApp, err := initProxyApp(clientCreator, sdkLogger, proxy.NopMetrics())
@@ -636,7 +636,7 @@ func createAndStartIndexerService(
 	return indexerService, txIndexer, blockIndexer, nil
 }
 
-func getAndValidateConfig(svrCtx *server.Context) (serverconfig.Config, error) {
+func getAndValidateConfig(svrCtx *sdkserver.Context) (serverconfig.Config, error) {
 	config, err := serverconfig.GetConfig(svrCtx.Viper)
 	if err != nil {
 		return config, err
@@ -648,11 +648,11 @@ func getAndValidateConfig(svrCtx *server.Context) (serverconfig.Config, error) {
 	return config, nil
 }
 
-func getCtx(svrCtx *server.Context) (*errgroup.Group, context.Context, context.CancelFunc) {
+func getCtx(svrCtx *sdkserver.Context) (*errgroup.Group, context.Context, context.CancelFunc) {
 	ctx, cancelFn := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 	// listen for quit signals so the calling parent process can gracefully exit
-	server.ListenForQuitSignals(g /* block */, false, cancelFn, svrCtx.Logger)
+	sdkserver.ListenForQuitSignals(g /* block */, false, cancelFn, svrCtx.Logger)
 	return g, ctx, cancelFn
 }
 
@@ -667,7 +667,7 @@ func openTraceWriter(traceWriterFile string) (w io.WriteCloser, err error) {
 	)
 }
 
-func setupTraceWriter(svrCtx *server.Context) (traceWriter io.WriteCloser, cleanup func(), err error) {
+func setupTraceWriter(svrCtx *sdkserver.Context) (traceWriter io.WriteCloser, cleanup func(), err error) {
 	// clean up the traceWriter when the server is shutting down
 	cleanup = func() {}
 
@@ -730,10 +730,10 @@ func openRawEvolveDB(rootDir string) (ds.Batching, error) {
 // Cosmos SDK uses: "pruning", "pruning-keep-recent", "pruning-interval"
 // ev-node expects: "evnode.pruning.pruning_mode", "evnode.pruning.pruning_keep_recent", "evnode.pruning.pruning_interval"
 func mapCosmosPruningToEvNode(v *viper.Viper) {
-	// Get cosmos-sdk pruning configuration
-	cosmosPruning := v.GetString("pruning")
-	cosmosKeepRecent := v.GetString("pruning-keep-recent")
-	cosmosInterval := v.GetString("pruning-interval")
+	// Get cosmos-sdk pruning configuration using SDK flag constants
+	cosmosPruning := v.GetString(sdkserver.FlagPruning)
+	cosmosKeepRecent := v.GetString(sdkserver.FlagPruningKeepRecent)
+	cosmosInterval := v.GetString(sdkserver.FlagPruningInterval)
 
 	// Map cosmos-sdk pruning mode to ev-node pruning mode
 	var evnodePruningMode string
@@ -743,9 +743,9 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 	case "default", "everything", "custom":
 		evnodePruningMode = "all"
 	default:
-		// Unknown non-empty values default to "disabled", empty values remain empty
+		// Unknown non-empty values default to "metadata", empty values remain empty
 		if cosmosPruning != "" {
-			evnodePruningMode = "disabled"
+			evnodePruningMode = "metadata"
 		}
 	}
 

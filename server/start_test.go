@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	sdkserver "github.com/cosmos/cosmos-sdk/server"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
@@ -196,12 +197,12 @@ func TestMapCosmosPruningToEvNode(t *testing.T) {
 			expEvnodeInterval:      "",
 		},
 		{
-			name:                   "unknown value maps to disabled",
+			name:                   "unknown value maps to metadata",
 			cosmosPruning:          "unknown",
 			cosmosKeepRecent:       "50",
 			cosmosInterval:         "15",
 			evnodeBlockTime:        "1s",
-			expEvnodePruningMode:   "disabled",
+			expEvnodePruningMode:   "metadata",
 			expEvnodeKeepRecent:    "50",
 			expEvnodeInterval:      "15s", // 15 blocks * 1s = 15s
 		},
@@ -210,9 +211,9 @@ func TestMapCosmosPruningToEvNode(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			v := viper.New()
-			v.Set("pruning", tc.cosmosPruning)
-			v.Set("pruning-keep-recent", tc.cosmosKeepRecent)
-			v.Set("pruning-interval", tc.cosmosInterval)
+			v.Set(sdkserver.FlagPruning, tc.cosmosPruning)
+			v.Set(sdkserver.FlagPruningKeepRecent, tc.cosmosKeepRecent)
+			v.Set(sdkserver.FlagPruningInterval, tc.cosmosInterval)
 			v.Set("evnode.node.block_time", tc.evnodeBlockTime)
 
 			mapCosmosPruningToEvNode(v)
@@ -243,9 +244,9 @@ func TestMapCosmosPruningToEvNode_WithDefaultConfig(t *testing.T) {
 	cosmosConfig := serverconfig.DefaultConfig()
 	
 	v := viper.New()
-	v.Set("pruning", cosmosConfig.Pruning)
-	v.Set("pruning-keep-recent", cosmosConfig.PruningKeepRecent)
-	v.Set("pruning-interval", cosmosConfig.PruningInterval)
+	v.Set(sdkserver.FlagPruning, cosmosConfig.Pruning)
+	v.Set(sdkserver.FlagPruningKeepRecent, cosmosConfig.PruningKeepRecent)
+	v.Set(sdkserver.FlagPruningInterval, cosmosConfig.PruningInterval)
 	v.Set("evnode.node.block_time", "6s")
 	
 	mapCosmosPruningToEvNode(v)
@@ -266,10 +267,10 @@ func TestMapCosmosPruningToEvNode_WithExistingEvnodeSettings(t *testing.T) {
 	v.Set("evnode.pruning.pruning_keep_recent", "999")
 	v.Set("evnode.pruning.pruning_interval", "60m")
 	
-	// Set cosmos settings and block time
-	v.Set("pruning", "default")
-	v.Set("pruning-keep-recent", "100")
-	v.Set("pruning-interval", "10")
+	// Set cosmos settings and block time using SDK flag constants
+	v.Set(sdkserver.FlagPruning, "default")
+	v.Set(sdkserver.FlagPruningKeepRecent, "100")
+	v.Set(sdkserver.FlagPruningInterval, "10")
 	v.Set("evnode.node.block_time", "1s")
 	
 	mapCosmosPruningToEvNode(v)
