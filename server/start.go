@@ -738,45 +738,46 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 	// Map cosmos-sdk pruning mode to ev-node pruning mode
 	var evnodePruningMode string
 	switch cosmosPruning {
-	case "nothing":
-		evnodePruningMode = "disabled"
-	case "default", "everything", "custom":
-		evnodePruningMode = "all"
+	case "default", "nothing":
+		evnodePruningMode = config.PruningModeDisabled
+	case "everything":
+		evnodePruningMode = config.PruningModeAll
+	case "custom":
+		evnodePruningMode = config.PruningModeMetadata
 	default:
-		// Unknown non-empty values default to "metadata", empty values remain empty
 		if cosmosPruning != "" {
-			evnodePruningMode = "metadata"
+			evnodePruningMode = config.PruningModeDisabled
 		}
 	}
 
 	// Only set ev-node config if cosmos config was present
-	if evnodePruningMode != "" {
-		v.Set("evnode.pruning.pruning_mode", evnodePruningMode)
+	if evnodePruningMode != "" && v.GetString(config.FlagPruningMode) == "" {
+		v.Set(config.FlagPruningMode, evnodePruningMode)
 	}
-	if cosmosKeepRecent != "" {
-		v.Set("evnode.pruning.pruning_keep_recent", cosmosKeepRecent)
+	if cosmosKeepRecent != "" && v.GetString(config.FlagPruningKeepRecent) == "" {
+		v.Set(config.FlagPruningKeepRecent, cosmosKeepRecent)
 	}
-	if cosmosInterval != "" {
+	if cosmosInterval != "" && v.GetString(config.FlagPruningInterval) == "" {
 		// Convert cosmos-sdk interval (number of blocks) to ev-node interval (time duration)
 		// Cosmos-sdk interval is in blocks, ev-node interval is in time
 		// Get block time from ev-node config, default to 1 second if not set
-		blockTimeStr := v.GetString("evnode.node.block_time")
+		blockTimeStr := v.GetString(config.FlagBlockTime)
 		if blockTimeStr == "" {
 			blockTimeStr = "1s"
 		}
-		
+
 		blockTime, err := time.ParseDuration(blockTimeStr)
 		if err != nil {
 			// If parsing fails, use default of 1 second
 			blockTime = time.Second
 		}
-		
+
 		// Parse cosmos interval as number of blocks
 		intervalBlocks, err := strconv.ParseUint(cosmosInterval, 10, 64)
 		if err == nil && intervalBlocks > 0 {
 			// Calculate duration: blocks * block_time
 			intervalDuration := time.Duration(intervalBlocks) * blockTime
-			v.Set("evnode.pruning.pruning_interval", intervalDuration.String())
+			v.Set(config.FlagPruningInterval, intervalDuration.String())
 		}
 	}
 }

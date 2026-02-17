@@ -26,9 +26,7 @@ const (
 	// blockIDKey is the key used for storing block IDs
 	blockIDKey = "bid"
 	// lastPrunedHeightKey tracks the highest height that has been pruned.
-	// This makes pruning idempotent and allows incremental pruning across
-	// multiple calls.
-	lastPrunedHeightKey = "lph"
+	lastPrunedHeightKey = "lphk"
 )
 
 // Store wraps a datastore with ABCI-specific functionality

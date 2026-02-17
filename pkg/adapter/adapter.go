@@ -33,7 +33,10 @@ import (
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
 
-var _ execution.Executor = &Adapter{}
+var (
+	_ execution.Executor   = &Adapter{}
+	_ execution.ExecPruner = &Adapter{}
+)
 
 type P2PClientInfo interface {
 	Info() (string, string, string, error)
@@ -88,12 +91,8 @@ type Adapter struct {
 	stackedEvents []StackedEvent
 }
 
-// PruneExecMeta implements execution.ExecMetaPruner for the ABCI adapter by
-// delegating to the underlying ev-abci exec store. It prunes per-height ABCI
-// execution metadata (block IDs and block responses) up to the given height.
-// The method is safe to call multiple times with the same or increasing
-// heights.
-func (a *Adapter) PruneExecMeta(ctx context.Context, height uint64) error {
+// PruneExec implements execution.ExecMetaPruner.
+func (a *Adapter) PruneExec(ctx context.Context, height uint64) error {
 	if a.Store == nil {
 		return nil
 	}
