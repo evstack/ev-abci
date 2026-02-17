@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
+	"time"
 
 	"cosmossdk.io/log"
 	cmtcfg "github.com/cometbft/cometbft/config"
@@ -741,9 +743,9 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 	case "default", "everything", "custom":
 		evnodePruningMode = "all"
 	default:
-		// Unknown non-empty values default to "all", empty values remain empty
+		// Unknown non-empty values default to "disabled", empty values remain empty
 		if cosmosPruning != "" {
-			evnodePruningMode = "all"
+			evnodePruningMode = "disabled"
 		}
 	}
 
@@ -755,6 +757,26 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 		v.Set("evnode.pruning.pruning_keep_recent", cosmosKeepRecent)
 	}
 	if cosmosInterval != "" {
-		v.Set("evnode.pruning.pruning_interval", cosmosInterval)
+		// Convert cosmos-sdk interval (number of blocks) to ev-node interval (time duration)
+		// Cosmos-sdk interval is in blocks, ev-node interval is in time
+		// Get block time from ev-node config, default to 1 second if not set
+		blockTimeStr := v.GetString("evnode.node.block_time")
+		if blockTimeStr == "" {
+			blockTimeStr = "1s"
+		}
+		
+		blockTime, err := time.ParseDuration(blockTimeStr)
+		if err != nil {
+			// If parsing fails, use default of 1 second
+			blockTime = time.Second
+		}
+		
+		// Parse cosmos interval as number of blocks
+		intervalBlocks, err := strconv.ParseUint(cosmosInterval, 10, 64)
+		if err == nil && intervalBlocks > 0 {
+			// Calculate duration: blocks * block_time
+			intervalDuration := time.Duration(intervalBlocks) * blockTime
+			v.Set("evnode.pruning.pruning_interval", intervalDuration.String())
+		}
 	}
 }

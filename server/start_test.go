@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
@@ -139,6 +140,7 @@ func TestMapCosmosPruningToEvNode(t *testing.T) {
 		cosmosPruning          string
 		cosmosKeepRecent       string
 		cosmosInterval         string
+		evnodeBlockTime        string
 		expEvnodePruningMode   string
 		expEvnodeKeepRecent    string
 		expEvnodeInterval      string
@@ -148,54 +150,60 @@ func TestMapCosmosPruningToEvNode(t *testing.T) {
 			cosmosPruning:          "nothing",
 			cosmosKeepRecent:       "0",
 			cosmosInterval:         "0",
+			evnodeBlockTime:        "1s",
 			expEvnodePruningMode:   "disabled",
 			expEvnodeKeepRecent:    "0",
-			expEvnodeInterval:      "0",
+			expEvnodeInterval:      "", // 0 interval is skipped
 		},
 		{
 			name:                   "default maps to all",
 			cosmosPruning:          "default",
 			cosmosKeepRecent:       "362880",
 			cosmosInterval:         "10",
+			evnodeBlockTime:        "6s",
 			expEvnodePruningMode:   "all",
 			expEvnodeKeepRecent:    "362880",
-			expEvnodeInterval:      "10",
+			expEvnodeInterval:      "1m0s", // 10 blocks * 6s = 60s
 		},
 		{
 			name:                   "everything maps to all",
 			cosmosPruning:          "everything",
 			cosmosKeepRecent:       "2",
 			cosmosInterval:         "10",
+			evnodeBlockTime:        "1s",
 			expEvnodePruningMode:   "all",
 			expEvnodeKeepRecent:    "2",
-			expEvnodeInterval:      "10",
+			expEvnodeInterval:      "10s", // 10 blocks * 1s = 10s
 		},
 		{
 			name:                   "custom maps to all",
 			cosmosPruning:          "custom",
 			cosmosKeepRecent:       "100",
 			cosmosInterval:         "5",
+			evnodeBlockTime:        "2s",
 			expEvnodePruningMode:   "all",
 			expEvnodeKeepRecent:    "100",
-			expEvnodeInterval:      "5",
+			expEvnodeInterval:      "10s", // 5 blocks * 2s = 10s
 		},
 		{
 			name:                   "empty values are not mapped",
 			cosmosPruning:          "",
 			cosmosKeepRecent:       "",
 			cosmosInterval:         "",
+			evnodeBlockTime:        "1s",
 			expEvnodePruningMode:   "",
 			expEvnodeKeepRecent:    "",
 			expEvnodeInterval:      "",
 		},
 		{
-			name:                   "unknown value maps to all",
+			name:                   "unknown value maps to disabled",
 			cosmosPruning:          "unknown",
 			cosmosKeepRecent:       "50",
 			cosmosInterval:         "15",
-			expEvnodePruningMode:   "all",
+			evnodeBlockTime:        "1s",
+			expEvnodePruningMode:   "disabled",
 			expEvnodeKeepRecent:    "50",
-			expEvnodeInterval:      "15",
+			expEvnodeInterval:      "15s", // 15 blocks * 1s = 15s
 		},
 	}
 
@@ -205,6 +213,7 @@ func TestMapCosmosPruningToEvNode(t *testing.T) {
 			v.Set("pruning", tc.cosmosPruning)
 			v.Set("pruning-keep-recent", tc.cosmosKeepRecent)
 			v.Set("pruning-interval", tc.cosmosInterval)
+			v.Set("evnode.node.block_time", tc.evnodeBlockTime)
 
 			mapCosmosPruningToEvNode(v)
 
@@ -229,6 +238,25 @@ func TestMapCosmosPruningToEvNode(t *testing.T) {
 	}
 }
 
+func TestMapCosmosPruningToEvNode_WithDefaultConfig(t *testing.T) {
+	// Test using cosmos-sdk's DefaultConfig to ensure realistic integration
+	cosmosConfig := serverconfig.DefaultConfig()
+	
+	v := viper.New()
+	v.Set("pruning", cosmosConfig.Pruning)
+	v.Set("pruning-keep-recent", cosmosConfig.PruningKeepRecent)
+	v.Set("pruning-interval", cosmosConfig.PruningInterval)
+	v.Set("evnode.node.block_time", "6s")
+	
+	mapCosmosPruningToEvNode(v)
+	
+	// DefaultConfig has pruning="default", which should map to "all"
+	require.Equal(t, "all", v.GetString("evnode.pruning.pruning_mode"))
+	require.Equal(t, cosmosConfig.PruningKeepRecent, v.GetString("evnode.pruning.pruning_keep_recent"))
+	// DefaultConfig has interval="0", which should not set a value
+	require.Empty(t, v.GetString("evnode.pruning.pruning_interval"))
+}
+
 func TestMapCosmosPruningToEvNode_WithExistingEvnodeSettings(t *testing.T) {
 	// Test that cosmos settings override existing evnode settings
 	v := viper.New()
@@ -236,17 +264,18 @@ func TestMapCosmosPruningToEvNode_WithExistingEvnodeSettings(t *testing.T) {
 	// Set existing evnode settings
 	v.Set("evnode.pruning.pruning_mode", "metadata")
 	v.Set("evnode.pruning.pruning_keep_recent", "999")
-	v.Set("evnode.pruning.pruning_interval", "60")
+	v.Set("evnode.pruning.pruning_interval", "60m")
 	
-	// Set cosmos settings
+	// Set cosmos settings and block time
 	v.Set("pruning", "default")
 	v.Set("pruning-keep-recent", "100")
 	v.Set("pruning-interval", "10")
+	v.Set("evnode.node.block_time", "1s")
 	
 	mapCosmosPruningToEvNode(v)
 	
 	// Verify cosmos settings were mapped and override existing evnode settings
 	require.Equal(t, "all", v.GetString("evnode.pruning.pruning_mode"))
 	require.Equal(t, "100", v.GetString("evnode.pruning.pruning_keep_recent"))
-	require.Equal(t, "10", v.GetString("evnode.pruning.pruning_interval"))
+	require.Equal(t, "10s", v.GetString("evnode.pruning.pruning_interval")) // 10 blocks * 1s = 10s
 }
