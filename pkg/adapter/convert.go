@@ -16,7 +16,7 @@ import (
 // ToABCIHeader converts rollkit header format defined by ABCI.
 func ToABCIHeader(header evtypes.Header, lastCommit *cmttypes.Commit) (cmttypes.Header, error) {
 	if len(header.ProposerAddress) == 0 {
-		return cmttypes.Header{}, errors.New("proposer address is not set")
+		return cmttypes.Header{}, errors.New("sequencer address is not set")
 	}
 
 	return cmttypes.Header{
