@@ -219,6 +219,7 @@ type MockABCIApp struct {
 	ProcessProposalFn func(*abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error)
 	FinalizeBlockFn   func(*abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error)
 	CommitFn          func() (*abci.ResponseCommit, error)
+	CheckTxFn         func(*abci.RequestCheckTx) (*abci.ResponseCheckTx, error)
 }
 
 func (m *MockABCIApp) ProcessProposal(r *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
@@ -240,4 +241,11 @@ func (m *MockABCIApp) Commit() (*abci.ResponseCommit, error) {
 		panic("not expected to be called")
 	}
 	return m.CommitFn()
+}
+
+func (m *MockABCIApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
+	if m.CheckTxFn == nil {
+		panic("not expected to be called")
+	}
+	return m.CheckTxFn(req)
 }

@@ -536,14 +536,91 @@ func (a *Adapter) GetExecutionInfo(ctx context.Context) (execution.ExecutionInfo
 }
 
 // FilterTxs implements execution.Executor.
-// TODO: to implement for force inclusion
 func (a *Adapter) FilterTxs(ctx context.Context, txs [][]byte, maxBytes, maxGas uint64, hasForceIncludedTransaction bool) ([]execution.FilterStatus, error) {
-	noFilter := make([]execution.FilterStatus, len(txs))
-	for i := range txs {
-		noFilter[i] = execution.FilterOK
+	// When there are no force-included txs, all txs come from the mempool
+	// and are already validated. No filtering needed.
+	if !hasForceIncludedTransaction {
+		result := make([]execution.FilterStatus, len(txs))
+		for i := range result {
+			result[i] = execution.FilterOK
+		}
+		return result, nil
 	}
 
-	return noFilter, nil
+	result := make([]execution.FilterStatus, len(txs))
+
+	var cumulativeBytes uint64
+	var cumulativeGas uint64
+	limitReached := false
+
+	for i, tx := range txs {
+		// Skip empty transactions
+		if len(tx) == 0 {
+			result[i] = execution.FilterRemove
+			continue
+		}
+
+		txBytes := uint64(len(tx))
+		var txGas uint64
+
+		// Only validate and call CheckTx if force-included txs are present.
+		// Mempool txs are already validated, so we can skip CheckTx when not needed.
+		if hasForceIncludedTransaction {
+			checkTxResp, err := a.App.CheckTx(&abci.RequestCheckTx{
+				Tx:   tx,
+				Type: abci.CheckTxType_New,
+			})
+			if err != nil || checkTxResp.Code != abci.CodeTypeOK {
+				a.Logger.Debug("filtering out invalid transaction",
+					"tx_index", i,
+					"err", err,
+					"code", checkTxResp.GetCode(),
+					"log", checkTxResp.GetLog(),
+				)
+				result[i] = execution.FilterRemove
+				continue
+			}
+			txGas = uint64(checkTxResp.GasWanted)
+
+			// Skip tx that can never make it in a block (too much gas)
+			if maxGas > 0 && txGas > maxGas {
+				result[i] = execution.FilterRemove
+				continue
+			}
+		}
+
+		// Skip tx that can never make it in a block (too big)
+		if maxBytes > 0 && txBytes > maxBytes {
+			result[i] = execution.FilterRemove
+			continue
+		}
+
+		// Once limit is reached, postpone remaining txs
+		if limitReached {
+			result[i] = execution.FilterPostpone
+			continue
+		}
+
+		// Check size limit
+		if maxBytes > 0 && cumulativeBytes+txBytes > maxBytes {
+			limitReached = true
+			result[i] = execution.FilterPostpone
+			continue
+		}
+
+		// Check gas limit (only when we have force-included txs and parsed the tx)
+		if hasForceIncludedTransaction && maxGas > 0 && cumulativeGas+txGas > maxGas {
+			limitReached = true
+			result[i] = execution.FilterPostpone
+			continue
+		}
+
+		cumulativeBytes += txBytes
+		cumulativeGas += txGas
+		result[i] = execution.FilterOK
+	}
+
+	return result, nil
 }
 
 func fireEvents(
