@@ -63,7 +63,7 @@ func (p Params) Validate() error {
 	return nil
 }
 
-func validateEpochLength(i interface{}) error {
+func validateEpochLength(i any) error {
 	v, ok := i.(uint64)
 	if !ok {
 		return fmt.Errorf("invalid parameter type: %T", i)
@@ -76,7 +76,7 @@ func validateEpochLength(i interface{}) error {
 	return nil
 }
 
-func validateQuorumFraction(i interface{}) error {
+func validateQuorumFraction(i any) error {
 	v, ok := i.(string)
 	if !ok {
 		return fmt.Errorf("invalid parameter type: %T", i)
@@ -94,7 +94,7 @@ func validateQuorumFraction(i interface{}) error {
 	return nil
 }
 
-func validateMinParticipation(i interface{}) error {
+func validateMinParticipation(i any) error {
 	v, ok := i.(string)
 	if !ok {
 		return fmt.Errorf("invalid parameter type: %T", i)
@@ -112,7 +112,7 @@ func validateMinParticipation(i interface{}) error {
 	return nil
 }
 
-func validatePruneAfter(i interface{}) error {
+func validatePruneAfter(i any) error {
 	v, ok := i.(uint64)
 	if !ok {
 		return fmt.Errorf("invalid parameter type: %T", i)
@@ -125,7 +125,7 @@ func validatePruneAfter(i interface{}) error {
 	return nil
 }
 
-func validateSignMode(i interface{}) error {
+func validateSignMode(i any) error {
 	v, ok := i.(SignMode)
 	if !ok {
 		return fmt.Errorf("invalid parameter type: %T", i)

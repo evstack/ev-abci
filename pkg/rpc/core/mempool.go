@@ -216,10 +216,7 @@ func UnconfirmedTxs(ctx *rpctypes.Context, limitPtr *int) (*ctypes.ResultUnconfi
 
 	limit := len(txs)
 	if limitPtr != nil {
-		limit = cmtmath.MinInt(*limitPtr, limit)
-		if limit < 0 {
-			limit = 0
-		}
+		limit = max(cmtmath.MinInt(*limitPtr, limit), 0)
 	}
 	paginatedTxs := txs[:limit]
 
