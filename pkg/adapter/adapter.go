@@ -536,7 +536,6 @@ func (a *Adapter) GetExecutionInfo(ctx context.Context) (execution.ExecutionInfo
 }
 
 // FilterTxs implements execution.Executor.
-// TODO: to implement for force inclusion
 func (a *Adapter) FilterTxs(ctx context.Context, txs [][]byte, maxBytes, maxGas uint64, hasForceIncludedTransaction bool) ([]execution.FilterStatus, error) {
 	// When there are no force-included txs, all txs come from the mempool
 	// and are already validated. No filtering needed.
