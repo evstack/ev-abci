@@ -89,7 +89,7 @@ func (s *DockerIntegrationTestSuite) testTransactionSubmissionAndQuery(t *testin
 	t.Logf("Sending 100%s from Bob to Carol...", denom)
 	transferAmount := sdk.NewCoins(sdk.NewCoin(denom, math.NewInt(100)))
 
-	// send funds broadcasting to a node that is not the aggregator.
+	// send funds broadcasting to a node that is not the sequencer.
 	err = s.sendFunds(ctx, rollkitChain, bobsWallet, carolsWallet, transferAmount, 1)
 	require.NoError(t, err, "failed to send funds from Bob to Carol")
 

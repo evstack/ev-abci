@@ -19,7 +19,7 @@ import (
 func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
 	return func(header *evtypes.Header) ([]byte, error) {
 		// Special-case first block: use empty BlockID to avoid race/mismatch
-		// between aggregator and sync node at height 1.
+		// between sequencer and sync node at height 1.
 		if header.Height() == 1 {
 			return createVote(header, &cmttypes.BlockID{}), nil
 		}
@@ -41,7 +41,7 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureB
 			cmtTxs[i] = cmttypes.Tx(data.Txs[i])
 		}
 
-		// Special-case first block to match aggregator behavior
+		// Special-case first block to match sequencer behavior
 		if blockHeight == 1 {
 			return createVote(header, &cmttypes.BlockID{}), nil
 		}

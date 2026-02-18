@@ -330,7 +330,7 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, fmt.Errorf("failed to validate ev-node config: %w", err)
 	}
 
-	// only load signer if rollkit.node.aggregator == true
+	// only load signer if sequencer mode (rollkit.node.aggregator) is enabled
 	var signer signer.Signer
 	if evcfg.Node.Aggregator {
 		signer, err = execsigner.NewSignerWrapper(pval.Key.PrivKey)
@@ -561,7 +561,7 @@ func createSequencer(
 	if nodeConfig.Node.BasedSequencer {
 		// Based sequencer mode - fetch transactions only from DA
 		if !nodeConfig.Node.Aggregator {
-			return nil, fmt.Errorf("based sequencer mode requires aggregator mode to be enabled")
+			return nil, fmt.Errorf("based sequencer mode requires sequencer mode (--evnode.node.aggregator) to be enabled")
 		}
 
 		basedSeq, err := basedsequencer.NewBasedSequencer(daClient, nodeConfig, datastore, genesis, logger, executor)

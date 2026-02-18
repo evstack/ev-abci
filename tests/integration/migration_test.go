@@ -176,7 +176,7 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	s.T().Logf("Current height: %d, Migration scheduled for height: %d", curHeight, migrateAt)
 
 	faucet := s.chain.GetFaucetWallet()
-	proposer := faucet.GetFormattedAddress()
+	sequencerOperator := faucet.GetFormattedAddress()
 
 	msg := &migrationmngrtypes.MsgMigrateToEvolve{
 		Authority:   authtypes.NewModuleAddress(govtypes.ModuleName).String(),
@@ -190,7 +190,7 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 	propMsg, err := govv1.NewMsgSubmitProposal(
 		[]sdk.Msg{msg},
 		sdk.NewCoins(sdk.NewInt64Coin("stake", 10_000_000_000)), // deposit
-		proposer,
+		sequencerOperator,
 		"",                          // metadata
 		"Migrate to Evolve",         // title
 		"Set sequencer and migrate", // summary
@@ -206,7 +206,7 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 // getSequencerPubKey fetches the intended sequencer's consensus pubkey Any from the chain.
 func (s *MigrationTestSuite) getSequencerPubKey(ctx context.Context, conn *grpc.ClientConn) *codectypes.Any {
 	// Determine the intended sequencer to align with the node that will run
-	// in aggregator mode (validator index 0 when we restart as evolve).
+	// in sequencer mode (aggregator flag, validator index 0 when we restart as evolve).
 	// We fetch the operator (valoper) address from the first validator node's keyring,
 	// then find the matching validator on-chain to get its consensus pubkey Any.
 

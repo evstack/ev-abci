@@ -144,7 +144,7 @@ The application also rolls back to height n - 1. If a --height flag is specified
 
 	cmd.Flags().String(flags.FlagHome, defaultNodeHome, "The application home directory")
 	cmd.Flags().Uint64Var(&height, flags.FlagHeight, 0, "rollback to a specific height")
-	cmd.Flags().BoolVar(&syncNode, "sync-node", false, "sync node (no aggregator)")
+	cmd.Flags().BoolVar(&syncNode, "sync-node", false, "sync node (no sequencer)")
 
 	return cmd
 }

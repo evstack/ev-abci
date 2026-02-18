@@ -178,7 +178,7 @@ The attester reconstructs the original BlockID for each height:
   - Block hash
   - PartSetHeader hash and total
 
-This ensures signatures match the original block structure used by the proposer.
+This ensures signatures match the original block structure used by the sequencer.
 
 ## Attestation Vote Structure
 
