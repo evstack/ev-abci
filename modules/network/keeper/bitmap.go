@@ -49,10 +49,7 @@ func (bh *BitmapHelper) PopCount(bitmap []byte) int {
 
 // OR performs bitwise OR of two bitmaps
 func (bh *BitmapHelper) OR(dst, src []byte) {
-	minLen := len(dst)
-	if len(src) < minLen {
-		minLen = len(src)
-	}
+	minLen := min(len(src), len(dst))
 	for i := 0; i < minLen; i++ {
 		dst[i] |= src[i]
 	}
@@ -60,10 +57,7 @@ func (bh *BitmapHelper) OR(dst, src []byte) {
 
 // AND performs bitwise AND of two bitmaps
 func (bh *BitmapHelper) AND(dst, src []byte) {
-	minLen := len(dst)
-	if len(src) < minLen {
-		minLen = len(src)
-	}
+	minLen := min(len(src), len(dst))
 	for i := 0; i < minLen; i++ {
 		dst[i] &= src[i]
 	}

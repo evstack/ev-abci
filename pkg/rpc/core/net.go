@@ -118,10 +118,7 @@ func getGenesisChunks() ([]string, error) {
 
 	var chunks []string
 	for i := 0; i < len(data); i += genesisChunkSize {
-		end := i + genesisChunkSize
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(i+genesisChunkSize, len(data))
 		chunks = append(chunks, base64.StdEncoding.EncodeToString(data[i:end]))
 	}
 

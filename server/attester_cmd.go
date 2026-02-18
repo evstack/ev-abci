@@ -188,7 +188,7 @@ func joinAttesterSet(
 
 	var txResult *sdk.TxResponse
 	var retries = 10
-	for i := 0; i < retries; i++ {
+	for range retries {
 		txResult, err = authtx.QueryTx(clientCtx, txHash)
 		if err == nil {
 			break
@@ -540,7 +540,7 @@ func broadcastTx(
 
 	var txResult *sdk.TxResponse
 	var retries = 5
-	for i := 0; i < retries; i++ {
+	for i := range retries {
 		txResult, err = authtx.QueryTx(clientCtx, resp.TxHash)
 		if err == nil {
 			break

@@ -737,7 +737,7 @@ func mapCosmosPruningToEvNode(v *viper.Viper) {
 
 	// unset keys
 	for _, k := range []string{sdkserver.FlagPruning, sdkserver.FlagPruningKeepRecent, sdkserver.FlagPruningInterval} {
-		v.Set(k, map[string]interface{}{})
+		v.Set(k, map[string]any{})
 	}
 
 	// Map cosmos-sdk pruning mode to ev-node pruning mode

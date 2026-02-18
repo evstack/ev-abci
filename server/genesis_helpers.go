@@ -75,7 +75,7 @@ func createEvolveGenesisFromCometBFT(cmtGenDoc *cmttypes.GenesisDoc, daStartHeig
 }
 
 // getJSONTag extracts the JSON tag value for a given field name using reflection.
-func getJSONTag(v interface{}, fieldName string) (string, error) {
+func getJSONTag(v any, fieldName string) (string, error) {
 	t := reflect.TypeOf(v)
 	field, ok := t.FieldByName(fieldName)
 	if !ok {

@@ -145,7 +145,7 @@ func proofTXExists(txs []rlktypes.Tx, i uint32) cmttypes.TxProof {
 
 func hashList(txs []rlktypes.Tx) [][]byte {
 	hl := make([][]byte, len(txs))
-	for i := 0; i < len(txs); i++ {
+	for i := range txs {
 		hl[i] = tmhash.Sum(txs[i])
 	}
 	return hl
