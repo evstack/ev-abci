@@ -26,7 +26,7 @@ func InitCmd() *cobra.Command {
 // It can be used standalone to wrap the SDK genesis init command.
 // Or used via the InitCmd function to create a new command.
 func InitRunE(cmd *cobra.Command, args []string) error {
-	aggregator, err := cmd.Flags().GetBool(rollconf.FlagAggregator)
+	isSequencer, err := cmd.Flags().GetBool(rollconf.FlagAggregator)
 	if err != nil {
 		return fmt.Errorf("error reading aggregator flag: %w", err)
 	}
@@ -34,7 +34,7 @@ func InitRunE(cmd *cobra.Command, args []string) error {
 	// ignore error, as we are creating a new config
 	// we use load in order to parse all the flags
 	cfg, _ := rollconf.Load(cmd)
-	cfg.Node.Aggregator = aggregator
+	cfg.Node.Aggregator = isSequencer
 
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("error validating config: %w", err)

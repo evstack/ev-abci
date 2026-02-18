@@ -16,10 +16,10 @@ import (
 	evtypes "github.com/evstack/ev-node/types"
 )
 
-func AggregatorNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
+func SequencerNodeSignatureBytesProvider(adapter *Adapter) evtypes.AggregatorNodeSignatureBytesProvider {
 	return func(header *evtypes.Header) ([]byte, error) {
 		// Special-case first block: use empty BlockID to avoid race/mismatch
-		// between aggregator and sync node at height 1.
+		// between sequencer and sync node at height 1.
 		if header.Height() == 1 {
 			return createVote(header, &cmttypes.BlockID{}), nil
 		}
@@ -41,7 +41,7 @@ func SyncNodeSignatureBytesProvider(adapter *Adapter) evtypes.SyncNodeSignatureB
 			cmtTxs[i] = cmttypes.Tx(data.Txs[i])
 		}
 
-		// Special-case first block to match aggregator behavior
+		// Special-case first block to match sequencer behavior
 		if blockHeight == 1 {
 			return createVote(header, &cmttypes.BlockID{}), nil
 		}
@@ -90,8 +90,8 @@ func createVote(header *evtypes.Header, blockID *cmttypes.BlockID) []byte {
 
 // ValidatorHasherProvider returns a function that calculates the ValidatorHash
 // compatible with CometBFT. This function is intended to be injected into ev-node's Manager.
-func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
-	return func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+func ValidatorHasherProvider() func(sequencerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+	return func(sequencerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
 		var calculatedHash evtypes.Hash
 
 		var cometBftPubKey tmcryptoed25519.PubKey
@@ -112,10 +112,10 @@ func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey
 		sequencerValidator := cmttypes.NewValidator(cometBftPubKey, votingPower)
 
 		derivedAddress := sequencerValidator.Address.Bytes()
-		if !bytes.Equal(derivedAddress, proposerAddress) {
-			return calculatedHash, fmt.Errorf("CRITICAL MISMATCH - derived validator address (%s) does not match expected proposer address (%s). PubKey used for derivation: %s",
+		if !bytes.Equal(derivedAddress, sequencerAddress) {
+			return calculatedHash, fmt.Errorf("CRITICAL MISMATCH - derived validator address (%s) does not match expected sequencer address (%s). PubKey used for derivation: %s",
 				hex.EncodeToString(derivedAddress),
-				hex.EncodeToString(proposerAddress),
+				hex.EncodeToString(sequencerAddress),
 				hex.EncodeToString(cometBftPubKey.Bytes()))
 		}
 
@@ -132,7 +132,7 @@ func ValidatorHasherProvider() func(proposerAddress []byte, pubKey crypto.PubKey
 
 // ValidatorsHasher calculates the hash of a validator set, compatible with CometBFT.
 // This unified implementation works for both single validator (sequencer) and multiple validators (attester) modes.
-func ValidatorsHasher(validators []crypto.PubKey, proposerAddress []byte) (evtypes.Hash, error) {
+func ValidatorsHasher(validators []crypto.PubKey, sequencerAddress []byte) (evtypes.Hash, error) {
 	var calculatedHash evtypes.Hash
 
 	if len(validators) == 0 {
@@ -141,7 +141,7 @@ func ValidatorsHasher(validators []crypto.PubKey, proposerAddress []byte) (evtyp
 	}
 
 	tmValidators := make([]*cmttypes.Validator, len(validators))
-	var proposerFound bool
+	var sequencerFound bool
 
 	for i, pubKey := range validators {
 		var cometBftPubKey tmcryptoed25519.PubKey
@@ -163,13 +163,13 @@ func ValidatorsHasher(validators []crypto.PubKey, proposerAddress []byte) (evtyp
 		tmValidators[i] = sequencerValidator
 
 		derivedAddress := sequencerValidator.Address.Bytes()
-		if bytes.Equal(derivedAddress, proposerAddress) {
-			proposerFound = true
+		if bytes.Equal(derivedAddress, sequencerAddress) {
+			sequencerFound = true
 		}
 	}
 
-	if !proposerFound {
-		return calculatedHash, fmt.Errorf("proposer with address (%s) not found in the validator set", hex.EncodeToString(proposerAddress))
+	if !sequencerFound {
+		return calculatedHash, fmt.Errorf("sequencer with address (%s) not found in the validator set", hex.EncodeToString(sequencerAddress))
 	}
 
 	sequencerValidatorSet := cmttypes.NewValidatorSet(tmValidators)
@@ -184,8 +184,8 @@ func ValidatorsHasher(validators []crypto.PubKey, proposerAddress []byte) (evtyp
 
 // ValidatorHasherFromStoreProvider creates a ValidatorHasher that obtains validators from the ABCI store.
 // This is useful for attester mode where validators are managed by the ABCI application.
-func ValidatorHasherFromStoreProvider(store StateStore) func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
-	return func(proposerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+func ValidatorHasherFromStoreProvider(store StateStore) func(sequencerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
+	return func(sequencerAddress []byte, pubKey crypto.PubKey) (evtypes.Hash, error) {
 		// Load current state from store
 		state, err := store.LoadState(context.Background())
 		if err != nil {
@@ -194,7 +194,7 @@ func ValidatorHasherFromStoreProvider(store StateStore) func(proposerAddress []b
 
 		// If we have no validators in state, fallback to single validator mode
 		if state.Validators == nil || len(state.Validators.Validators) == 0 {
-			return ValidatorsHasher([]crypto.PubKey{pubKey}, proposerAddress)
+			return ValidatorsHasher([]crypto.PubKey{pubKey}, sequencerAddress)
 		}
 
 		// Convert CometBFT validators to libp2p crypto.PubKey
@@ -212,7 +212,7 @@ func ValidatorHasherFromStoreProvider(store StateStore) func(proposerAddress []b
 			}
 		}
 
-		return ValidatorsHasher(validators, proposerAddress)
+		return ValidatorsHasher(validators, sequencerAddress)
 	}
 }
 

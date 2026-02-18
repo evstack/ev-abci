@@ -206,7 +206,7 @@ func (s *MigrationTestSuite) submitMigrationProposalAndVote(ctx context.Context)
 // getSequencerPubKey fetches the intended sequencer's consensus pubkey Any from the chain.
 func (s *MigrationTestSuite) getSequencerPubKey(ctx context.Context, conn *grpc.ClientConn) *codectypes.Any {
 	// Determine the intended sequencer to align with the node that will run
-	// in aggregator mode (validator index 0 when we restart as evolve).
+	// in sequencer mode (validator index 0 when we restart as evolve).
 	// We fetch the operator (valoper) address from the first validator node's keyring,
 	// then find the matching validator on-chain to get its consensus pubkey Any.
 

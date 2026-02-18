@@ -204,7 +204,7 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 
 	// bank and auth modules required to deal with bank send tx's
 	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
-	// Create chain with only the aggregator node initially
+	// Create chain with only the sequencer node initially
 	evolveChain, err := cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithImage(getEvolveAppContainer()).
@@ -220,7 +220,7 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 		WithAdditionalExposedPorts("7331").
 		WithNodes(
 			cosmos.NewChainNodeConfigBuilder().
-				// Create aggregator node with rollkit-specific start arguments
+				// Create sequencer node with rollkit-specific start arguments
 				WithAdditionalStartArgs(
 					"--evnode.node.aggregator",
 					"--evnode.signer.passphrase_file", "/var/cosmos-chain/evolve/passhrase.txt",
@@ -239,15 +239,15 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 
 	s.Require().NoError(err)
 
-	// Start the aggregator node first so that we can query the p2p
+	// Start the sequencer node first so that we can query the p2p
 	err = evolveChain.Start(ctx)
 	s.Require().NoError(err)
 
-	// wait for aggregator to produce just 1 block to ensure it's running
-	s.T().Log("Waiting for aggregator to produce blocks...")
+	// wait for sequencer to produce just 1 block to ensure it's running
+	s.T().Log("Waiting for sequencer to produce blocks...")
 	s.Require().NoError(wait.ForBlocks(ctx, 1, evolveChain))
 
-	// Get aggregator's network info to construct ev-node RPC address
+	// Get sequencer's network info to construct ev-node RPC address
 	// Use External address since we're calling from the test host
 	networkInfo, err := evolveChain.GetNode().GetNetworkInfo(ctx)
 	s.Require().NoError(err)
@@ -257,19 +257,19 @@ func (s *DockerIntegrationTestSuite) CreateEvolveChain(ctx context.Context) *cos
 	evNodePort, ok := networkInfo.ExtraPortMappings["7331"]
 	s.Require().True(ok, "failed to get ev-node RPC port mapping")
 
-	aggregatorPeer := s.GetNodeMultiAddr(ctx, networkInfo.External.Hostname+":"+evNodePort)
-	s.T().Logf("Aggregator peer: %s", aggregatorPeer)
+	sequencerPeer := s.GetNodeMultiAddr(ctx, networkInfo.External.Hostname+":"+evNodePort)
+	s.T().Logf("Sequencer peer: %s", sequencerPeer)
 
 	s.T().Logf("Adding first follower node...")
-	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
+	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, sequencerPeer)
 
 	// wait for first follower to sync before adding second
 	s.T().Logf("Waiting for first follower to sync...")
 	s.waitForFollowerSync(ctx, evolveChain)
 	s.T().Logf("Adding second follower node...")
-	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, aggregatorPeer)
+	s.addFollowerNode(ctx, evolveChain, daAddress, authToken, daStartHeight, sequencerPeer)
 
-	//wait for all follower nodes to sync with aggregator
+	//wait for all follower nodes to sync with sequencer
 	s.T().Logf("Waiting for all follower nodes to sync...")
 	s.waitForFollowerSync(ctx, evolveChain)
 
@@ -308,7 +308,7 @@ func (s *DockerIntegrationTestSuite) GetNodeMultiAddr(ctx context.Context, rpcAd
 }
 
 // addFollowerNode adds a follower node to the evolve chain.
-func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, _, aggregatorPeer string) {
+func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolveChain *cosmos.Chain, daAddress, authToken, _, sequencerPeer string) {
 	err := evolveChain.AddNode(ctx, cosmos.NewChainNodeConfigBuilder().
 		WithAdditionalStartArgs(
 			"--evnode.da.address", daAddress,
@@ -317,14 +317,14 @@ func (s *DockerIntegrationTestSuite) addFollowerNode(ctx context.Context, evolve
 			"--evnode.da.namespace", "ev-header",
 			"--evnode.da.data_namespace", "ev-data",
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
-			"--evnode.p2p.peers", aggregatorPeer,
+			"--evnode.p2p.peers", sequencerPeer,
 			"--log_level", "*:debug",
 		).
 		Build())
 	s.Require().NoError(err)
 }
 
-// waitForFollowerSync waits for all follower nodes to sync with the aggregator
+// waitForFollowerSync waits for all follower nodes to sync with the sequencer
 func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, evolveChain *cosmos.Chain) {
 	nodes := evolveChain.GetNodes()
 	if len(nodes) <= 1 {
@@ -335,16 +335,16 @@ func (s *DockerIntegrationTestSuite) waitForFollowerSync(ctx context.Context, ev
 	defer cancel()
 
 	// convert nodes to Heighter interface
-	aggregator := nodes[0].(wait.Heighter)
+	sequencer := nodes[0].(wait.Heighter)
 	followers := make([]wait.Heighter, 0)
 	for i := 1; i < len(nodes); i++ {
 		followers = append(followers, nodes[i].(wait.Heighter))
 	}
 
-	s.T().Logf("Waiting for %d follower nodes to sync with aggregator...", len(followers))
-	err := wait.ForInSync(syncCtx, aggregator, followers...)
-	s.Require().NoError(err, "followers failed to sync with aggregator")
-	s.T().Logf("All follower nodes are now in sync with aggregator")
+	s.T().Logf("Waiting for %d follower nodes to sync with sequencer...", len(followers))
+	err := wait.ForInSync(syncCtx, sequencer, followers...)
+	s.Require().NoError(err, "followers failed to sync with sequencer")
+	s.T().Logf("All follower nodes are now in sync with sequencer")
 }
 
 // getGenesisHash retrieves the genesis hash from the celestia chain

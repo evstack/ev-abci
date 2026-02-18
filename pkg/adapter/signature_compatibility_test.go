@@ -46,8 +46,8 @@ func TestSignatureCompatibility_HeaderAndCommit(t *testing.T) {
 		ProposerAddress: validatorAddress,
 	}
 
-	// Test 1: AggregatorNodeSignatureBytesProvider should work without BlockID in store
-	provider := AggregatorNodeSignatureBytesProvider(storeOnlyAdapter)
+	// Test 1: SequencerNodeSignatureBytesProvider should work without BlockID in store
+	provider := SequencerNodeSignatureBytesProvider(storeOnlyAdapter)
 	signBytes, err := provider(header)
 	require.NoError(t, err)
 	require.NotEmpty(t, signBytes)

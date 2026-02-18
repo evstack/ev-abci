@@ -103,7 +103,7 @@ func TestExecuteFiresEvents(t *testing.T) {
 				AppHash:         []byte("apphash1"),
 			}
 
-			headerBz, err := AggregatorNodeSignatureBytesProvider(adapter)(&header)
+			headerBz, err := SequencerNodeSignatureBytesProvider(adapter)(&header)
 			require.NoError(t, err)
 
 			sig, err := privKey.Sign(headerBz)
