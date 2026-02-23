@@ -249,7 +249,6 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--evnode.da.data_namespace", "ev-data",
 			"--evnode.p2p.listen_address", "/ip4/0.0.0.0/tcp/36656",
 			"--rpc.laddr", "tcp://0.0.0.0:26657",
-			"--evnode.attester-mode", "true",
 			"--grpc.address", "0.0.0.0:9090",
 			"--api.enable",
 			"--minimum-gas-prices", "0.001stake",

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cosmossdk.io/log"
+	abci "github.com/cometbft/cometbft/abci/types"
 	cmtcfg "github.com/cometbft/cometbft/config"
 	"github.com/cometbft/cometbft/mempool"
 	cmtp2p "github.com/cometbft/cometbft/p2p"
@@ -55,6 +56,7 @@ import (
 	"github.com/evstack/ev-node/pkg/store"
 	rollkittypes "github.com/evstack/ev-node/types"
 
+	"github.com/evstack/ev-abci/modules/network/types"
 	"github.com/evstack/ev-abci/pkg/adapter"
 	"github.com/evstack/ev-abci/pkg/rpc"
 	"github.com/evstack/ev-abci/pkg/rpc/core"
@@ -470,17 +472,21 @@ func setupNodeAndExecutor(
 		return nil, nil, cleanupFn, err
 	}
 
+	// Auto-detect attester mode by probing the network module via ABCI query.
+	// This makes the --attester-mode flag obsolete.
+	attesterMode := detectNetworkModule(app, sdkLogger)
+
 	// Choose ValidatorHasherProvider based on attester mode (network soft confirmation)
 	var validatorHasherProvider func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error)
-	if srvCtx.Viper.GetBool(FlagAttesterMode) {
+	if attesterMode {
 		// Attester mode: use validators from ABCI store
 		abciStore := execstore.NewExecABCIStore(database)
 		validatorHasherProvider = adapter.ValidatorHasherFromStoreProvider(abciStore)
-		sdkLogger.Info("using attester mode: validators will be read from ABCI store")
+		sdkLogger.Info("attester mode enabled: validators will be read from ABCI store")
 	} else {
 		// Sequencer mode: single validator
 		validatorHasherProvider = adapter.ValidatorHasherProvider()
-		sdkLogger.Info("using sequencer mode: single validator")
+		sdkLogger.Info("sequencer mode: single validator (network module not detected)")
 	}
 
 	rolllkitNode, err = node.NewNode(
@@ -523,7 +529,7 @@ func setupNodeAndExecutor(
 		Logger:       servercmtlog.CometLoggerWrapper{Logger: sdkLogger},
 		RPCConfig:    *cfg.RPC,
 		EVNodeConfig: evcfg,
-		AttesterMode: srvCtx.Viper.GetBool(FlagAttesterMode),
+		AttesterMode: attesterMode,
 	})
 
 	// Pass the created handler to the RPC server constructor
@@ -545,6 +551,39 @@ func setupNodeAndExecutor(
 	}
 
 	return rolllkitNode, executor, cleanupFn, nil
+}
+
+// abciQuerier is a minimal interface for ABCI Query used by detectNetworkModule.
+type abciQuerier interface {
+	Query(context.Context, *abci.RequestQuery) (*abci.ResponseQuery, error)
+}
+
+// detectNetworkModule probes the ABCI application with a Params query for the
+// network module. If the module is registered the query succeeds (code 0) and
+// the function returns true, enabling attester mode automatically.
+func detectNetworkModule(app abciQuerier, logger log.Logger) bool {
+	req := &types.QueryParamsRequest{}
+	reqBytes, err := req.Marshal()
+	if err != nil {
+		logger.Error("failed to marshal network module probe request", "error", err)
+		return false
+	}
+
+	resp, err := app.Query(context.Background(), &abci.RequestQuery{
+		Path: "/evabci.network.v1.Query/Params",
+		Data: reqBytes,
+	})
+	if err != nil {
+		logger.Debug("network module not detected (query error)", "error", err)
+		return false
+	}
+	if resp.Code != 0 {
+		logger.Debug("network module not detected (non-zero response code)", "code", resp.Code)
+		return false
+	}
+
+	logger.Info("network module detected, enabling attester mode automatically")
+	return true
 }
 
 // createSequencer creates a sequencer based on the configuration.

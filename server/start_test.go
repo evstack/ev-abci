@@ -1,10 +1,14 @@
 package server
 
 import (
+	"context"
 	_ "embed"
+	"errors"
 	"strings"
 	"testing"
 
+	"cosmossdk.io/log"
+	abci "github.com/cometbft/cometbft/abci/types"
 	sdkserver "github.com/cosmos/cosmos-sdk/server"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	"github.com/spf13/viper"
@@ -12,6 +16,49 @@ import (
 
 	"github.com/evstack/ev-node/pkg/genesis"
 )
+
+// mockQuerier implements abciQuerier for testing.
+type mockQuerier struct {
+	resp *abci.ResponseQuery
+	err  error
+}
+
+func (m *mockQuerier) Query(_ context.Context, _ *abci.RequestQuery) (*abci.ResponseQuery, error) {
+	return m.resp, m.err
+}
+
+func TestDetectNetworkModule(t *testing.T) {
+	nopLogger := log.NewNopLogger()
+
+	tests := []struct {
+		name     string
+		querier  abciQuerier
+		expected bool
+	}{
+		{
+			name:     "module present - returns true",
+			querier:  &mockQuerier{resp: &abci.ResponseQuery{Code: 0, Value: []byte("params")}, err: nil},
+			expected: true,
+		},
+		{
+			name:     "module absent - non-zero code",
+			querier:  &mockQuerier{resp: &abci.ResponseQuery{Code: 1, Log: "unknown query path"}, err: nil},
+			expected: false,
+		},
+		{
+			name:     "query error",
+			querier:  &mockQuerier{resp: nil, err: errors.New("app not ready")},
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := detectNetworkModule(tc.querier, nopLogger)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
 
 func TestParseDAStartHeightFromGenesis(t *testing.T) {
 	testCases := []struct {
