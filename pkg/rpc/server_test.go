@@ -307,3 +307,70 @@ func TestRPCServer_WebSocketEndpointRegistered(t *testing.T) {
 	require.Nil(t, resp.Error, "health must succeed via RPCServer WebSocket")
 	require.NotNil(t, resp.Result)
 }
+
+// TestRPCServer_OnDisconnectCleansUpSubscriptions verifies that when a
+// WebSocket client subscribes to events and then disconnects, the
+// OnDisconnect callback fires and removes all subscriptions for that
+// client from the EventBus. Without this, disconnected clients leak
+// subscriptions.
+func TestRPCServer_OnDisconnectCleansUpSubscriptions(t *testing.T) {
+	// Use a shared EventBus for both the RPC environment and the server
+	// so OnDisconnect's UnsubscribeAll targets the same bus that
+	// Subscribe writes to.
+	eb := newTestEventBus(t)
+	rpcCfg := cmtcfg.DefaultRPCConfig()
+	core.SetEnvironment(&core.Environment{
+		Adapter:   &adapter.Adapter{EventBus: eb},
+		Logger:    cmtlog.NewNopLogger(),
+		RPCConfig: *rpcCfg,
+	})
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := l.Addr().(*net.TCPAddr).Port
+	require.NoError(t, l.Close())
+
+	rpcCfg.ListenAddress = fmt.Sprintf("tcp://127.0.0.1:%d", port)
+	srv := NewRPCServer(rpcCfg, log.NewNopLogger(), eb)
+	require.NoError(t, srv.Start())
+	t.Cleanup(func() { _ = srv.Stop() })
+
+	require.Eventually(t, func() bool {
+		c, dialErr := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
+		if dialErr != nil {
+			return false
+		}
+		_ = c.Close()
+		return true
+	}, 3*time.Second, 50*time.Millisecond)
+
+	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/websocket", port)
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+
+	// Subscribe to an event query.
+	subscribeReq := `{"jsonrpc":"2.0","id":1,"method":"subscribe","params":{"query":"tm.event='NewBlock'"}}`
+	require.NoError(t, wsConn.WriteMessage(websocket.TextMessage, []byte(subscribeReq)))
+
+	// Read the subscribe response.
+	require.NoError(t, wsConn.SetReadDeadline(time.Now().Add(3*time.Second)))
+	_, msg, err := wsConn.ReadMessage()
+	require.NoError(t, err)
+	var subResp wsResponse
+	require.NoError(t, json.Unmarshal(msg, &subResp))
+	require.Nil(t, subResp.Error, "subscribe must succeed, got: %+v", subResp.Error)
+
+	// Verify the EventBus has at least one client subscription.
+	require.Equal(t, 1, eb.NumClients(), "expected 1 client on EventBus after subscribe")
+
+	// Close the WebSocket connection to trigger OnDisconnect.
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+	require.NoError(t, wsConn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second)))
+	_ = wsConn.Close()
+
+	// OnDisconnect fires asynchronously when the server detects the closed
+	// connection. Poll until the client count drops to zero.
+	require.Eventually(t, func() bool {
+		return eb.NumClients() == 0
+	}, 3*time.Second, 50*time.Millisecond, "OnDisconnect must unsubscribe all client subscriptions")
+}
