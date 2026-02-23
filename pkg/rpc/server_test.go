@@ -244,9 +244,8 @@ func TestWebSocket_LargeMessage(t *testing.T) {
 	_, _, err := conn.ReadMessage()
 	require.Error(t, err, "connection must be closed after exceeding read limit")
 	require.True(t,
-		websocket.IsCloseError(err, websocket.CloseMessageTooBig) ||
-			websocket.IsUnexpectedCloseError(err, websocket.CloseMessageTooBig),
-		"expected CloseMessageTooBig (1009) or unexpected close, got: %v", err,
+		websocket.IsCloseError(err, websocket.CloseMessageTooBig),
+		"expected CloseMessageTooBig (1009), got: %v", err,
 	)
 }
 
