@@ -14,6 +14,16 @@ import (
 
 // Subscribe for events via WebSocket.
 // More: https://docs.cometbft.com/v0.37/rpc/#/Websocket/subscribe
+//
+// Param format compatibility (issue #17): CometBFT's JSON-RPC layer
+// normalises incoming subscribe parameters before this function is called via
+// jsonParamsToArgs in rpc/jsonrpc/server/http_json_handler.go. Both the legacy
+// Tendermint map format ({"query": "tm.event='NewBlock'"}) and the array
+// format (["tm.event='NewBlock'"]) are transparently converted to a plain
+// string, so by the time Subscribe runs, query is always a plain Go string
+// regardless of how the WS client sent it. This makes Subscribe compatible
+// with both old Tendermint WS clients that used SubscribeArgs and new
+// CometBFT clients.
 func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, error) {
 	{
 		addr := ctx.RemoteAddr()
