@@ -474,7 +474,7 @@ func setupNodeAndExecutor(
 
 	// Auto-detect attester mode by probing the network module via ABCI query.
 	// This makes the --attester-mode flag obsolete.
-	attesterMode := detectNetworkModule(app, sdkLogger)
+	attesterMode := detectNetworkModule(ctx, app, sdkLogger)
 
 	// Choose ValidatorHasherProvider based on attester mode (network soft confirmation)
 	var validatorHasherProvider func(proposerAddress []byte, pubKey crypto.PubKey) (rollkittypes.Hash, error)
@@ -553,6 +553,9 @@ func setupNodeAndExecutor(
 	return rolllkitNode, executor, cleanupFn, nil
 }
 
+// networkParamsQueryPath is the gRPC query path for the network module's Params endpoint.
+const networkParamsQueryPath = "/evabci.network.v1.Query/Params"
+
 // abciQuerier is a minimal interface for ABCI Query used by detectNetworkModule.
 type abciQuerier interface {
 	Query(context.Context, *abci.RequestQuery) (*abci.ResponseQuery, error)
@@ -561,7 +564,7 @@ type abciQuerier interface {
 // detectNetworkModule probes the ABCI application with a Params query for the
 // network module. If the module is registered the query succeeds (code 0) and
 // the function returns true, enabling attester mode automatically.
-func detectNetworkModule(app abciQuerier, logger log.Logger) bool {
+func detectNetworkModule(ctx context.Context, app abciQuerier, logger log.Logger) bool {
 	req := &types.QueryParamsRequest{}
 	reqBytes, err := req.Marshal()
 	if err != nil {
@@ -569,8 +572,8 @@ func detectNetworkModule(app abciQuerier, logger log.Logger) bool {
 		return false
 	}
 
-	resp, err := app.Query(context.Background(), &abci.RequestQuery{
-		Path: "/evabci.network.v1.Query/Params",
+	resp, err := app.Query(ctx, &abci.RequestQuery{
+		Path: networkParamsQueryPath,
 		Data: reqBytes,
 	})
 	if err != nil {

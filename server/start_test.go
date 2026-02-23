@@ -54,7 +54,7 @@ func TestDetectNetworkModule(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := detectNetworkModule(tc.querier, nopLogger)
+			result := detectNetworkModule(context.Background(), tc.querier, nopLogger)
 			require.Equal(t, tc.expected, result)
 		})
 	}
