@@ -11,7 +11,9 @@ import (
 	"cosmossdk.io/log"
 	cmtcfg "github.com/cometbft/cometbft/config"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
+	cmtpubsub "github.com/cometbft/cometbft/libs/pubsub"
 	rpcserver "github.com/cometbft/cometbft/rpc/jsonrpc/server"
+	cmttypes "github.com/cometbft/cometbft/types"
 	servercmtlog "github.com/cosmos/cosmos-sdk/server/log"
 	"github.com/rs/cors"
 	"golang.org/x/net/netutil"
@@ -23,11 +25,13 @@ import (
 func NewRPCServer(
 	cfg *cmtcfg.RPCConfig,
 	logger log.Logger,
+	eventBus *cmttypes.EventBus,
 ) *RPCServer {
 	cmtLogger := servercmtlog.CometLoggerWrapper{Logger: logger}
 	return &RPCServer{
-		config: cfg,
-		logger: cmtLogger,
+		config:   cfg,
+		logger:   cmtLogger,
+		eventBus: eventBus,
 	}
 }
 
@@ -38,6 +42,7 @@ type RPCServer struct {
 	httpHandler http.Handler
 	server      http.Server
 	logger      cmtlog.Logger
+	eventBus    *cmttypes.EventBus
 }
 
 // Start starts the RPC server.
@@ -84,8 +89,18 @@ func (r *RPCServer) startRPC() error {
 
 	// RegisterRPCFuncs does not register a WebSocket endpoint.
 	// We must register it separately so clients can connect via /websocket.
-	wm := rpcserver.NewWebsocketManager(core.Routes)
-	wm.SetLogger(r.logger)
+	wmLogger := r.logger.With("protocol", "websocket")
+	wm := rpcserver.NewWebsocketManager(
+		core.Routes,
+		rpcserver.OnDisconnect(func(remoteAddr string) {
+			err := r.eventBus.UnsubscribeAll(context.Background(), remoteAddr)
+			if err != nil && err != cmtpubsub.ErrSubscriptionNotFound {
+				wmLogger.Error("Failed to unsubscribe addr from events", "addr", remoteAddr, "err", err)
+			}
+		}),
+		rpcserver.ReadLimit(r.config.MaxBodyBytes),
+	)
+	wm.SetLogger(wmLogger)
 	mux.HandleFunc("/websocket", wm.WebsocketHandler)
 
 	r.httpHandler = mux

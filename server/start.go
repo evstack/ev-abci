@@ -527,7 +527,7 @@ func setupNodeAndExecutor(
 	})
 
 	// Pass the created handler to the RPC server constructor
-	rpcServer := rpc.NewRPCServer(cfg.RPC, sdkLogger)
+	rpcServer := rpc.NewRPCServer(cfg.RPC, sdkLogger, eventBus)
 	if err = rpcServer.Start(); err != nil {
 		return nil, nil, cleanupFn, fmt.Errorf("failed to start rpc server: %w", err)
 	}

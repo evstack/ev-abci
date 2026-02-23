@@ -26,6 +26,7 @@ import (
 	cmtcfg "github.com/cometbft/cometbft/config"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	rpcserver "github.com/cometbft/cometbft/rpc/jsonrpc/server"
+	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
@@ -55,10 +56,19 @@ const healthRequest = `{"jsonrpc":"2.0","id":1,"method":"health","params":{}}`
 // setupMinimalEnv configures the core.Environment global with enough state to
 // prevent nil-pointer panics from other registered routes. Health itself does
 // not access env at all.
+func newTestEventBus(t *testing.T) *cmttypes.EventBus {
+	t.Helper()
+	eb := cmttypes.NewEventBus()
+	eb.SetLogger(cmtlog.NewNopLogger())
+	require.NoError(t, eb.Start())
+	t.Cleanup(func() { _ = eb.Stop() })
+	return eb
+}
+
 func setupMinimalEnv(t *testing.T) {
 	t.Helper()
 	core.SetEnvironment(&core.Environment{
-		Adapter:   &adapter.Adapter{},
+		Adapter:   &adapter.Adapter{EventBus: newTestEventBus(t)},
 		Logger:    cmtlog.NewNopLogger(),
 		RPCConfig: *cmtcfg.DefaultRPCConfig(),
 	})
@@ -267,7 +277,7 @@ func TestRPCServer_WebSocketEndpointRegistered(t *testing.T) {
 
 	cfg := cmtcfg.DefaultRPCConfig()
 	cfg.ListenAddress = fmt.Sprintf("tcp://127.0.0.1:%d", port)
-	srv := NewRPCServer(cfg, log.NewNopLogger())
+	srv := NewRPCServer(cfg, log.NewNopLogger(), newTestEventBus(t))
 	require.NoError(t, srv.Start())
 	t.Cleanup(func() { _ = srv.Stop() })
 
