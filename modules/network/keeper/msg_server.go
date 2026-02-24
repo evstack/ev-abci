@@ -66,7 +66,18 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s already attested for height %d", msg.ConsensusAddress, msg.Height)
 	}
 
-	// TODO: Verify the vote signature here once we implement vote parsing
+	// Validate vote payload is non-empty and meets minimum signature length.
+	// A valid vote must contain at least a cryptographic signature (48 bytes for BLS,
+	// 64 bytes for Ed25519). We enforce the minimum here; full cryptographic
+	// verification of the signature against the block data should be added once
+	// the vote format is finalized.
+	const minVoteLen = 48 // BLS signature minimum
+	if len(msg.Vote) == 0 {
+		return nil, sdkerr.Wrap(sdkerrors.ErrInvalidRequest, "vote payload must not be empty")
+	}
+	if len(msg.Vote) < minVoteLen {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote payload too short: got %d bytes, minimum %d", len(msg.Vote), minVoteLen)
+	}
 
 	// Set the bit
 	k.bitmapHelper.SetBit(bitmap, int(index))
