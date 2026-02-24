@@ -130,54 +130,29 @@ func TestAttestHeightBounds(t *testing.T) {
 	specs := map[string]struct {
 		blockHeight int64
 		attestH     int64
-		pruneAfter  uint64
-		epochLength uint64
 		expErr      error
 	}{
 		"future height rejected": {
 			blockHeight: 100,
 			attestH:     200,
-			pruneAfter:  7,
-			epochLength: 1,
 			expErr:      sdkerrors.ErrInvalidRequest,
 		},
-		"stale height rejected": {
+		"two-ahead rejected": {
 			blockHeight: 100,
-			attestH:     1,
-			pruneAfter:  7,
-			epochLength: 1,
+			attestH:     102,
 			expErr:      sdkerrors.ErrInvalidRequest,
 		},
 		"current height accepted": {
 			blockHeight: 100,
 			attestH:     100,
-			pruneAfter:  7,
-			epochLength: 1,
 		},
 		"next height accepted": {
 			blockHeight: 100,
 			attestH:     101,
-			pruneAfter:  7,
-			epochLength: 1,
 		},
-		"min boundary accepted": {
+		"old height accepted": {
 			blockHeight: 100,
-			attestH:     93,
-			pruneAfter:  7,
-			epochLength: 1,
-		},
-		"below min boundary rejected": {
-			blockHeight: 100,
-			attestH:     92,
-			pruneAfter:  7,
-			epochLength: 1,
-			expErr:      sdkerrors.ErrInvalidRequest,
-		},
-		"early chain - low height accepted": {
-			blockHeight: 3,
 			attestH:     1,
-			pruneAfter:  7,
-			epochLength: 1,
 		},
 	}
 
@@ -197,11 +172,7 @@ func TestAttestHeightBounds(t *testing.T) {
 				Height:  spec.blockHeight,
 			}, false, logger).WithContext(t.Context())
 
-			// Set params with custom pruneAfter and epochLength
-			params := types.DefaultParams()
-			params.PruneAfter = spec.pruneAfter
-			params.EpochLength = spec.epochLength
-			require.NoError(t, keeper.SetParams(ctx, params))
+			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 
 			// Setup: add attester and build index map
 			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))

@@ -47,26 +47,13 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "validator index not found for %s", msg.ConsensusAddress)
 	}
 
-	// Enforce attestation height bounds to prevent storage exhaustion from
-	// future-height spam and stale attestations for ancient blocks
-	params := k.GetParams(ctx)
+	// Enforce attestation height upper bound to prevent storage exhaustion
+	// from future-height spam. Stale attestations are harmless (they get pruned)
+	// and are allowed for backward-attesting workflows.
 	currentHeight := ctx.BlockHeight()
 	maxFutureHeight := currentHeight + 1
-	pruneAfter := int64(params.PruneAfter)
-	epochLen := int64(params.EpochLength)
-	retentionWindow := pruneAfter * epochLen
-	if retentionWindow < 0 { // guard against int64 overflow on extreme param values
-		retentionWindow = 1<<63 - 1 // math.MaxInt64
-	}
-	minHeight := currentHeight - retentionWindow
-	if minHeight < 1 {
-		minHeight = 1
-	}
 	if msg.Height > maxFutureHeight {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d exceeds max allowed height %d", msg.Height, maxFutureHeight)
-	}
-	if msg.Height < minHeight {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below minimum allowed height %d", msg.Height, minHeight)
 	}
 	bitmap, err := k.GetAttestationBitmap(ctx, msg.Height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
