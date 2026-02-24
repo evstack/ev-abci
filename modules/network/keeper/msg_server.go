@@ -30,6 +30,11 @@ var _ types.MsgServer = msgServer{}
 func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.MsgAttestResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	// Verify the tx signer matches the consensus address they claim to attest for
+	if msg.Authority != msg.ConsensusAddress {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "authority %s does not match consensus address %s", msg.Authority, msg.ConsensusAddress)
+	}
+
 	if k.GetParams(ctx).SignMode == types.SignMode_SIGN_MODE_CHECKPOINT &&
 		!k.IsCheckpointHeight(ctx, msg.Height) {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "height %d is not a checkpoint", msg.Height)
@@ -139,6 +144,11 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAttesterSet) (*types.MsgJoinAttesterSetResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	// Verify the tx signer matches the consensus address they claim to join with
+	if msg.Authority != msg.ConsensusAddress {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "authority %s does not match consensus address %s", msg.Authority, msg.ConsensusAddress)
+	}
+
 	// Validate the consensus address format
 	_, err := sdk.ValAddressFromBech32(msg.ConsensusAddress)
 	if err != nil {
@@ -187,6 +197,11 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 // LeaveAttesterSet handles MsgLeaveAttesterSet
 func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAttesterSet) (*types.MsgLeaveAttesterSetResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	// Verify the tx signer matches the consensus address they claim to leave with
+	if msg.Authority != msg.ConsensusAddress {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "authority %s does not match consensus address %s", msg.Authority, msg.ConsensusAddress)
+	}
 
 	has, err := k.IsInAttesterSet(ctx, msg.ConsensusAddress)
 	if err != nil {
