@@ -16,8 +16,8 @@ import (
 )
 
 // MinVoteLen is the minimum vote payload length in bytes.
-// This is the size of a BLS signature (48 bytes).
-const MinVoteLen = 48
+// 64 is the size of a Ed25519 signature
+const MinVoteLen = 64
 
 type msgServer struct {
 	Keeper
@@ -71,7 +71,7 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 	}
 
 	// Validate vote payload meets minimum signature length.
-	// A valid vote must contain at least a cryptographic signature (48 bytes for BLS,
+	// A valid vote must contain at least a cryptographic signature (
 	// 64 bytes for Ed25519). We enforce the minimum here; full cryptographic
 	// verification of the signature against the block data should be added once
 	// the vote format is finalized.
