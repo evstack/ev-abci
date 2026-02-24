@@ -201,7 +201,7 @@ func TestAttestHeightBounds(t *testing.T) {
 			params := types.DefaultParams()
 			params.PruneAfter = spec.pruneAfter
 			params.EpochLength = spec.epochLength
-			keeper.SetParams(ctx, params)
+			require.NoError(t, keeper.SetParams(ctx, params))
 
 			// Setup: add attester and build index map
 			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
