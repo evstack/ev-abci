@@ -88,21 +88,9 @@ func TestJoinAttesterSet(t *testing.T) {
 
 	for name, spec := range tests {
 		t.Run(name, func(t *testing.T) {
-			sk := NewMockStakingKeeper()
+			keeper, server, ctx := setupTestKeeper(t)
 
-			cdc := moduletestutil.MakeTestEncodingConfig().Codec
-
-			keys := storetypes.NewKVStoreKeys(types.StoreKey)
-
-			logger := log.NewTestLogger(t)
-			cms := integration.CreateMultiStore(keys, logger)
-			authority := authtypes.NewModuleAddress("gov")
-			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
-			server := msgServer{Keeper: keeper}
-			ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
-				WithContext(t.Context())
-
-			spec.setup(t, ctx, &keeper, &sk)
+			spec.setup(t, ctx, &keeper, server.Keeper.stakingKeeper.(*MockStakingKeeper))
 
 			// when
 			rsp, err := server.JoinAttesterSet(ctx, spec.msg)
@@ -122,6 +110,122 @@ func TestJoinAttesterSet(t *testing.T) {
 			assert.True(t, exists)
 		})
 	}
+}
+
+func TestAttestAuthorityVerification(t *testing.T) {
+	myValAddr := sdk.ValAddress("validator1")
+	attackerAddr := sdk.ValAddress("attacker1")
+
+	specs := map[string]struct {
+		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper)
+		msg    *types.MsgAttest
+		expErr error
+	}{
+		"impersonation rejected": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			},
+			msg: &types.MsgAttest{
+				Authority:        attackerAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+				Height:           10,
+				Vote:             []byte("vote"),
+			},
+			expErr: sdkerrors.ErrUnauthorized,
+		},
+		"self-attest accepted": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			},
+			msg: &types.MsgAttest{
+				Authority:        myValAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+				Height:           10,
+				Vote:             []byte("vote"),
+			},
+		},
+	}
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			keeper, server, ctx := setupTestKeeper(t)
+			spec.setup(t, ctx, &keeper)
+
+			rsp, err := server.Attest(ctx, spec.msg)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				require.Nil(t, rsp)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rsp)
+		})
+	}
+}
+
+func TestLeaveAttesterSetAuthorityVerification(t *testing.T) {
+	myValAddr := sdk.ValAddress("validator1")
+	attackerAddr := sdk.ValAddress("attacker1")
+
+	specs := map[string]struct {
+		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper)
+		msg    *types.MsgLeaveAttesterSet
+		expErr error
+	}{
+		"impersonation rejected": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			},
+			msg: &types.MsgLeaveAttesterSet{
+				Authority:        attackerAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+			},
+			expErr: sdkerrors.ErrUnauthorized,
+		},
+		"self-leave accepted": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			},
+			msg: &types.MsgLeaveAttesterSet{
+				Authority:        myValAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+			},
+		},
+	}
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			keeper, server, ctx := setupTestKeeper(t)
+			spec.setup(t, ctx, &keeper)
+
+			rsp, err := server.LeaveAttesterSet(ctx, spec.msg)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				require.Nil(t, rsp)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rsp)
+		})
+	}
+}
+
+func setupTestKeeper(t *testing.T) (Keeper, msgServer, sdk.Context) {
+	t.Helper()
+	sk := NewMockStakingKeeper()
+	cdc := moduletestutil.MakeTestEncodingConfig().Codec
+	keys := storetypes.NewKVStoreKeys(types.StoreKey)
+	logger := log.NewTestLogger(t)
+	cms := integration.CreateMultiStore(keys, logger)
+	authority := authtypes.NewModuleAddress("gov")
+	keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), &sk, nil, nil, authority.String())
+	server := msgServer{Keeper: keeper}
+	ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
+		WithContext(t.Context())
+	// Initialize default params so CheckQuorum and other param-dependent code works
+	keeper.SetParams(ctx, types.DefaultParams())
+	return keeper, server, ctx
 }
 
 var _ types.StakingKeeper = &MockStakingKeeper{}
