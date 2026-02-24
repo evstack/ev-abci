@@ -84,13 +84,18 @@ func TestJoinAttesterSet(t *testing.T) {
 		//	expErr:  sdkerrors.ErrInternal,
 		//	expectResponse: false,
 		//},
+		"impersonation rejected": {
+			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
+			msg:    &types.MsgJoinAttesterSet{Authority: sdk.ValAddress("attacker1").String(), ConsensusAddress: myValAddr.String()},
+			expErr: sdkerrors.ErrUnauthorized,
+		},
 	}
 
 	for name, spec := range tests {
 		t.Run(name, func(t *testing.T) {
 			keeper, server, ctx := setupTestKeeper(t)
 
-			spec.setup(t, ctx, &keeper, server.Keeper.stakingKeeper.(*MockStakingKeeper))
+			spec.setup(t, ctx, &keeper, server.stakingKeeper.(*MockStakingKeeper))
 
 			// when
 			rsp, err := server.JoinAttesterSet(ctx, spec.msg)
@@ -224,7 +229,7 @@ func setupTestKeeper(t *testing.T) (Keeper, msgServer, sdk.Context) {
 	ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
 		WithContext(t.Context())
 	// Initialize default params so CheckQuorum and other param-dependent code works
-	keeper.SetParams(ctx, types.DefaultParams())
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 	return keeper, server, ctx
 }
 
