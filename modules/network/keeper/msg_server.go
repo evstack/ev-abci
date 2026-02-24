@@ -15,6 +15,10 @@ import (
 	"github.com/evstack/ev-abci/modules/network/types"
 )
 
+// MinVoteLen is the minimum vote payload length in bytes.
+// 64 is the size of a Ed25519 signature
+const MinVoteLen = 64
+
 type msgServer struct {
 	Keeper
 }
@@ -68,7 +72,14 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s already attested for height %d", msg.ConsensusAddress, msg.Height)
 	}
 
-	// TODO: Verify the vote signature here once we implement vote parsing
+	// Validate vote payload meets minimum signature length.
+	// A valid vote must contain at least a cryptographic signature (
+	// 64 bytes for Ed25519). We enforce the minimum here; full cryptographic
+	// verification of the signature against the block data should be added once
+	// the vote format is finalized.
+	if len(msg.Vote) < MinVoteLen {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote payload too short: got %d bytes, minimum %d", len(msg.Vote), MinVoteLen)
+	}
 
 	// Set the bit
 	k.bitmapHelper.SetBit(bitmap, int(index))
