@@ -159,6 +159,72 @@ func TestJoinAttesterSetMaxCap(t *testing.T) {
 	})
 }
 
+func TestAttestVotePayloadValidation(t *testing.T) {
+	myValAddr := sdk.ValAddress("validator1")
+
+	specs := map[string]struct {
+		vote   []byte
+		expErr error
+	}{
+		"empty vote rejected": {
+			vote:   []byte{},
+			expErr: sdkerrors.ErrInvalidRequest,
+		},
+		"nil vote rejected": {
+			vote:   nil,
+			expErr: sdkerrors.ErrInvalidRequest,
+		},
+		"short vote rejected": {
+			vote:   make([]byte, MinVoteLen-1),
+			expErr: sdkerrors.ErrInvalidRequest,
+		},
+		"min-length vote accepted": {
+			vote: make([]byte, MinVoteLen),
+		},
+		"valid-length vote accepted": {
+			vote: make([]byte, 96),
+		},
+	}
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			sk := NewMockStakingKeeper()
+			cdc := moduletestutil.MakeTestEncodingConfig().Codec
+			keys := storetypes.NewKVStoreKeys(types.StoreKey)
+			logger := log.NewTestLogger(t)
+			cms := integration.CreateMultiStore(keys, logger)
+			authority := authtypes.NewModuleAddress("gov")
+			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+			server := msgServer{Keeper: keeper}
+			ctx := sdk.NewContext(cms, cmtproto.Header{
+				ChainID: "test-chain",
+				Time:    time.Now().UTC(),
+				Height:  10,
+			}, false, logger).WithContext(t.Context())
+
+			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+
+			msg := &types.MsgAttest{
+				Authority:        myValAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+				Height:           10,
+				Vote:             spec.vote,
+			}
+
+			rsp, err := server.Attest(ctx, msg)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				require.Nil(t, rsp)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rsp)
+		})
+	}
+}
+
 var _ types.StakingKeeper = &MockStakingKeeper{}
 
 type MockStakingKeeper struct {
