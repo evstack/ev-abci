@@ -188,7 +188,7 @@ func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
 // MaxAttesters is the maximum number of attesters allowed in the set.
 // This prevents unbounded growth, EndBlocker stalling, and uint16 index overflow
 // in BuildValidatorIndexMap.
-var MaxAttesters = 10_000
+const MaxAttesters = 10_000
 
 // BuildValidatorIndexMap rebuilds the validator index mapping
 func (k Keeper) BuildValidatorIndexMap(ctx sdk.Context) error {
