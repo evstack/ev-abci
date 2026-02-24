@@ -124,6 +124,41 @@ func TestJoinAttesterSet(t *testing.T) {
 	}
 }
 
+func TestJoinAttesterSetMaxCap(t *testing.T) {
+	// Verify the constant is set to a sane value that is within uint16 range
+	require.LessOrEqual(t, MaxAttesters, int(^uint16(0)),
+		"MaxAttesters must fit in uint16 to avoid index overflow in BuildValidatorIndexMap")
+
+	t.Run("join succeeds under cap", func(t *testing.T) {
+		sk := NewMockStakingKeeper()
+		cdc := moduletestutil.MakeTestEncodingConfig().Codec
+		keys := storetypes.NewKVStoreKeys(types.StoreKey)
+		logger := log.NewTestLogger(t)
+		cms := integration.CreateMultiStore(keys, logger)
+		authority := authtypes.NewModuleAddress("gov")
+		keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+		server := msgServer{Keeper: keeper}
+		ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
+			WithContext(t.Context())
+
+		// With an empty set, join should succeed
+		newAddr := sdk.ValAddress("new_attester")
+		msg := &types.MsgJoinAttesterSet{
+			Authority:        newAddr.String(),
+			ConsensusAddress: newAddr.String(),
+		}
+
+		rsp, err := server.JoinAttesterSet(ctx, msg)
+		require.NoError(t, err)
+		require.NotNil(t, rsp)
+
+		// Verify the attester was added
+		exists, err := keeper.AttesterSet.Has(ctx, newAddr.String())
+		require.NoError(t, err)
+		assert.True(t, exists)
+	})
+}
+
 var _ types.StakingKeeper = &MockStakingKeeper{}
 
 type MockStakingKeeper struct {

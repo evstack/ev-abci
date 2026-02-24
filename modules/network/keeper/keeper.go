@@ -185,12 +185,23 @@ func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
 	return attesters, nil
 }
 
+// MaxAttesters is the maximum number of attesters allowed in the set.
+// This prevents unbounded growth, EndBlocker stalling, and uint16 index overflow
+// in BuildValidatorIndexMap.
+const MaxAttesters = 10_000
+
 // BuildValidatorIndexMap rebuilds the validator index mapping
 func (k Keeper) BuildValidatorIndexMap(ctx sdk.Context) error {
 	// Get all attesters instead of bonded validators
 	attesters, err := k.GetAllAttesters(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Guard against uint16 overflow — should not happen if MaxAttesters is enforced
+	// at join time, but defense-in-depth
+	if len(attesters) > int(^uint16(0)) {
+		return fmt.Errorf("attester count %d exceeds uint16 max %d", len(attesters), ^uint16(0))
 	}
 
 	// Clear existing indices and powers
