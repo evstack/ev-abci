@@ -34,14 +34,16 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		!k.IsCheckpointHeight(ctx, msg.Height) {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "height %d is not a checkpoint", msg.Height)
 	}
-	has, err := k.IsInAttesterSet(ctx, msg.ConsensusAddress)
+	v, err := k.AttesterInfo.Get(ctx, msg.ConsensusAddress)
 	if err != nil {
-		return nil, sdkerr.Wrapf(err, "in attester set")
+		if errors.Is(err, sdkerrors.ErrNotFound) {
+			return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "consensus address %s not in attester set", msg.ConsensusAddress)
+		}
+		return nil, sdkerr.Wrapf(err, "attester set")
 	}
-	if !has {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "consensus address %s not in attester set", msg.ConsensusAddress)
+	if v.Authority != msg.Authority {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "sender address %s", msg.Authority)
 	}
-
 	index, found := k.GetValidatorIndex(ctx, msg.ConsensusAddress)
 	if !found {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "validator index not found for %s", msg.ConsensusAddress)
@@ -168,7 +170,7 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 
 	// Store the attester information including pubkey (key by consensus address)
 	attesterInfo := &types.AttesterInfo{
-		Validator:    msg.ConsensusAddress, // Use consensus address as primary key
+		Authority:    msg.Authority,
 		Pubkey:       msg.Pubkey,
 		JoinedHeight: ctx.BlockHeight(),
 	}
@@ -197,12 +199,15 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAttesterSet) (*types.MsgLeaveAttesterSetResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	has, err := k.IsInAttesterSet(ctx, msg.ConsensusAddress)
+	v, err := k.AttesterInfo.Get(ctx, msg.ConsensusAddress)
 	if err != nil {
-		return nil, sdkerr.Wrapf(err, "in attester set")
+		if errors.Is(err, sdkerrors.ErrNotFound) {
+			return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s not in attester set", msg.ConsensusAddress)
+		}
+		return nil, sdkerr.Wrapf(err, "attester set")
 	}
-	if !has {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address not in attester set")
+	if v.Authority != msg.Authority {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "sender address %s", msg.Authority)
 	}
 
 	// TODO (Alex): the valset should be updated at the end of an epoch only

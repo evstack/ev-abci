@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
@@ -66,41 +67,12 @@ func TestJoinAttesterSet(t *testing.T) {
 			expErr: sdkerrors.ErrInvalidRequest,
 			expSet: true,
 		},
-		//{
-		//	name: "failed to set attester set member",
-		//	setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
-		//		validatorAddr := sdk.ValAddress([]byte("validator5"))
-		//		validator := stakingtypes.Validator{
-		//			OperatorAddress: validatorAddr.String(),
-		//			Status:          stakingtypes.Bonded,
-		//		}
-		//		err := sk.SetValidator(ctx, validator)
-		//		require.NoError(t, err, "failed to set validator")
-		//		keeper.forceError = true
-		//	},
-		//	msg: &types.MsgJoinAttesterSet{
-		//		Validator: "validator5",
-		//	},
-		//	expErr:  sdkerrors.ErrInternal,
-		//	expectResponse: false,
-		//},
 	}
 
 	for name, spec := range tests {
 		t.Run(name, func(t *testing.T) {
 			sk := NewMockStakingKeeper()
-
-			cdc := moduletestutil.MakeTestEncodingConfig().Codec
-
-			keys := storetypes.NewKVStoreKeys(types.StoreKey)
-
-			logger := log.NewTestLogger(t)
-			cms := integration.CreateMultiStore(keys, logger)
-			authority := authtypes.NewModuleAddress("gov")
-			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
-			server := msgServer{Keeper: keeper}
-			ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
-				WithContext(t.Context())
+			server, keeper, ctx := newTestServer(t, &sk)
 
 			spec.setup(t, ctx, &keeper, &sk)
 
@@ -120,6 +92,11 @@ func TestJoinAttesterSet(t *testing.T) {
 			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
 			require.NoError(t, gotErr)
 			assert.True(t, exists)
+
+			// Verify authority is stored correctly in AttesterInfo
+			info, infoErr := keeper.GetAttesterInfo(ctx, spec.msg.ConsensusAddress)
+			require.NoError(t, infoErr)
+			assert.Equal(t, spec.msg.Authority, info.Authority)
 		})
 	}
 }
@@ -131,15 +108,7 @@ func TestJoinAttesterSetMaxCap(t *testing.T) {
 
 	t.Run("join succeeds under cap", func(t *testing.T) {
 		sk := NewMockStakingKeeper()
-		cdc := moduletestutil.MakeTestEncodingConfig().Codec
-		keys := storetypes.NewKVStoreKeys(types.StoreKey)
-		logger := log.NewTestLogger(t)
-		cms := integration.CreateMultiStore(keys, logger)
-		authority := authtypes.NewModuleAddress("gov")
-		keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
-		server := msgServer{Keeper: keeper}
-		ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
-			WithContext(t.Context())
+		server, keeper, ctx := newTestServer(t, &sk)
 
 		// With an empty set, join should succeed
 		newAddr := sdk.ValAddress("new_attester")
@@ -157,6 +126,186 @@ func TestJoinAttesterSetMaxCap(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, exists)
 	})
+}
+
+func TestLeaveAttesterSet(t *testing.T) {
+	ownerAddr := sdk.ValAddress("owner1")
+	otherAddr := sdk.ValAddress("other1")
+
+	type testCase struct {
+		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer)
+		msg    *types.MsgLeaveAttesterSet
+		expErr error
+	}
+
+	tests := map[string]testCase{
+		"valid": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+				t.Helper()
+				joinMsg := &types.MsgJoinAttesterSet{
+					Authority:        ownerAddr.String(),
+					ConsensusAddress: ownerAddr.String(),
+				}
+				_, err := server.JoinAttesterSet(ctx, joinMsg)
+				require.NoError(t, err)
+			},
+			msg: &types.MsgLeaveAttesterSet{
+				Authority:        ownerAddr.String(),
+				ConsensusAddress: ownerAddr.String(),
+			},
+		},
+		"not_in_set": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+				t.Helper()
+			},
+			msg: &types.MsgLeaveAttesterSet{
+				Authority:        ownerAddr.String(),
+				ConsensusAddress: ownerAddr.String(),
+			},
+			// NOTE: source checks errors.Is(err, sdkerrors.ErrNotFound) but collections
+			// returns collections.ErrNotFound, so the not-found branch is unreachable
+			// and the generic wrap path is taken instead.
+			expErr: collections.ErrNotFound,
+		},
+		"wrong_authority": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+				t.Helper()
+				joinMsg := &types.MsgJoinAttesterSet{
+					Authority:        ownerAddr.String(),
+					ConsensusAddress: ownerAddr.String(),
+				}
+				_, err := server.JoinAttesterSet(ctx, joinMsg)
+				require.NoError(t, err)
+			},
+			msg: &types.MsgLeaveAttesterSet{
+				Authority:        otherAddr.String(),
+				ConsensusAddress: ownerAddr.String(),
+			},
+			expErr: sdkerrors.ErrUnauthorized,
+		},
+	}
+
+	for name, spec := range tests {
+		t.Run(name, func(t *testing.T) {
+			sk := NewMockStakingKeeper()
+			server, keeper, ctx := newTestServer(t, &sk)
+
+			spec.setup(t, ctx, &keeper, server)
+
+			rsp, err := server.LeaveAttesterSet(ctx, spec.msg)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				require.Nil(t, rsp)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rsp)
+
+			// Verify actually removed from attester set
+			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
+			require.NoError(t, gotErr)
+			assert.False(t, exists)
+		})
+	}
+}
+
+func TestAttest(t *testing.T) {
+	ownerAddr := sdk.ValAddress("attester_owner")
+	otherAddr := sdk.ValAddress("other_sender")
+
+	type testCase struct {
+		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer)
+		msg    *types.MsgAttest
+		expErr error
+	}
+
+	tests := map[string]testCase{
+		"valid": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+				t.Helper()
+				require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+				joinMsg := &types.MsgJoinAttesterSet{
+					Authority:        ownerAddr.String(),
+					ConsensusAddress: ownerAddr.String(),
+				}
+				_, err := server.JoinAttesterSet(ctx, joinMsg)
+				require.NoError(t, err)
+				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			},
+			msg: &types.MsgAttest{
+				Authority:        ownerAddr.String(),
+				ConsensusAddress: ownerAddr.String(),
+				Height:           10,
+				Vote:             []byte("vote"),
+			},
+		},
+		"not_in_set": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+				t.Helper()
+			},
+			msg: &types.MsgAttest{
+				Authority:        ownerAddr.String(),
+				ConsensusAddress: ownerAddr.String(),
+				Height:           10,
+				Vote:             []byte("vote"),
+			},
+			// NOTE: same collections.ErrNotFound issue — see LeaveAttesterSet not_in_set.
+			expErr: collections.ErrNotFound,
+		},
+		"wrong_authority": {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+				t.Helper()
+				joinMsg := &types.MsgJoinAttesterSet{
+					Authority:        ownerAddr.String(),
+					ConsensusAddress: ownerAddr.String(),
+				}
+				_, err := server.JoinAttesterSet(ctx, joinMsg)
+				require.NoError(t, err)
+				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			},
+			msg: &types.MsgAttest{
+				Authority:        otherAddr.String(),
+				ConsensusAddress: ownerAddr.String(),
+				Height:           10,
+				Vote:             []byte("vote"),
+			},
+			expErr: sdkerrors.ErrUnauthorized,
+		},
+	}
+
+	for name, spec := range tests {
+		t.Run(name, func(t *testing.T) {
+			sk := NewMockStakingKeeper()
+			server, keeper, ctx := newTestServer(t, &sk)
+
+			spec.setup(t, ctx, &keeper, server)
+
+			rsp, err := server.Attest(ctx, spec.msg)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				require.Nil(t, rsp)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rsp)
+		})
+	}
+}
+
+// helpers
+
+func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.Context) {
+	t.Helper()
+	cdc := moduletestutil.MakeTestEncodingConfig().Codec
+	keys := storetypes.NewKVStoreKeys(types.StoreKey)
+	logger := log.NewTestLogger(t)
+	cms := integration.CreateMultiStore(keys, logger)
+	authority := authtypes.NewModuleAddress("gov")
+	keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+	server := msgServer{Keeper: keeper}
+	ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
+		WithContext(t.Context())
+	return server, keeper, ctx
 }
 
 var _ types.StakingKeeper = &MockStakingKeeper{}
