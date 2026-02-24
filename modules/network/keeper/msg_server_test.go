@@ -140,11 +140,11 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 			expErr: sdkerrors.ErrInvalidRequest,
 		},
 		"short vote rejected": {
-			vote:   make([]byte, 47),
+			vote:   make([]byte, MinVoteLen-1),
 			expErr: sdkerrors.ErrInvalidRequest,
 		},
 		"min-length vote accepted": {
-			vote: make([]byte, 48),
+			vote: make([]byte, MinVoteLen),
 		},
 		"valid-length vote accepted": {
 			vote: make([]byte, 96),
@@ -167,7 +167,7 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 				Height:  10,
 			}, false, logger).WithContext(t.Context())
 
-			keeper.SetParams(ctx, types.DefaultParams())
+			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
 			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
 
