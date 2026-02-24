@@ -168,6 +168,15 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address already in attester set")
 	}
 
+	// Enforce maximum attester set size to prevent unbounded growth and uint16 index overflow
+	attesters, err := k.GetAllAttesters(ctx)
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "get all attesters")
+	}
+	if len(attesters) >= MaxAttesters {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attester set is full: %d/%d", len(attesters), MaxAttesters)
+	}
+
 	// Store the attester information including pubkey (key by consensus address)
 	attesterInfo := &types.AttesterInfo{
 		Validator:    msg.ConsensusAddress, // Use consensus address as primary key
