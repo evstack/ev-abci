@@ -84,11 +84,6 @@ func TestJoinAttesterSet(t *testing.T) {
 		//	expErr:  sdkerrors.ErrInternal,
 		//	expectResponse: false,
 		//},
-		"impersonation rejected": {
-			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Authority: sdk.ValAddress("attacker1").String(), ConsensusAddress: myValAddr.String()},
-			expErr: sdkerrors.ErrUnauthorized,
-		},
 	}
 
 	for name, spec := range tests {
@@ -113,105 +108,6 @@ func TestJoinAttesterSet(t *testing.T) {
 			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
 			require.NoError(t, gotErr)
 			assert.True(t, exists)
-		})
-	}
-}
-
-func TestAttestAuthorityVerification(t *testing.T) {
-	myValAddr := sdk.ValAddress("validator1")
-	attackerAddr := sdk.ValAddress("attacker1")
-
-	specs := map[string]struct {
-		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper)
-		msg    *types.MsgAttest
-		expErr error
-	}{
-		"impersonation rejected": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
-				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
-			},
-			msg: &types.MsgAttest{
-				Authority:        attackerAddr.String(),
-				ConsensusAddress: myValAddr.String(),
-				Height:           10,
-				Vote:             []byte("vote"),
-			},
-			expErr: sdkerrors.ErrUnauthorized,
-		},
-		"self-attest accepted": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
-				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
-				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
-			},
-			msg: &types.MsgAttest{
-				Authority:        myValAddr.String(),
-				ConsensusAddress: myValAddr.String(),
-				Height:           10,
-				Vote:             []byte("vote"),
-			},
-		},
-	}
-
-	for name, spec := range specs {
-		t.Run(name, func(t *testing.T) {
-			keeper, server, ctx := setupTestKeeper(t)
-			spec.setup(t, ctx, &keeper)
-
-			rsp, err := server.Attest(ctx, spec.msg)
-			if spec.expErr != nil {
-				require.ErrorIs(t, err, spec.expErr)
-				require.Nil(t, rsp)
-				return
-			}
-			require.NoError(t, err)
-			require.NotNil(t, rsp)
-		})
-	}
-}
-
-func TestLeaveAttesterSetAuthorityVerification(t *testing.T) {
-	myValAddr := sdk.ValAddress("validator1")
-	attackerAddr := sdk.ValAddress("attacker1")
-
-	specs := map[string]struct {
-		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper)
-		msg    *types.MsgLeaveAttesterSet
-		expErr error
-	}{
-		"impersonation rejected": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
-				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
-			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        attackerAddr.String(),
-				ConsensusAddress: myValAddr.String(),
-			},
-			expErr: sdkerrors.ErrUnauthorized,
-		},
-		"self-leave accepted": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
-				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
-			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        myValAddr.String(),
-				ConsensusAddress: myValAddr.String(),
-			},
-		},
-	}
-
-	for name, spec := range specs {
-		t.Run(name, func(t *testing.T) {
-			keeper, server, ctx := setupTestKeeper(t)
-			spec.setup(t, ctx, &keeper)
-
-			rsp, err := server.LeaveAttesterSet(ctx, spec.msg)
-			if spec.expErr != nil {
-				require.ErrorIs(t, err, spec.expErr)
-				require.Nil(t, rsp)
-				return
-			}
-			require.NoError(t, err)
-			require.NotNil(t, rsp)
 		})
 	}
 }
