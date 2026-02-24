@@ -15,6 +15,10 @@ import (
 	"github.com/evstack/ev-abci/modules/network/types"
 )
 
+// MinVoteLen is the minimum vote payload length in bytes.
+// 64 is the size of a Ed25519 signature
+const MinVoteLen = 64
+
 type msgServer struct {
 	Keeper
 }
@@ -72,7 +76,14 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s already attested for height %d", msg.ConsensusAddress, msg.Height)
 	}
 
-	// TODO: Verify the vote signature here once we implement vote parsing
+	// Validate vote payload meets minimum signature length.
+	// A valid vote must contain at least a cryptographic signature (
+	// 64 bytes for Ed25519). We enforce the minimum here; full cryptographic
+	// verification of the signature against the block data should be added once
+	// the vote format is finalized.
+	if len(msg.Vote) < MinVoteLen {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote payload too short: got %d bytes, minimum %d", len(msg.Vote), MinVoteLen)
+	}
 
 	// Set the bit
 	k.bitmapHelper.SetBit(bitmap, int(index))
@@ -161,6 +172,15 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 	}
 	if has {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address already in attester set")
+	}
+
+	// Enforce maximum attester set size to prevent unbounded growth and uint16 index overflow
+	attesters, err := k.GetAllAttesters(ctx)
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "get all attesters")
+	}
+	if len(attesters) >= MaxAttesters {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attester set is full: %d/%d", len(attesters), MaxAttesters)
 	}
 
 	// Store the attester information including pubkey (key by consensus address)
