@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"context"
 	"maps"
 	"slices"
@@ -173,6 +174,7 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.SetAttesterInfo(ctx, myValAddr.String(), &types.AttesterInfo{Authority: myValAddr.String()}))
 			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
 
 			msg := &types.MsgAttest{
@@ -302,7 +304,7 @@ func TestAttest(t *testing.T) {
 				Authority:        ownerAddr.String(),
 				ConsensusAddress: ownerAddr.String(),
 				Height:           10,
-				Vote:             []byte("vote"),
+				Vote:             bytes.Repeat([]byte{0x01}, 64),
 			},
 		},
 		"not_in_set": {
@@ -313,7 +315,7 @@ func TestAttest(t *testing.T) {
 				Authority:        ownerAddr.String(),
 				ConsensusAddress: ownerAddr.String(),
 				Height:           10,
-				Vote:             []byte("vote"),
+				Vote:             bytes.Repeat([]byte{0x01}, 64),
 			},
 			// NOTE: same collections.ErrNotFound issue — see LeaveAttesterSet not_in_set.
 			expErr: collections.ErrNotFound,
@@ -333,7 +335,7 @@ func TestAttest(t *testing.T) {
 				Authority:        otherAddr.String(),
 				ConsensusAddress: ownerAddr.String(),
 				Height:           10,
-				Vote:             []byte("vote"),
+				Vote:             bytes.Repeat([]byte{0x01}, 64),
 			},
 			expErr: sdkerrors.ErrUnauthorized,
 		},
