@@ -47,8 +47,22 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "validator index not found for %s", msg.ConsensusAddress)
 	}
 
-	// todo (Alex): we need to set a limit to not have validators attest old blocks. Also make sure that this relates with
-	// the retention period for pruning
+	// Enforce attestation height bounds to prevent storage exhaustion from
+	// future-height spam and stale attestations for ancient blocks
+	params := k.GetParams(ctx)
+	currentHeight := ctx.BlockHeight()
+	maxFutureHeight := currentHeight + 1
+	retentionWindow := int64(params.PruneAfter * params.EpochLength)
+	minHeight := currentHeight - retentionWindow
+	if minHeight < 1 {
+		minHeight = 1
+	}
+	if msg.Height > maxFutureHeight {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d exceeds max allowed height %d", msg.Height, maxFutureHeight)
+	}
+	if msg.Height < minHeight {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below minimum allowed height %d", msg.Height, minHeight)
+	}
 	bitmap, err := k.GetAttestationBitmap(ctx, msg.Height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
 		return nil, sdkerr.Wrap(err, "get attestation bitmap")

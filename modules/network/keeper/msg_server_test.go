@@ -124,6 +124,108 @@ func TestJoinAttesterSet(t *testing.T) {
 	}
 }
 
+func TestAttestHeightBounds(t *testing.T) {
+	myValAddr := sdk.ValAddress("validator1")
+
+	specs := map[string]struct {
+		blockHeight int64
+		attestH     int64
+		pruneAfter  uint64
+		epochLength uint64
+		expErr      error
+	}{
+		"future height rejected": {
+			blockHeight: 100,
+			attestH:     200,
+			pruneAfter:  7,
+			epochLength: 1,
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"stale height rejected": {
+			blockHeight: 100,
+			attestH:     1,
+			pruneAfter:  7,
+			epochLength: 1,
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"current height accepted": {
+			blockHeight: 100,
+			attestH:     100,
+			pruneAfter:  7,
+			epochLength: 1,
+		},
+		"next height accepted": {
+			blockHeight: 100,
+			attestH:     101,
+			pruneAfter:  7,
+			epochLength: 1,
+		},
+		"min boundary accepted": {
+			blockHeight: 100,
+			attestH:     93,
+			pruneAfter:  7,
+			epochLength: 1,
+		},
+		"below min boundary rejected": {
+			blockHeight: 100,
+			attestH:     92,
+			pruneAfter:  7,
+			epochLength: 1,
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"early chain - low height accepted": {
+			blockHeight: 3,
+			attestH:     1,
+			pruneAfter:  7,
+			epochLength: 1,
+		},
+	}
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			sk := NewMockStakingKeeper()
+			cdc := moduletestutil.MakeTestEncodingConfig().Codec
+			keys := storetypes.NewKVStoreKeys(types.StoreKey)
+			logger := log.NewTestLogger(t)
+			cms := integration.CreateMultiStore(keys, logger)
+			authority := authtypes.NewModuleAddress("gov")
+			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+			server := msgServer{Keeper: keeper}
+			ctx := sdk.NewContext(cms, cmtproto.Header{
+				ChainID: "test-chain",
+				Time:    time.Now().UTC(),
+				Height:  spec.blockHeight,
+			}, false, logger).WithContext(t.Context())
+
+			// Set params with custom pruneAfter and epochLength
+			params := types.DefaultParams()
+			params.PruneAfter = spec.pruneAfter
+			params.EpochLength = spec.epochLength
+			keeper.SetParams(ctx, params)
+
+			// Setup: add attester and build index map
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+
+			msg := &types.MsgAttest{
+				Authority:        myValAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+				Height:           spec.attestH,
+				Vote:             []byte("vote"),
+			}
+
+			rsp, err := server.Attest(ctx, msg)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				require.Nil(t, rsp)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rsp)
+		})
+	}
+}
+
 var _ types.StakingKeeper = &MockStakingKeeper{}
 
 type MockStakingKeeper struct {
