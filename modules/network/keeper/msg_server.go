@@ -52,7 +52,12 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 	params := k.GetParams(ctx)
 	currentHeight := ctx.BlockHeight()
 	maxFutureHeight := currentHeight + 1
-	retentionWindow := int64(params.PruneAfter * params.EpochLength)
+	pruneAfter := int64(params.PruneAfter)
+	epochLen := int64(params.EpochLength)
+	retentionWindow := pruneAfter * epochLen
+	if retentionWindow < 0 { // guard against int64 overflow on extreme param values
+		retentionWindow = 1<<63 - 1 // math.MaxInt64
+	}
 	minHeight := currentHeight - retentionWindow
 	if minHeight < 1 {
 		minHeight = 1
