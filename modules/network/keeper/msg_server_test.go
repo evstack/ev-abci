@@ -227,6 +227,8 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 
 func TestAttestHeightBounds(t *testing.T) {
 	myValAddr := sdk.ValAddress("validator1")
+	// With DefaultParams: EpochLength=1, PruneAfter=7
+	// At blockHeight=100: currentEpoch=100, minHeight=(100-7)*1=93
 
 	specs := map[string]struct {
 		blockHeight int64
@@ -251,8 +253,23 @@ func TestAttestHeightBounds(t *testing.T) {
 			blockHeight: 100,
 			attestH:     101,
 		},
-		"old height accepted": {
+		"stale height rejected": {
 			blockHeight: 100,
+			attestH:     1,
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"below retention window rejected": {
+			blockHeight: 100,
+			attestH:     92, // minHeight = 93
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"at retention boundary accepted": {
+			blockHeight: 100,
+			attestH:     93, // exactly minHeight
+		},
+		"early chain no stale rejection": {
+			// blockHeight=5, currentEpoch=5, PruneAfter=7 → currentEpoch <= PruneAfter → minHeight=1
+			blockHeight: 5,
 			attestH:     1,
 		},
 	}
@@ -283,7 +300,7 @@ func TestAttestHeightBounds(t *testing.T) {
 				Authority:        myValAddr.String(),
 				ConsensusAddress: myValAddr.String(),
 				Height:           spec.attestH,
-				Vote:             []byte("vote"),
+				Vote:             make([]byte, MinVoteLen),
 			}
 
 			rsp, err := server.Attest(ctx, msg)
