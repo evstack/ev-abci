@@ -66,7 +66,7 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 	params := k.GetParams(ctx)
 	minHeight := int64(1)
 	if params.PruneAfter > 0 && params.EpochLength > 0 {
-		currentEpoch := uint64(currentHeight) / params.EpochLength
+		currentEpoch := k.GetCurrentEpoch(ctx)
 		if currentEpoch > params.PruneAfter {
 			minHeight = int64((currentEpoch - params.PruneAfter) * params.EpochLength)
 		}
