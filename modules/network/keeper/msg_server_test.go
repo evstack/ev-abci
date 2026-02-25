@@ -227,7 +227,7 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 
 func TestAttestHeightBounds(t *testing.T) {
 	myValAddr := sdk.ValAddress("validator1")
-	// With DefaultParams: EpochLength=1, PruneAfter=7
+	// With DefaultParams: EpochLength=1, PruneAfter=15
 	// At blockHeight=100: currentEpoch=100, minHeight=(100-7)*1=93
 
 	specs := map[string]struct {
@@ -268,8 +268,7 @@ func TestAttestHeightBounds(t *testing.T) {
 			attestH:     93, // exactly minHeight
 		},
 		"early chain no stale rejection": {
-			// blockHeight=5, currentEpoch=5, PruneAfter=7 → currentEpoch <= PruneAfter → minHeight=1
-			blockHeight: 5,
+			blockHeight: 16,
 			attestH:     1,
 		},
 	}

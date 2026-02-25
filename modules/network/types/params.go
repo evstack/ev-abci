@@ -11,7 +11,7 @@ var (
 	DefaultEpochLength      = uint64(1)                         // Changed from 10 to 1 to allow attestations on every block
 	DefaultQuorumFraction   = math.LegacyNewDecWithPrec(667, 3) // 2/3
 	DefaultMinParticipation = math.LegacyNewDecWithPrec(5, 1)   // 1/2
-	DefaultPruneAfter       = uint64(7)
+	DefaultPruneAfter       = uint64(15)                        // also used as number of blocks for attestations to land
 	DefaultSignMode         = SignMode_SIGN_MODE_CHECKPOINT
 )
 
