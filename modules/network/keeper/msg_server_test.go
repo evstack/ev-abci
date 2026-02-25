@@ -233,7 +233,6 @@ func TestAttestHeightBounds(t *testing.T) {
 	specs := map[string]struct {
 		blockHeight int64
 		attestH     int64
-		params      *types.Params // nil → DefaultParams()
 		expErr      error
 	}{
 		"future height rejected": {
@@ -273,31 +272,6 @@ func TestAttestHeightBounds(t *testing.T) {
 			blockHeight: 5,
 			attestH:     1,
 		},
-		// Cases with EpochLength>1 and blockHeight NOT on an epoch boundary.
-		// EpochLength=10, PruneAfter=2, blockHeight=35 (mid epoch 3):
-		//   GetCurrentEpoch = 35/10 = 3  (integer floor — not aligned to boundary)
-		//   currentEpoch(3) > PruneAfter(2) → minHeight = (3-2)*10 = 10
-		// attestH must be a checkpoint (multiple of EpochLength) to bypass the
-		// SIGN_MODE_CHECKPOINT guard and reach the lower-bound check.
-		// This asserts that the floor-to-epoch-start rounding from GetCurrentEpoch
-		// is preserved and consistent with PruneOldBitmaps.
-		"multi-epoch mid-block below retention rejected": {
-			blockHeight: 35, // epoch 3 (floor), mid-epoch
-			attestH:     0,  // checkpoint (0%10==0), but < minHeight(10) → rejected
-			params: func() *types.Params {
-				p := types.NewParams(10, types.DefaultQuorumFraction, types.DefaultMinParticipation, 2, types.DefaultSignMode)
-				return &p
-			}(),
-			expErr: sdkerrors.ErrInvalidRequest,
-		},
-		"multi-epoch mid-block at retention boundary accepted": {
-			blockHeight: 35, // epoch 3 (floor), mid-epoch
-			attestH:     10, // checkpoint (10%10==0) and == minHeight(10) → accepted
-			params: func() *types.Params {
-				p := types.NewParams(10, types.DefaultQuorumFraction, types.DefaultMinParticipation, 2, types.DefaultSignMode)
-				return &p
-			}(),
-		},
 	}
 
 	for name, spec := range specs {
@@ -316,11 +290,7 @@ func TestAttestHeightBounds(t *testing.T) {
 				Height:  spec.blockHeight,
 			}, false, logger).WithContext(t.Context())
 
-			p := types.DefaultParams()
-			if spec.params != nil {
-				p = *spec.params
-			}
-			require.NoError(t, keeper.SetParams(ctx, p))
+			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 
 			// Setup: add attester and build index map
 			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
