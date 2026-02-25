@@ -260,7 +260,7 @@ func TestAttestHeightBounds(t *testing.T) {
 		},
 		"below retention window rejected": {
 			blockHeight: 100,
-			attestH:     92, // minHeight = 93
+			attestH:     84, // minHeight = 85
 			expErr:      sdkerrors.ErrInvalidRequest,
 		},
 		"at retention boundary accepted": {
