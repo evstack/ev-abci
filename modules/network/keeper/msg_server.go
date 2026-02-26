@@ -43,16 +43,10 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote payload too short: got %d bytes, minimum %d", len(msg.Vote), MinVoteLen)
 	}
 
-	v, err := k.AttesterInfo.Get(ctx, msg.ConsensusAddress)
-	if err != nil {
-		if errors.Is(err, sdkerrors.ErrNotFound) {
-			return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "consensus address %s not in attester set", msg.ConsensusAddress)
-		}
-		return nil, sdkerr.Wrapf(err, "attester set")
+	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
+		return nil, err
 	}
-	if v.Authority != msg.Authority {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "sender address %s", msg.Authority)
-	}
+
 	index, found := k.GetValidatorIndex(ctx, msg.ConsensusAddress)
 	if !found {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "validator index not found for %s", msg.ConsensusAddress)
@@ -206,15 +200,8 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAttesterSet) (*types.MsgLeaveAttesterSetResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	v, err := k.AttesterInfo.Get(ctx, msg.ConsensusAddress)
-	if err != nil {
-		if errors.Is(err, sdkerrors.ErrNotFound) {
-			return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s not in attester set", msg.ConsensusAddress)
-		}
-		return nil, sdkerr.Wrapf(err, "attester set")
-	}
-	if v.Authority != msg.Authority {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "sender address %s", msg.Authority)
+	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
+		return nil, err
 	}
 
 	// TODO (Alex): the valset should be updated at the end of an epoch only
@@ -231,6 +218,20 @@ func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAt
 	)
 
 	return &types.MsgLeaveAttesterSetResponse{}, nil
+}
+
+func (k msgServer) assertValidValidatorAuthority(ctx sdk.Context, consensusAddress, authority string) error {
+	v, err := k.AttesterInfo.Get(ctx, consensusAddress)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "consensus address %s not in attester set", consensusAddress)
+		}
+		return sdkerr.Wrapf(err, "attester set")
+	}
+	if v.Authority != authority {
+		return sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "address %s", authority)
+	}
+	return nil
 }
 
 // UpdateParams handles MsgUpdateParams

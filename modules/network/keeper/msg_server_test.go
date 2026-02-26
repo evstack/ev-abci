@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"cosmossdk.io/collections"
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
@@ -159,19 +158,7 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 	for name, spec := range specs {
 		t.Run(name, func(t *testing.T) {
 			sk := NewMockStakingKeeper()
-			cdc := moduletestutil.MakeTestEncodingConfig().Codec
-			keys := storetypes.NewKVStoreKeys(types.StoreKey)
-			logger := log.NewTestLogger(t)
-			cms := integration.CreateMultiStore(keys, logger)
-			authority := authtypes.NewModuleAddress("gov")
-			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
-			server := msgServer{Keeper: keeper}
-			ctx := sdk.NewContext(cms, cmtproto.Header{
-				ChainID: "test-chain",
-				Time:    time.Now().UTC(),
-				Height:  10,
-			}, false, logger).WithContext(t.Context())
-
+			server, keeper, ctx := newTestServer(t, &sk)
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
 			require.NoError(t, keeper.SetAttesterInfo(ctx, myValAddr.String(), &types.AttesterInfo{Authority: myValAddr.String()}))
@@ -230,10 +217,7 @@ func TestLeaveAttesterSet(t *testing.T) {
 				Authority:        ownerAddr.String(),
 				ConsensusAddress: ownerAddr.String(),
 			},
-			// NOTE: source checks errors.Is(err, sdkerrors.ErrNotFound) but collections
-			// returns collections.ErrNotFound, so the not-found branch is unreachable
-			// and the generic wrap path is taken instead.
-			expErr: collections.ErrNotFound,
+			expErr: sdkerrors.ErrUnauthorized,
 		},
 		"wrong_authority": {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
@@ -317,8 +301,7 @@ func TestAttest(t *testing.T) {
 				Height:           10,
 				Vote:             bytes.Repeat([]byte{0x01}, 64),
 			},
-			// NOTE: same collections.ErrNotFound issue — see LeaveAttesterSet not_in_set.
-			expErr: collections.ErrNotFound,
+			expErr: sdkerrors.ErrUnauthorized,
 		},
 		"wrong_authority": {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
