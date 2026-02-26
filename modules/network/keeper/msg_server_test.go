@@ -225,6 +225,95 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 	}
 }
 
+func TestAttestHeightBounds(t *testing.T) {
+	myValAddr := sdk.ValAddress("validator1")
+	// With DefaultParams: EpochLength=1, PruneAfter=15
+	// At blockHeight=100: currentEpoch=100, minHeight=(100-7)*1=93
+
+	specs := map[string]struct {
+		blockHeight int64
+		attestH     int64
+		expErr      error
+	}{
+		"future height rejected": {
+			blockHeight: 100,
+			attestH:     200,
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"two-ahead rejected": {
+			blockHeight: 100,
+			attestH:     102,
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"current height accepted": {
+			blockHeight: 100,
+			attestH:     100,
+		},
+		"next height accepted": {
+			blockHeight: 100,
+			attestH:     101,
+		},
+		"stale height rejected": {
+			blockHeight: 100,
+			attestH:     1,
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"below retention window rejected": {
+			blockHeight: 100,
+			attestH:     84, // minHeight = 85
+			expErr:      sdkerrors.ErrInvalidRequest,
+		},
+		"at retention boundary accepted": {
+			blockHeight: 100,
+			attestH:     93, // exactly minHeight
+		},
+		"early chain no stale rejection": {
+			blockHeight: 16,
+			attestH:     1,
+		},
+	}
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			sk := NewMockStakingKeeper()
+			cdc := moduletestutil.MakeTestEncodingConfig().Codec
+			keys := storetypes.NewKVStoreKeys(types.StoreKey)
+			logger := log.NewTestLogger(t)
+			cms := integration.CreateMultiStore(keys, logger)
+			authority := authtypes.NewModuleAddress("gov")
+			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+			server := msgServer{Keeper: keeper}
+			ctx := sdk.NewContext(cms, cmtproto.Header{
+				ChainID: "test-chain",
+				Time:    time.Now().UTC(),
+				Height:  spec.blockHeight,
+			}, false, logger).WithContext(t.Context())
+
+			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+
+			// Setup: add attester and build index map
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+
+			msg := &types.MsgAttest{
+				Authority:        myValAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+				Height:           spec.attestH,
+				Vote:             make([]byte, MinVoteLen),
+			}
+
+			rsp, err := server.Attest(ctx, msg)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				require.Nil(t, rsp)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rsp)
+		})
+	}
+}
+
 var _ types.StakingKeeper = &MockStakingKeeper{}
 
 type MockStakingKeeper struct {
