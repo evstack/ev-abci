@@ -179,7 +179,6 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 	if err := k.SetAttesterInfo(ctx, msg.ConsensusAddress, attesterInfo); err != nil {
 		return nil, sdkerr.Wrap(err, "set attester info")
 	}
-
 	// TODO (Alex): the valset should be updated at the end of an epoch only
 	if err := k.SetAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
 		return nil, sdkerr.Wrap(err, "set attester set member")
@@ -204,6 +203,9 @@ func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAt
 		return nil, err
 	}
 
+	if err := k.AttesterInfo.Remove(ctx, msg.ConsensusAddress); err != nil {
+		return nil, sdkerr.Wrap(err, "remove attester info")
+	}
 	// TODO (Alex): the valset should be updated at the end of an epoch only
 	if err := k.RemoveAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
 		return nil, sdkerr.Wrap(err, "remove attester set member")
