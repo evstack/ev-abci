@@ -193,7 +193,7 @@ func (m *MsgJoinAttesterSetResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgJoinAttesterSetResponse proto.InternalMessageInfo
 
-// MsgLeaveAttesterSet opts a validatr out of the attester set
+// MsgLeaveAttesterSet opts a validator out of the attester set
 type MsgLeaveAttesterSet struct {
 	// authority is the address of the account submitting and paying for the transaction
 	Authority string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`

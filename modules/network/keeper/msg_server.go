@@ -38,12 +38,13 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		!k.IsCheckpointHeight(ctx, msg.Height) {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "height %d is not a checkpoint", msg.Height)
 	}
-	has, err := k.IsInAttesterSet(ctx, msg.ConsensusAddress)
-	if err != nil {
-		return nil, sdkerr.Wrapf(err, "in attester set")
+
+	if len(msg.Vote) < MinVoteLen {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote payload too short: got %d bytes, minimum %d", len(msg.Vote), MinVoteLen)
 	}
-	if !has {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "consensus address %s not in attester set", msg.ConsensusAddress)
+
+	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
+		return nil, err
 	}
 
 	index, found := k.GetValidatorIndex(ctx, msg.ConsensusAddress)
@@ -68,15 +69,6 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 
 	if k.bitmapHelper.IsSet(bitmap, int(index)) {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s already attested for height %d", msg.ConsensusAddress, msg.Height)
-	}
-
-	// Validate vote payload meets minimum signature length.
-	// A valid vote must contain at least a cryptographic signature (
-	// 64 bytes for Ed25519). We enforce the minimum here; full cryptographic
-	// verification of the signature against the block data should be added once
-	// the vote format is finalized.
-	if len(msg.Vote) < MinVoteLen {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote payload too short: got %d bytes, minimum %d", len(msg.Vote), MinVoteLen)
 	}
 
 	// Set the bit
@@ -179,7 +171,7 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 
 	// Store the attester information including pubkey (key by consensus address)
 	attesterInfo := &types.AttesterInfo{
-		Validator:    msg.ConsensusAddress, // Use consensus address as primary key
+		Authority:    msg.Authority,
 		Pubkey:       msg.Pubkey,
 		JoinedHeight: ctx.BlockHeight(),
 	}
@@ -187,7 +179,6 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 	if err := k.SetAttesterInfo(ctx, msg.ConsensusAddress, attesterInfo); err != nil {
 		return nil, sdkerr.Wrap(err, "set attester info")
 	}
-
 	// TODO (Alex): the valset should be updated at the end of an epoch only
 	if err := k.SetAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
 		return nil, sdkerr.Wrap(err, "set attester set member")
@@ -208,14 +199,13 @@ func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAtte
 func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAttesterSet) (*types.MsgLeaveAttesterSetResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	has, err := k.IsInAttesterSet(ctx, msg.ConsensusAddress)
-	if err != nil {
-		return nil, sdkerr.Wrapf(err, "in attester set")
-	}
-	if !has {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address not in attester set")
+	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
+		return nil, err
 	}
 
+	if err := k.AttesterInfo.Remove(ctx, msg.ConsensusAddress); err != nil {
+		return nil, sdkerr.Wrap(err, "remove attester info")
+	}
 	// TODO (Alex): the valset should be updated at the end of an epoch only
 	if err := k.RemoveAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
 		return nil, sdkerr.Wrap(err, "remove attester set member")
@@ -230,6 +220,20 @@ func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAt
 	)
 
 	return &types.MsgLeaveAttesterSetResponse{}, nil
+}
+
+func (k msgServer) assertValidValidatorAuthority(ctx sdk.Context, consensusAddress, authority string) error {
+	v, err := k.AttesterInfo.Get(ctx, consensusAddress)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "consensus address %s not in attester set", consensusAddress)
+		}
+		return sdkerr.Wrapf(err, "attester set")
+	}
+	if v.Authority != authority {
+		return sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "address %s", authority)
+	}
+	return nil
 }
 
 // UpdateParams handles MsgUpdateParams
