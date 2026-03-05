@@ -19,7 +19,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.15
 	github.com/cosmos/gogoproto v1.7.2
 	github.com/evstack/ev-node v1.0.0-rc.4.0.20260216131057-1da76345e4b9
-	github.com/evstack/ev-node/core v1.0.0-rc.1.0.20260216131057-1da76345e4b9
+	github.com/evstack/ev-node/core v1.0.0
 	github.com/go-kit/kit v0.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/gorilla/websocket v1.5.3
