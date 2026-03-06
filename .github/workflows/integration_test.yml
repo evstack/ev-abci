@@ -47,7 +47,7 @@ jobs:
           fi
 
       - name: Build and push GM image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: tests/integration/docker/Dockerfile.gm
