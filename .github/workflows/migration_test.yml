@@ -77,7 +77,7 @@ jobs:
           echo "ENABLE_IBC=${{ matrix.enable_ibc }}"
 
       - name: Build & push Cosmos-SDK image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.cosmos-sdk
@@ -126,7 +126,7 @@ jobs:
           echo "ENABLE_IBC=${{ matrix.enable_ibc }}"
 
       - name: Build & push Evolve image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
