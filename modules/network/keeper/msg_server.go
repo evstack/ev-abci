@@ -51,8 +51,29 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "validator index not found for %s", msg.ConsensusAddress)
 	}
 
-	// todo (Alex): we need to set a limit to not have validators attest old blocks. Also make sure that this relates with
-	// the retention period for pruning
+	// Enforce attestation height upper bound to prevent storage exhaustion
+	// from future-height spam.
+	currentHeight := ctx.BlockHeight()
+	maxFutureHeight := currentHeight + 1
+	if msg.Height > maxFutureHeight {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d exceeds max allowed height %d", msg.Height, maxFutureHeight)
+	}
+
+	// Enforce attestation height lower bound: reject heights that fall below
+	// the PruneAfter retention window. Attesting pruned/about-to-be-pruned
+	// heights wastes storage and serves no purpose. This uses the same epoch
+	// calculation as PruneOldBitmaps so the two stay aligned.
+	params := k.GetParams(ctx)
+	minHeight := int64(1)
+	if params.PruneAfter > 0 && params.EpochLength > 0 {
+		currentEpoch := uint64(currentHeight) / params.EpochLength
+		if currentEpoch > params.PruneAfter {
+			minHeight = int64((currentEpoch - params.PruneAfter) * params.EpochLength)
+		}
+	}
+	if msg.Height < minHeight {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below retention window (min %d)", msg.Height, minHeight)
+	}
 	bitmap, err := k.GetAttestationBitmap(ctx, msg.Height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
 		return nil, sdkerr.Wrap(err, "get attestation bitmap")
