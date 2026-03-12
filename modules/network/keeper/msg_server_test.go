@@ -323,7 +323,6 @@ func TestAttest(t *testing.T) {
 			expErr: sdkerrors.ErrUnauthorized,
 		},
 	}
-
 	for name, spec := range tests {
 		t.Run(name, func(t *testing.T) {
 			sk := NewMockStakingKeeper()
@@ -343,8 +342,6 @@ func TestAttest(t *testing.T) {
 	}
 }
 
-// helpers
-
 func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.Context) {
 	t.Helper()
 	cdc := moduletestutil.MakeTestEncodingConfig().Codec
@@ -361,9 +358,9 @@ func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.
 
 func TestAttestHeightBounds(t *testing.T) {
 	myValAddr := sdk.ValAddress("validator1")
+	ownerAddr := sdk.ValAddress("attester_owner")
 	// With DefaultParams: EpochLength=1, PruneAfter=15
 	// At blockHeight=100: currentEpoch=100, minHeight=(100-7)*1=93
-
 	specs := map[string]struct {
 		blockHeight int64
 		attestH     int64
@@ -406,7 +403,6 @@ func TestAttestHeightBounds(t *testing.T) {
 			attestH:     1,
 		},
 	}
-
 	for name, spec := range specs {
 		t.Run(name, func(t *testing.T) {
 			sk := NewMockStakingKeeper()
@@ -425,17 +421,21 @@ func TestAttestHeightBounds(t *testing.T) {
 
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 
-			// Setup: add attester and build index map
-			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			joinMsg := &types.MsgJoinAttesterSet{
+				Authority:        ownerAddr.String(),
+				ConsensusAddress: myValAddr.String(),
+			}
+			_, err := server.JoinAttesterSet(ctx, joinMsg)
+			require.NoError(t, err)
 			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
 
+			// when
 			msg := &types.MsgAttest{
-				Authority:        myValAddr.String(),
+				Authority:        ownerAddr.String(),
 				ConsensusAddress: myValAddr.String(),
 				Height:           spec.attestH,
 				Vote:             make([]byte, MinVoteLen),
 			}
-
 			rsp, err := server.Attest(ctx, msg)
 			if spec.expErr != nil {
 				require.ErrorIs(t, err, spec.expErr)
