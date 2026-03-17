@@ -2,19 +2,21 @@ package types
 
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
+	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 )
 
+// RegisterCodec registers the necessary symslashing interfaces and concrete types
+// on the provided LegacyAmino codec.
 func RegisterCodec(cdc *codec.LegacyAmino) {
-	// Register amino codec
+	// No legacy amino types to register
 }
 
-var (
-	amino = codec.NewLegacyAmino()
+// RegisterLegacyAminoCodec is an alias for RegisterCodec for compatibility.
+func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
+	RegisterCodec(cdc)
+}
 
-	// AminoCdc references the x/symslashing module amino codec.
-	AminoCdc = codec.NewAminoCodec(amino)
-)
-
-func init() {
-	RegisterCodec(amino)
+// RegisterInterfaces registers the module's interfaces with the interface registry.
+func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
+	// No interfaces to register yet
 }

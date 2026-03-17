@@ -1,4 +1,4 @@
-package symstaking
+package symslashing
 
 import (
 	"context"
@@ -13,13 +13,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 
-	"github.com/evstack/ev-abci/modules/symstaking/keeper"
-	"github.com/evstack/ev-abci/modules/symstaking/types"
+	"github.com/evstack/ev-abci/modules/symslashing/keeper"
+	"github.com/evstack/ev-abci/modules/symslashing/types"
 )
 
 var (
-	_ module.AppModuleBasic = AppModuleBasic{}
-	_ appmodule.AppModule   = AppModule{}
+	_ module.AppModuleBasic     = AppModuleBasic{}
+	_ appmodule.AppModule       = AppModule{}
+	_ appmodule.HasBeginBlocker = AppModule{}
 )
 
 type AppModuleBasic struct {
@@ -37,12 +38,12 @@ func NewAppModule(
 	}
 }
 
-// Name returns the symstaking module's name
+// Name returns the symslashing module's name
 func (am AppModuleBasic) Name() string {
 	return types.ModuleName
 }
 
-// RegisterLegacyAminoCodec registers the symstaking module's types on the given LegacyAmino codec.
+// RegisterLegacyAminoCodec registers the symslashing module's types on the given LegacyAmino codec.
 func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	types.RegisterCodec(cdc)
 }
@@ -57,7 +58,7 @@ func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 	return cdc.MustMarshalJSON(types.DefaultGenesisState())
 }
 
-// ValidateGenesis performs genesis state validation for the symstaking module.
+// ValidateGenesis performs genesis state validation for the symslashing module.
 func (am AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
 	var genesisState types.GenesisState
 	if err := cdc.UnmarshalJSON(bz, &genesisState); err != nil {
@@ -66,7 +67,7 @@ func (am AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEn
 	return genesisState.Validate()
 }
 
-// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the symstaking module.
+// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the symslashing module.
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *gwruntime.ServeMux) {
 	// No gRPC gateway routes yet - module doesn't expose query endpoints
 }
@@ -80,7 +81,7 @@ type AppModule struct {
 // IsAppModule implements the appmodule.AppModule interface.
 func (am AppModule) IsAppModule() {}
 
-// InitGenesis performs genesis initialization for the symstaking module.
+// InitGenesis performs genesis initialization for the symslashing module.
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) {
 	var genesisState types.GenesisState
 	cdc.MustUnmarshalJSON(data, &genesisState)
@@ -94,19 +95,7 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 	return cdc.MustMarshalJSON(ExportGenesis(ctx, am.keeper))
 }
 
-// EndBlock returns validator updates from the relay.
-func (am AppModule) EndBlock(ctx context.Context) error {
-	updates, err := am.keeper.EndBlock(sdk.UnwrapSDKContext(ctx))
-	if err != nil {
-		return err
-	}
-	// Note: The validator updates need to be passed to the sequencer.
-	// This is handled by ev-abci returning them via the app module manager.
-	_ = updates
-	return nil
-}
-
-// BeginBlock is a no-op for symstaking.
+// BeginBlock executes the begin block logic for the symslashing module.
 func (am AppModule) BeginBlock(ctx context.Context) error {
-	return nil
+	return am.keeper.BeginBlock(ctx)
 }
