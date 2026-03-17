@@ -2,47 +2,49 @@ package keeper
 
 import (
 	"encoding/hex"
+	"fmt"
 
-	abci "github.com/cometbft/cometbft/abci/types"
 	cryptoProto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/evstack/ev-abci/modules/symstaking/types"
 )
 
 // EndBlock updates the validator set from the relay at the end of each block.
 // It compares the current validator set with the relay's and returns updates.
-func (k Keeper) EndBlock(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
+func (k Keeper) EndBlock(ctx sdk.Context) error {
 	params := k.GetParams(ctx)
 
 	// Only check for epoch updates at specified intervals
 	if ctx.BlockHeight()%params.EpochCheckInterval != 0 {
-		return nil, nil
+		return nil
 	}
 
 	// Get current epoch from relay
 	currentEpoch, err := k.GetCurrentEpochFromRelay(ctx)
 	if err != nil {
 		k.Logger(ctx).Error("failed to get current epoch from relay", "error", err)
-		return nil, err
+		return err
 	}
 
 	// Check if epoch has changed
 	lastEpoch := k.GetCurrentEpoch(ctx)
 	if currentEpoch == lastEpoch {
 		// No epoch change, no validator updates needed
-		return nil, nil
+		return nil
 	}
 
 	// Update stored epoch
 	if err := k.SetCurrentEpoch(ctx, currentEpoch); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Get validator set from relay
 	validatorSet, err := k.GetValidatorSetFromRelay(ctx, currentEpoch)
 	if err != nil {
 		k.Logger(ctx).Error("failed to get validator set from relay", "error", err)
-		return nil, err
+		return err
 	}
 
 	// Build a map of new validators for easy lookup
@@ -53,18 +55,15 @@ func (k Keeper) EndBlock(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 	}
 
 	// Track all updates to return
-	var updates []abci.ValidatorUpdate
+	updatesCount := 0
 
 	// Check for removed or modified validators from last set
 	k.IterateLastValidatorSet(ctx, func(pubkeyHex string, oldPower int64) bool {
 		newPower, exists := newValidators[pubkeyHex]
 		if !exists {
 			// Validator was removed - power 0
-			pubKey := hexToPubKey(pubkeyHex)
-			updates = append(updates, abci.ValidatorUpdate{
-				PubKey: pubKey,
-				Power:  0,
-			})
+			
+			updatesCount++
 			// Call hook for removed validator
 			if k.hooks != nil {
 				edKey := &ed25519.PubKey{Key: hexToBytes(pubkeyHex)}
@@ -74,13 +73,21 @@ func (k Keeper) EndBlock(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 			}
 			// Remove from stored set
 			_ = k.DeleteLastValidatorPower(ctx, pubkeyHex)
+
+			// Emit removal event
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					types.EventTypeValidatorSetUpdate,
+					sdk.NewAttribute(types.AttributeKeyAction, types.AttributeActionRemoved),
+					sdk.NewAttribute(types.AttributeKeyPubKey, pubkeyHex),
+					sdk.NewAttribute(types.AttributeKeyPower, "0"),
+					sdk.NewAttribute(types.AttributeKeyEpoch, fmt.Sprintf("%d", currentEpoch)),
+				),
+			)
 		} else if newPower != oldPower {
 			// Power changed
-			pubKey := hexToPubKey(pubkeyHex)
-			updates = append(updates, abci.ValidatorUpdate{
-				PubKey: pubKey,
-				Power:  newPower,
-			})
+			
+			updatesCount++
 			// Call hook for modified validator
 			if k.hooks != nil {
 				edKey := &ed25519.PubKey{Key: hexToBytes(pubkeyHex)}
@@ -90,6 +97,17 @@ func (k Keeper) EndBlock(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 			}
 			// Update stored power
 			_ = k.SetLastValidatorPower(ctx, pubkeyHex, newPower)
+
+			// Emit modification event
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					types.EventTypeValidatorSetUpdate,
+					sdk.NewAttribute(types.AttributeKeyAction, types.AttributeActionModified),
+					sdk.NewAttribute(types.AttributeKeyPubKey, pubkeyHex),
+					sdk.NewAttribute(types.AttributeKeyPower, fmt.Sprintf("%d", newPower)),
+					sdk.NewAttribute(types.AttributeKeyEpoch, fmt.Sprintf("%d", currentEpoch)),
+				),
+			)
 		}
 		return false
 	})
@@ -100,7 +118,7 @@ func (k Keeper) EndBlock(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 		_, exists := k.GetLastValidatorPower(ctx, pubKeyHex)
 		if !exists {
 			// New validator
-			updates = append(updates, val)
+			updatesCount++
 			// Call hook for new validator
 			if k.hooks != nil {
 				edKey := &ed25519.PubKey{Key: hexToBytes(pubKeyHex)}
@@ -110,16 +128,27 @@ func (k Keeper) EndBlock(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 			}
 			// Store new validator
 			_ = k.SetLastValidatorPower(ctx, pubKeyHex, val.Power)
+
+			// Emit addition event
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					types.EventTypeValidatorSetUpdate,
+					sdk.NewAttribute(types.AttributeKeyAction, types.AttributeActionAdded),
+					sdk.NewAttribute(types.AttributeKeyPubKey, pubKeyHex),
+					sdk.NewAttribute(types.AttributeKeyPower, fmt.Sprintf("%d", val.Power)),
+					sdk.NewAttribute(types.AttributeKeyEpoch, fmt.Sprintf("%d", currentEpoch)),
+				),
+			)
 		}
 	}
 
 	k.Logger(ctx).Info("validator set updated from relay",
 		"epoch", currentEpoch,
 		"total_validators", len(validatorSet),
-		"updates", len(updates),
+		"updates", updatesCount,
 	)
 
-	return updates, nil
+	return nil
 }
 
 // pubKeyToHex converts a protobuf PublicKey to hex string

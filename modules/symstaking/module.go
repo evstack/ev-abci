@@ -96,13 +96,10 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 
 // EndBlock returns validator updates from the relay.
 func (am AppModule) EndBlock(ctx context.Context) error {
-	updates, err := am.keeper.EndBlock(sdk.UnwrapSDKContext(ctx))
+	err := am.keeper.EndBlock(sdk.UnwrapSDKContext(ctx))
 	if err != nil {
 		return err
 	}
-	// Note: The validator updates need to be passed to the sequencer.
-	// This is handled by ev-abci returning them via the app module manager.
-	_ = updates
 	return nil
 }
 
