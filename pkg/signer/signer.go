@@ -1,6 +1,7 @@
 package signer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -47,7 +48,7 @@ func (s *signerWrapper) GetPublic() (crypto.PubKey, error) {
 }
 
 // Sign implements signer.Signer.
-func (s *signerWrapper) Sign(message []byte) ([]byte, error) {
+func (s *signerWrapper) Sign(_ context.Context, message []byte) ([]byte, error) {
 	return s.p2pPrivKey.Sign(message)
 }
 

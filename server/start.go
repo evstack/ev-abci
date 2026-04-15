@@ -49,7 +49,6 @@ import (
 	"github.com/evstack/ev-node/pkg/genesis"
 	"github.com/evstack/ev-node/pkg/p2p"
 	"github.com/evstack/ev-node/pkg/p2p/key"
-	basedsequencer "github.com/evstack/ev-node/pkg/sequencers/based"
 	singlesequencer "github.com/evstack/ev-node/pkg/sequencers/single"
 	"github.com/evstack/ev-node/pkg/signer"
 	"github.com/evstack/ev-node/pkg/store"
@@ -559,22 +558,7 @@ func createSequencer(
 	executor execution.Executor,
 ) (coresequencer.Sequencer, error) {
 	if nodeConfig.Node.BasedSequencer {
-		// Based sequencer mode - fetch transactions only from DA
-		if !nodeConfig.Node.Aggregator {
-			return nil, fmt.Errorf("based sequencer mode requires sequencer mode to be enabled")
-		}
-
-		basedSeq, err := basedsequencer.NewBasedSequencer(daClient, nodeConfig, datastore, genesis, logger, executor)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create based sequencer: %w", err)
-		}
-
-		logger.Info().
-			Str("forced_inclusion_namespace", nodeConfig.DA.GetForcedInclusionNamespace()).
-			Uint64("da_epoch", genesis.DAEpochForcedInclusion).
-			Msg("based sequencer initialized")
-
-		return basedSeq, nil
+		return nil, fmt.Errorf("base sequencing is not supported by ev-abci due to IBC constaints")
 	}
 
 	sequencer, err := singlesequencer.NewSequencer(
