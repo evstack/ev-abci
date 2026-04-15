@@ -364,7 +364,7 @@ type MockSigner struct {
 	mock.Mock
 }
 
-func (m *MockSigner) Sign(message []byte) ([]byte, error) {
+func (m *MockSigner) Sign(_ context.Context, message []byte) ([]byte, error) {
 	args := m.Called(message)
 	if fn, ok := args.Get(0).(func([]byte) []byte); ok {
 		return fn(message), args.Error(1)

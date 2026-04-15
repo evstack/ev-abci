@@ -1,6 +1,6 @@
 module github.com/evstack/ev-abci/tests/integration
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/celestiaorg/tastora v0.8.0

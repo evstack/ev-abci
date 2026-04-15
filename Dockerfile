@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS ignite-builder
+FROM golang:1.26-alpine AS ignite-builder
 ARG ENABLE_IBC=true
 
 # Install dependencies needed for ignite and building
@@ -8,7 +8,7 @@ RUN apk add --no-cache \
     bash
 
 # Set environment variables
-ENV EVNODE_VERSION=v1.0.0-rc.4.0.20260216131057-1da76345e4b9
+ENV EVNODE_VERSION=v1.1.0
 ENV IGNITE_VERSION=v29.6.1
 ENV IGNITE_EVOLVE_APP_VERSION=main
 
