@@ -12,7 +12,10 @@ import (
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
+	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/testutil/integration"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -20,6 +23,7 @@ import (
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -490,4 +494,119 @@ func (m MockStakingKeeper) GetLastValidators(ctx context.Context) (validators []
 
 func (m MockStakingKeeper) GetLastTotalPower(ctx context.Context) (math.Int, error) {
 	return math.NewInt(int64(len(m.activeSet))), nil
+}
+
+func TestVerifyVote(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	// 32-byte block hash (CanonicalizeBlockID requires 32 bytes or empty)
+	blockHash := bytes.Repeat([]byte{0xbb}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	validBytes := signTestVote(t, chainID, 42, priv, blockHash)
+
+	specs := map[string]struct {
+		consAddr string
+		vote     []byte
+		msgH     int64
+		expErr   error
+	}{
+		"valid": {
+			consAddr: consAddr,
+			vote:     validBytes,
+			msgH:     42,
+		},
+		"wrong chain id": {
+			consAddr: consAddr,
+			vote:     signTestVote(t, "other-chain", 42, priv, blockHash),
+			msgH:     42,
+			expErr:   sdkerrors.ErrUnauthorized,
+		},
+		"wrong height": {
+			consAddr: consAddr,
+			vote:     validBytes,
+			msgH:     99,
+			expErr:   sdkerrors.ErrInvalidRequest,
+		},
+		"random 64 bytes": {
+			consAddr: consAddr,
+			vote:     bytes.Repeat([]byte{0x01}, 64),
+			msgH:     42,
+			expErr:   sdkerrors.ErrInvalidRequest, // unmarshal may succeed but checks fail
+		},
+		"signed by different key": {
+			consAddr: consAddr,
+			vote:     signTestVote(t, chainID, 42, cmted25519.GenPrivKey(), blockHash),
+			msgH:     42,
+			expErr:   sdkerrors.ErrUnauthorized,
+		},
+		"prevote type": {
+			consAddr: consAddr,
+			vote: func() []byte {
+				v := cmtproto.Vote{
+					Type:             cmtproto.PrevoteType,
+					Height:           42,
+					Round:            0,
+					BlockID:          cmtproto.BlockID{Hash: blockHash, PartSetHeader: cmtproto.PartSetHeader{}},
+					Timestamp:        testTimeUTC(),
+					ValidatorAddress: pub.Address(),
+				}
+				sb := cmttypes.VoteSignBytes(chainID, &v)
+				sig, _ := priv.Sign(sb)
+				v.Signature = sig
+				bz, _ := proto.Marshal(&v)
+				return bz
+			}(),
+			msgH:   42,
+			expErr: sdkerrors.ErrInvalidRequest,
+		},
+		"non-zero round": {
+			consAddr: consAddr,
+			vote: func() []byte {
+				v := cmtproto.Vote{
+					Type:             cmtproto.PrecommitType,
+					Height:           42,
+					Round:            1,
+					BlockID:          cmtproto.BlockID{Hash: blockHash, PartSetHeader: cmtproto.PartSetHeader{}},
+					Timestamp:        testTimeUTC(),
+					ValidatorAddress: pub.Address(),
+				}
+				sb := cmttypes.VoteSignBytes(chainID, &v)
+				sig, _ := priv.Sign(sb)
+				v.Signature = sig
+				bz, _ := proto.Marshal(&v)
+				return bz
+			}(),
+			msgH:   42,
+			expErr: sdkerrors.ErrInvalidRequest,
+		},
+		"unknown consensus address": {
+			consAddr: sdk.ConsAddress(bytes.Repeat([]byte{0x77}, 20)).String(),
+			vote:     validBytes,
+			msgH:     42,
+			expErr:   sdkerrors.ErrNotFound,
+		},
+	}
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+			_, err := keeper.VerifyVoteForTest(sdkCtx, spec.consAddr, spec.vote, spec.msgH)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }

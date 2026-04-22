@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,9 +9,12 @@ import (
 	"cosmossdk.io/collections"
 	sdkerr "cosmossdk.io/errors"
 	"cosmossdk.io/math"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	"github.com/cosmos/gogoproto/proto"
 
 	"github.com/evstack/ev-abci/modules/network/types"
 )
@@ -255,6 +259,56 @@ func (k msgServer) assertValidValidatorAuthority(ctx sdk.Context, consensusAddre
 		return sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "address %s", authority)
 	}
 	return nil
+}
+
+// verifyVote decodes vote bytes, performs internal-consistency checks, and
+// verifies the signature against the pubkey registered for consensusAddress.
+// Returns the decoded vote on success.
+func (k msgServer) verifyVote(ctx sdk.Context, consensusAddress string, voteBytes []byte, msgHeight int64) (*cmtproto.Vote, error) {
+	var v cmtproto.Vote
+	if err := proto.Unmarshal(voteBytes, &v); err != nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "unmarshal vote: %v", err)
+	}
+	if v.Type != cmtproto.PrecommitType {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote type must be Precommit, got %s", v.Type)
+	}
+	if v.Height != msgHeight {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote height %d != msg height %d", v.Height, msgHeight)
+	}
+	if v.Round != 0 {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote round must be 0, got %d", v.Round)
+	}
+
+	info, err := k.AttesterInfo.Get(ctx, consensusAddress)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "consensus address %s not registered", consensusAddress)
+		}
+		return nil, sdkerr.Wrap(err, "get attester info")
+	}
+	pk, err := info.GetPubKey()
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "decode pubkey")
+	}
+	if !bytes.Equal(v.ValidatorAddress, pk.Address()) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized,
+			"vote validator address %X does not match registered pubkey address %X",
+			v.ValidatorAddress, pk.Address())
+	}
+
+	sig := v.Signature
+	v.Signature = nil
+	signBytes := cmttypes.VoteSignBytes(ctx.ChainID(), &v)
+	if !pk.VerifySignature(signBytes, sig) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "invalid vote signature")
+	}
+	v.Signature = sig
+	return &v, nil
+}
+
+// VerifyVoteForTest exposes verifyVote for unit testing. Not for production use.
+func (k Keeper) VerifyVoteForTest(ctx sdk.Context, consensusAddress string, voteBytes []byte, msgHeight int64) (*cmtproto.Vote, error) {
+	return msgServer{Keeper: k}.verifyVote(ctx, consensusAddress, voteBytes, msgHeight)
 }
 
 // UpdateParams handles MsgUpdateParams
