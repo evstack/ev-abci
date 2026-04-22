@@ -652,7 +652,6 @@ func submitAttestation(
 	if err != nil {
 		return fmt.Errorf("getting Evolve header: %w", err)
 	}
-
 	blockID, err := getOriginalBlockID(ctx, config.Node, height)
 	if err != nil {
 		return fmt.Errorf("getting original block ID: %w", err)
@@ -661,54 +660,30 @@ func submitAttestation(
 	vote := cmtproto.Vote{
 		Type:             cmtproto.PrecommitType,
 		Height:           height,
-		BlockID:          blockID,
 		Round:            0,
+		BlockID:          blockID,
 		Timestamp:        header.Time(),
-		ValidatorAddress: pv.Key.PrivKey.PubKey().Address(),
+		ValidatorAddress: pv.Key.PubKey.Address(),
 		ValidatorIndex:   0,
 	}
-
 	signBytes := cmttypes.VoteSignBytes(config.ChainID, &vote)
-
-	signature, err := pv.Key.PrivKey.Sign(signBytes)
+	sig, err := pv.Key.PrivKey.Sign(signBytes)
 	if err != nil {
-		return fmt.Errorf("signing payload: %w", err)
+		return fmt.Errorf("sign vote: %w", err)
 	}
-
-	validatorAddr := pv.Key.Address
-
-	fmt.Printf("🔍 DEBUG ValidatorAddr used in vote: %X\n", validatorAddr)
-	fmt.Printf("🔍 DEBUG pv.GetAddress(): %X\n", pv.GetAddress())
-	fmt.Printf("🔍 DEBUG pubKey.Address(): %X\n", pv.Key.PubKey.Address())
-
-	attesterVote := &cmtproto.Vote{
-		Type:             cmtproto.PrecommitType,
-		ValidatorAddress: validatorAddr,
-		Height:           height,
-		Round:            0,
-		BlockID:          cmtproto.BlockID{Hash: header.Hash(), PartSetHeader: cmtproto.PartSetHeader{}},
-		Timestamp:        header.Time(),
-		Signature:        signature,
-	}
-
-	voteBytes, err := proto.Marshal(attesterVote)
+	vote.Signature = sig
+	voteBytes, err := proto.Marshal(&vote)
 	if err != nil {
 		return fmt.Errorf("marshal vote: %w", err)
 	}
 
 	authorityAddr := sdk.AccAddress(senderKey.PubKey().Address()).String()
-	msg := networktypes.NewMsgAttest(
-		authorityAddr,
-		valAddr.String(),
-		height,
-		voteBytes,
-	)
+	msg := networktypes.NewMsgAttest(authorityAddr, valAddr.String(), height, voteBytes)
 
 	txHash, err := broadcastTx(ctx, config, msg, senderKey, clientCtx)
 	if err != nil {
 		return fmt.Errorf("broadcast attest tx: %w", err)
 	}
-
 	if config.Verbose {
 		fmt.Printf("Attestation submitted for block %d with hash: %s\n", height, txHash)
 	}
