@@ -146,11 +146,10 @@ func NewAttesterCmd() *cobra.Command {
 
 func assertRegistered(
 	ctx context.Context,
-	config *AttesterConfig,
-	valAddr sdk.ValAddress,
+	consensusPrivKey *pvm.FilePV,
 	clientCtx client.Context,
 ) error {
-	consAddr := sdk.ConsAddress(valAddr).String()
+	consAddr := sdk.ConsAddress(consensusPrivKey.Key.PubKey.Address()).String()
 	queryClient := networktypes.NewQueryClient(clientCtx)
 	resp, err := queryClient.AttesterSet(ctx, &networktypes.QueryAttesterSetRequest{})
 	if err != nil {
@@ -172,7 +171,7 @@ func pullBlocksAndAttest(
 	consensusPrivKey *pvm.FilePV,
 	clientCtx client.Context,
 ) error {
-	if err := assertRegistered(ctx, config, valAddr, clientCtx); err != nil {
+	if err := assertRegistered(ctx, consensusPrivKey, clientCtx); err != nil {
 		return err
 	}
 
@@ -454,7 +453,8 @@ func submitAttestation(
 	}
 
 	authorityAddr := sdk.AccAddress(senderKey.PubKey().Address()).String()
-	msg := networktypes.NewMsgAttest(authorityAddr, valAddr.String(), height, voteBytes)
+	consensusAddr := sdk.ConsAddress(pv.Key.PubKey.Address()).String()
+	msg := networktypes.NewMsgAttest(authorityAddr, consensusAddr, height, voteBytes)
 
 	txHash, err := broadcastTx(ctx, config, msg, senderKey, clientCtx)
 	if err != nil {
