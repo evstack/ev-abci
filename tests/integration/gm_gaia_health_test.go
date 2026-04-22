@@ -100,7 +100,7 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 
 	// Wait for the attester to attest some blocks and LastAttestedHeight to advance.
 	s.T().Log("Waiting for attestations to reach quorum...")
-	const targetHeight int64 = 10
+	var targetHeight int64 = 10
 	err = wait.ForCondition(ctx, 2*time.Minute, 2*time.Second, func() (bool, error) {
 		node := gmChain.GetNodes()[0]
 		rpcClient, _ := node.GetRPCClient()
