@@ -3,7 +3,21 @@ package types
 import (
 	"fmt"
 	"math"
+
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 )
+
+// UnpackInterfaces ensures AttesterInfo.Pubkey Any values have their cached
+// concrete value populated after genesis JSON unmarshaling. Without this, the
+// cosmos-sdk codec leaves the Any unresolved and GetPubKey() returns an error.
+func (gs GenesisState) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
+	for i := range gs.AttesterInfos {
+		if err := gs.AttesterInfos[i].UnpackInterfaces(unpacker); err != nil {
+			return fmt.Errorf("unpack attester %d: %w", i, err)
+		}
+	}
+	return nil
+}
 
 // DefaultGenesisState returns the default genesis state
 func DefaultGenesisState() *GenesisState {
