@@ -563,6 +563,87 @@ func (s *DockerIntegrationTestSuite) testIBCTransfers(ctx context.Context, celes
 		"Celestia native balance mismatch after return: expected %s, got %s",
 		expectedReturnBalance.String(), finalCelestiaNativeBalance.String())
 
+	// Test 3: Transfer GM-native "stake" from GM chain to Celestia. This is the
+	// symmetric case where GM is the source: Celestia's 07-tendermint light
+	// client must accept the attester-produced commit to verify the packet.
+	s.T().Log("=== Testing transfer from GM chain to Celestia (GM-native) ===")
+
+	gmNativeDenom := gmChain.Config.Denom
+	gmToCelestiaIBCDenom := s.calculateIBCDenom(channel.PortID, channel.ChannelID, gmNativeDenom)
+
+	initialGMStakeBalance := s.getBalance(ctx, gmChain, gmAddr, gmNativeDenom)
+	initialCelestiaIBCBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
+	s.T().Logf("Initial GM stake balance: %s %s", initialGMStakeBalance.String(), gmNativeDenom)
+	s.T().Logf("Initial Celestia IBC balance: %s %s", initialCelestiaIBCBalance.String(), gmToCelestiaIBCDenom)
+
+	outboundMsg := transfertypes.NewMsgTransfer(
+		channel.CounterpartyPort, // GM-side port
+		channel.CounterpartyID,   // GM-side channel
+		sdk.NewCoin(gmNativeDenom, transferAmount),
+		gmWallet.GetFormattedAddress(),
+		celestiaAddr.String(),
+		clienttypes.ZeroHeight(),
+		uint64(time.Now().Add(time.Hour).UnixNano()),
+		"",
+	)
+
+	ctxTx3, cancelTx3 := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelTx3()
+	resp, err = gmChain.BroadcastMessages(ctxTx3, gmWallet, outboundMsg)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), uint32(0), resp.Code, "Outbound GM→Celestia transfer failed: %s", resp.RawLog)
+
+	s.T().Logf("Outbound GM→Celestia transfer broadcast successful. TX hash: %s", resp.TxHash)
+
+	s.T().Log("Waiting for Celestia IBC balance to reflect GM-native inbound...")
+	require.NoError(s.T(), s.waitForBalanceIncrease(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom, initialCelestiaIBCBalance, transferAmount, 2*time.Minute))
+
+	finalCelestiaIBCBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
+	s.T().Logf("Final Celestia IBC balance: %s %s", finalCelestiaIBCBalance.String(), gmToCelestiaIBCDenom)
+	expectedCelestiaIBCBalance := initialCelestiaIBCBalance.Add(transferAmount)
+	require.True(s.T(), finalCelestiaIBCBalance.Equal(expectedCelestiaIBCBalance),
+		"Celestia IBC balance mismatch: expected %s, got %s", expectedCelestiaIBCBalance.String(), finalCelestiaIBCBalance.String())
+
+	postOutboundGMStakeBalance := s.getBalance(ctx, gmChain, gmAddr, gmNativeDenom)
+	s.T().Logf("GM stake balance after outbound transfer: %s %s", postOutboundGMStakeBalance.String(), gmNativeDenom)
+
+	// Test 4: Return GM-originated tokens back to GM chain.
+	s.T().Log("=== Returning GM-originated tokens to GM chain ===")
+
+	returnOutboundMsg := transfertypes.NewMsgTransfer(
+		channel.PortID,    // Celestia-side port
+		channel.ChannelID, // Celestia-side channel
+		sdk.NewCoin(gmToCelestiaIBCDenom, transferAmount),
+		celestiaWallet.GetFormattedAddress(),
+		gmAddr.String(),
+		clienttypes.ZeroHeight(),
+		uint64(time.Now().Add(time.Hour).UnixNano()),
+		"",
+	)
+
+	ctxTx4, cancelTx4 := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelTx4()
+	resp, err = celestiaChain.BroadcastMessages(ctxTx4, celestiaWallet, returnOutboundMsg)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), uint32(0), resp.Code, "Return Celestia→GM transfer failed: %s", resp.RawLog)
+
+	s.T().Logf("Return Celestia→GM transfer broadcast successful. TX hash: %s", resp.TxHash)
+
+	s.T().Log("Waiting for GM stake balance to restore...")
+	require.NoError(s.T(), s.waitForBalanceIncrease(ctx, gmChain, gmAddr, gmNativeDenom, postOutboundGMStakeBalance, transferAmount, 2*time.Minute))
+
+	restoredCelestiaIBCBalance := s.getBalance(ctx, celestiaChain, celestiaAddr, gmToCelestiaIBCDenom)
+	s.T().Logf("Celestia IBC balance after returning tokens: %s %s", restoredCelestiaIBCBalance.String(), gmToCelestiaIBCDenom)
+	require.True(s.T(), restoredCelestiaIBCBalance.Equal(initialCelestiaIBCBalance),
+		"Celestia IBC balance mismatch after return: expected %s, got %s", initialCelestiaIBCBalance.String(), restoredCelestiaIBCBalance.String())
+
+	finalGMStakeBalance := s.getBalance(ctx, gmChain, gmAddr, gmNativeDenom)
+	s.T().Logf("Final GM stake balance: %s %s", finalGMStakeBalance.String(), gmNativeDenom)
+	expectedFinalGMStakeBalance := postOutboundGMStakeBalance.Add(transferAmount)
+	require.True(s.T(), finalGMStakeBalance.Equal(expectedFinalGMStakeBalance),
+		"GM stake balance mismatch after return: expected %s, got %s",
+		expectedFinalGMStakeBalance.String(), finalGMStakeBalance.String())
+
 	s.T().Log("=== IBC Transfer Tests Completed Successfully ===")
 }
 
