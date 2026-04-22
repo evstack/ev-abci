@@ -466,31 +466,43 @@ func submitAttestation(
 	return nil
 }
 
+// getLatestHeight returns the latest raw block height the sequencer has
+// produced. It cannot use /status in attester mode because /status reports
+// the last-attested height there (which is 0 before any attestation is made,
+// causing a deadlock: attester waits for blocks to attest, but /status can't
+// advance until attestations land). Instead, it hits /block with no height,
+// which the RPC resolves to RollkitStore.Height — the real production height.
 func getLatestHeight(nodeURL string) (int64, error) {
 	parsed, err := url.Parse(nodeURL)
 	if err != nil {
 		return 0, fmt.Errorf("parse node URL: %w", err)
 	}
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	resp, err := httpClient.Get(fmt.Sprintf("http://%s/status", parsed.Host))
+	resp, err := httpClient.Get(fmt.Sprintf("http://%s/block", parsed.Host))
 	if err != nil {
-		return 0, fmt.Errorf("query status: %w", err)
+		return 0, fmt.Errorf("query block: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var statusResp struct {
+	var blockResp struct {
 		Result struct {
-			SyncInfo struct {
-				LatestBlockHeight string `json:"latest_block_height"`
-			} `json:"sync_info"`
+			Block struct {
+				Header struct {
+					Height string `json:"height"`
+				} `json:"header"`
+			} `json:"block"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
-		return 0, fmt.Errorf("decode status: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(&blockResp); err != nil {
+		return 0, fmt.Errorf("decode block: %w", err)
 	}
-	h, err := strconv.ParseInt(statusResp.Result.SyncInfo.LatestBlockHeight, 10, 64)
+	heightStr := blockResp.Result.Block.Header.Height
+	if heightStr == "" {
+		return 0, nil
+	}
+	h, err := strconv.ParseInt(heightStr, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("parse height %q: %w", statusResp.Result.SyncInfo.LatestBlockHeight, err)
+		return 0, fmt.Errorf("parse height %q: %w", heightStr, err)
 	}
 	return h, nil
 }
