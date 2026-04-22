@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 
 	"github.com/evstack/ev-abci/modules/network/keeper"
 	"github.com/evstack/ev-abci/modules/network/types"
@@ -27,11 +28,24 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		if err != nil {
 			return fmt.Errorf("attester %d: %w", i, err)
 		}
-		derived := sdk.ConsAddress(pk.Address()).String()
-		if derived != info.ConsensusAddress {
-			return fmt.Errorf("attester %d: pubkey address mismatch (derived %s, stated %s)",
-				i, derived, info.ConsensusAddress)
+		// Validate pubkey ↔ consensus_address match at the raw-bytes level so
+		// the check is independent of bech32 prefix (e.g. "cosmosvalcons" vs
+		// "celestiavalcons"). Whatever prefix was used in genesis, the 20-byte
+		// payload must equal the pubkey's Address().
+		_, rawAddr, decErr := bech32.DecodeAndConvert(info.ConsensusAddress)
+		if decErr != nil {
+			return fmt.Errorf("attester %d: decode consensus_address %q: %w", i, info.ConsensusAddress, decErr)
 		}
+		if !bytes.Equal(rawAddr, pk.Address()) {
+			return fmt.Errorf("attester %d: pubkey address mismatch (derived bytes %x, stated bytes %x)",
+				i, pk.Address(), rawAddr)
+		}
+		// Re-encode consensus_address with the runtime SDK config so the
+		// stored value matches what ConsAddress().String() produces elsewhere
+		// in the module at runtime.
+		derived := sdk.ConsAddress(pk.Address()).String()
+		info.ConsensusAddress = derived
+		attesters[i] = info
 	}
 
 	// Order by pubkey.Address() bytes ascending to match cmttypes.NewValidatorSet.
