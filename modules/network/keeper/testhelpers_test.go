@@ -23,16 +23,6 @@ func (s staticBlockIDProvider) GetBlockID(_ context.Context, _ uint64) (*cmttype
 	return &cmttypes.BlockID{Hash: s.hash}, nil
 }
 
-// perHeightBlockIDProvider returns the BlockID for a height from a map; useful
-// when tests need distinct hashes per height.
-type perHeightBlockIDProvider struct {
-	byHeight map[uint64][]byte
-}
-
-func (p perHeightBlockIDProvider) GetBlockID(_ context.Context, h uint64) (*cmttypes.BlockID, error) {
-	return &cmttypes.BlockID{Hash: p.byHeight[h]}, nil
-}
-
 // signTestVote builds a cmtproto.Vote for the given height and key and returns
 // the protobuf-marshaled bytes with the signature attached.
 func signTestVote(t *testing.T, chainID string, height int64, priv cmted25519.PrivKey, blockIDHash []byte) []byte {

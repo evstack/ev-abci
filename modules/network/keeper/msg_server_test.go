@@ -137,7 +137,6 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 	}
 }
 
-
 func TestAttest(t *testing.T) {
 	chainID := "test-chain"
 	priv := cmted25519.GenPrivKey()
