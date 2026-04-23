@@ -95,6 +95,7 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 			cms := integration.CreateMultiStore(keys, logger)
 			authority := authtypes.NewModuleAddress("gov")
 			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), &sk, nil, nil, authority.String())
+			keeper.SetBlockIDProvider(staticBlockIDProvider{hash: blockHash})
 			server := msgServer{Keeper: keeper}
 			ctx := sdk.NewContext(cms, cmtproto.Header{
 				ChainID: chainID,
@@ -237,6 +238,10 @@ func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.
 	cms := integration.CreateMultiStore(keys, logger)
 	authority := authtypes.NewModuleAddress("gov")
 	keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+	// Default-wire the block ID provider so Attest tests work without extra
+	// boilerplate. Tests that exercise BlockID-mismatch rejection override
+	// with their own provider before calling Attest.
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: bytes.Repeat([]byte{0x01}, 32)})
 	server := msgServer{Keeper: keeper}
 	ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
 		WithContext(t.Context())
@@ -303,6 +308,8 @@ func TestAttestHeightBounds(t *testing.T) {
 			cms := integration.CreateMultiStore(keys, logger)
 			authority := authtypes.NewModuleAddress("gov")
 			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), &sk, nil, nil, authority.String())
+			blockHash := bytes.Repeat([]byte{0x01}, 32)
+			keeper.SetBlockIDProvider(staticBlockIDProvider{hash: blockHash})
 			server := msgServer{Keeper: keeper}
 			ctx := sdk.NewContext(cms, cmtproto.Header{
 				ChainID: chainID,
@@ -322,7 +329,6 @@ func TestAttestHeightBounds(t *testing.T) {
 			require.NoError(t, keeper.SetValidatorIndex(ctx, consAddr, 0, 1))
 
 			// Build a signed vote for the expected height
-			blockHash := bytes.Repeat([]byte{0x01}, 32)
 			voteBytes := signTestVote(t, chainID, spec.attestH, priv, blockHash)
 
 			msg := &types.MsgAttest{
@@ -397,6 +403,9 @@ func TestVerifyVote(t *testing.T) {
 
 	sk := NewMockStakingKeeper()
 	_, keeper, ctx := newTestServer(t, &sk)
+	// Override the default provider so the "valid" spec's BlockID.Hash
+	// matches the sequencer's stored hash.
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: blockHash})
 
 	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
 	require.NoError(t, err)
@@ -500,4 +509,75 @@ func TestVerifyVote(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// TestVerifyVote_RejectsMismatchedBlockIDHash is a regression for the
+// attester-forged-BlockID vector: the attester produces a self-consistent
+// signed vote but over a BlockID.Hash that does not match what the
+// sequencer stored for the height. The 07-tendermint light client would
+// later reject the reconstructed commit; MsgAttest must fail fast here.
+func TestVerifyVote_RejectsMismatchedBlockIDHash(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	sequencerHash := bytes.Repeat([]byte{0xaa}, 32)
+	forgedHash := bytes.Repeat([]byte{0xff}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: sequencerHash})
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+
+	// Attester signs a well-formed vote but over the forged hash.
+	forgedVote := signTestVote(t, chainID, 42, priv, forgedHash)
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, forgedVote, 42)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "does not match sequencer block hash")
+
+	// Control: the same machinery accepts a vote over the real hash.
+	realVote := signTestVote(t, chainID, 42, priv, sequencerHash)
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, realVote, 42)
+	require.NoError(t, err)
+}
+
+// TestVerifyVote_RejectsUnwiredProvider guards against a misconfigured app
+// where SetBlockIDProvider is never called — MsgAttest must fail closed
+// rather than silently accept every vote.
+func TestVerifyVote_RejectsUnwiredProvider(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+
+	sk := NewMockStakingKeeper()
+	cdc := moduletestutil.MakeTestEncodingConfig().Codec
+	keys := storetypes.NewKVStoreKeys(types.StoreKey)
+	logger := log.NewTestLogger(t)
+	cms := integration.CreateMultiStore(keys, logger)
+	authority := authtypes.NewModuleAddress("gov")
+	// Intentionally do NOT call SetBlockIDProvider.
+	keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), &sk, nil, nil, authority.String())
+	ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: chainID, Time: time.Now().UTC(), Height: 10}, false, logger).
+		WithContext(t.Context())
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	voteBytes := signTestVote(t, chainID, 10, priv, bytes.Repeat([]byte{0x01}, 32))
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, voteBytes, 10)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "provider not wired")
 }

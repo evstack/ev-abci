@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -11,6 +12,26 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/require"
 )
+
+// staticBlockIDProvider is a test double returning the same BlockID regardless
+// of height. Mirrors the sequencer's view of a stored block hash.
+type staticBlockIDProvider struct {
+	hash []byte
+}
+
+func (s staticBlockIDProvider) GetBlockID(_ context.Context, _ uint64) (*cmttypes.BlockID, error) {
+	return &cmttypes.BlockID{Hash: s.hash}, nil
+}
+
+// perHeightBlockIDProvider returns the BlockID for a height from a map; useful
+// when tests need distinct hashes per height.
+type perHeightBlockIDProvider struct {
+	byHeight map[uint64][]byte
+}
+
+func (p perHeightBlockIDProvider) GetBlockID(_ context.Context, h uint64) (*cmttypes.BlockID, error) {
+	return &cmttypes.BlockID{Hash: p.byHeight[h]}, nil
+}
 
 // signTestVote builds a cmtproto.Vote for the given height and key and returns
 // the protobuf-marshaled bytes with the signature attached.

@@ -203,6 +203,26 @@ func (k msgServer) verifyVote(ctx sdk.Context, consensusAddress string, voteByte
 		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "invalid vote signature")
 	}
 	v.Signature = sig
+
+	// Pin the signed BlockID.Hash to the sequencer's real block hash for this
+	// height. Without this, an attester could sign over an arbitrary BlockID
+	// — the signature would self-verify, but the reconstructed commit would
+	// fail 07-tendermint VerifyCommitLight on IBC counterparties.
+	provider := k.blockIDProvider()
+	if provider == nil {
+		return nil, sdkerr.Wrap(sdkerrors.ErrLogic,
+			"block ID provider not wired; cannot verify vote BlockID")
+	}
+	storedID, err := provider.GetBlockID(ctx, uint64(msgHeight))
+	if err != nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"get block ID for height %d: %v", msgHeight, err)
+	}
+	if !bytes.Equal(v.BlockID.Hash, storedID.Hash) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"vote BlockID hash %X does not match sequencer block hash %X at height %d",
+			v.BlockID.Hash, storedID.Hash, msgHeight)
+	}
 	return &v, nil
 }
 

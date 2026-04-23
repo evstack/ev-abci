@@ -14,6 +14,12 @@ import (
 	"github.com/evstack/ev-abci/modules/network/types"
 )
 
+// mutableState holds keeper fields that must remain observable across value
+// copies of Keeper (e.g. the copy captured by msgServer at wiring time).
+type mutableState struct {
+	blockIDProvider types.BlockIDProvider
+}
+
 // Keeper of the network store
 type Keeper struct {
 	cdc           codec.BinaryCodec
@@ -22,6 +28,7 @@ type Keeper struct {
 	bankKeeper    types.BankKeeper
 	authority     string
 	bitmapHelper  *BitmapHelper
+	mut           *mutableState
 
 	// Collections for state management
 	ValidatorIndex        collections.Map[string, uint16]
@@ -55,6 +62,7 @@ func NewKeeper(
 		bankKeeper:    bk,
 		authority:     authority,
 		bitmapHelper:  NewBitmapHelper(),
+		mut:           &mutableState{},
 
 		ValidatorIndex:        collections.NewMap(sb, types.ValidatorIndexPrefix, "validator_index", collections.StringKey, collections.Uint16Value),
 		ValidatorPower:        collections.NewMap(sb, types.ValidatorPowerPrefix, "validator_power", collections.Uint16Key, collections.Uint64Value),
@@ -79,6 +87,22 @@ func NewKeeper(
 // GetAuthority returns the module authority
 func (k Keeper) GetAuthority() string {
 	return k.authority
+}
+
+// SetBlockIDProvider wires the source of canonical BlockID hashes used to pin
+// attester votes. Must be called once at app-wiring time (post-depinject).
+// The provider is stored on a shared mutableState so value-copies of Keeper
+// (notably the one captured by msgServer) observe the update.
+func (k Keeper) SetBlockIDProvider(p types.BlockIDProvider) {
+	k.mut.blockIDProvider = p
+}
+
+// blockIDProvider returns the wired provider, or nil if none has been set.
+func (k Keeper) blockIDProvider() types.BlockIDProvider {
+	if k.mut == nil {
+		return nil
+	}
+	return k.mut.blockIDProvider
 }
 
 // Logger returns a module-specific logger

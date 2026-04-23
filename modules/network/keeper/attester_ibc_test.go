@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"sort"
@@ -20,6 +21,14 @@ import (
 	"github.com/evstack/ev-abci/modules/network/keeper"
 	"github.com/evstack/ev-abci/modules/network/types"
 )
+
+// staticBlockIDProvider returns the same BlockID hash for every height —
+// mirrors a fixed sequencer view inside unit tests.
+type staticBlockIDProvider struct{ hash []byte }
+
+func (s staticBlockIDProvider) GetBlockID(_ context.Context, _ uint64) (*cmttypes.BlockID, error) {
+	return &cmttypes.BlockID{Hash: s.hash}, nil
+}
 
 func TestAttesterCommitVerifiesAsIBCLightClient(t *testing.T) {
 	chainID := "ibc-test-chain"
@@ -53,6 +62,7 @@ func TestAttesterCommitVerifiesAsIBCLightClient(t *testing.T) {
 
 	// 3. Deterministic BlockID hash (what all attesters sign).
 	blockIDHash := ibcMakeBlockHash(fmt.Sprintf("height-%d", height))
+	k.SetBlockIDProvider(staticBlockIDProvider{hash: blockIDHash})
 
 	// 4. Each attester signs and submits a real MsgAttest (signature-verified path).
 	msgServer := keeper.NewMsgServerImpl(k)
@@ -115,6 +125,7 @@ func TestAttesterCommit_BelowQuorum(t *testing.T) {
 		WithChainID(chainID)
 
 	blockIDHash := ibcMakeBlockHash(fmt.Sprintf("height-%d", height))
+	k.SetBlockIDProvider(staticBlockIDProvider{hash: blockIDHash})
 
 	// Only 1 of 3 signs — below 2/3 quorum; LastAttestedHeight must not advance.
 	msgServer := keeper.NewMsgServerImpl(k)
