@@ -3,6 +3,7 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/core/store"
@@ -14,6 +15,12 @@ import (
 	"github.com/evstack/ev-abci/modules/network/types"
 )
 
+// mutableState holds keeper fields that must remain observable across value
+// copies of Keeper (e.g. the copy captured by msgServer at wiring time).
+type mutableState struct {
+	blockIDProvider types.BlockIDProvider
+}
+
 // Keeper of the network store
 type Keeper struct {
 	cdc           codec.BinaryCodec
@@ -22,6 +29,7 @@ type Keeper struct {
 	bankKeeper    types.BankKeeper
 	authority     string
 	bitmapHelper  *BitmapHelper
+	mut           *mutableState
 
 	// Collections for state management
 	ValidatorIndex        collections.Map[string, uint16]
@@ -55,6 +63,7 @@ func NewKeeper(
 		bankKeeper:    bk,
 		authority:     authority,
 		bitmapHelper:  NewBitmapHelper(),
+		mut:           &mutableState{},
 
 		ValidatorIndex:        collections.NewMap(sb, types.ValidatorIndexPrefix, "validator_index", collections.StringKey, collections.Uint16Value),
 		ValidatorPower:        collections.NewMap(sb, types.ValidatorPowerPrefix, "validator_power", collections.Uint16Key, collections.Uint64Value),
@@ -79,6 +88,22 @@ func NewKeeper(
 // GetAuthority returns the module authority
 func (k Keeper) GetAuthority() string {
 	return k.authority
+}
+
+// SetBlockIDProvider wires the source of canonical BlockID hashes used to pin
+// attester votes. Must be called once at app-wiring time (post-depinject).
+// The provider is stored on a shared mutableState so value-copies of Keeper
+// (notably the one captured by msgServer) observe the update.
+func (k Keeper) SetBlockIDProvider(p types.BlockIDProvider) {
+	k.mut.blockIDProvider = p
+}
+
+// blockIDProvider returns the wired provider, or nil if none has been set.
+func (k Keeper) blockIDProvider() types.BlockIDProvider {
+	if k.mut == nil {
+		return nil
+	}
+	return k.mut.blockIDProvider
 }
 
 // Logger returns a module-specific logger
@@ -185,52 +210,6 @@ func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
 	return attesters, nil
 }
 
-// MaxAttesters is the maximum number of attesters allowed in the set.
-// This prevents unbounded growth, EndBlocker stalling, and uint16 index overflow
-// in BuildValidatorIndexMap.
-const MaxAttesters = 10_000
-
-// BuildValidatorIndexMap rebuilds the validator index mapping
-func (k Keeper) BuildValidatorIndexMap(ctx sdk.Context) error {
-	// Get all attesters instead of bonded validators
-	attesters, err := k.GetAllAttesters(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Guard against uint16 overflow — should not happen if MaxAttesters is enforced
-	// at join time, but defense-in-depth
-	if len(attesters) > int(^uint16(0)) {
-		return fmt.Errorf("attester count %d exceeds uint16 max %d", len(attesters), ^uint16(0))
-	}
-
-	// Clear existing indices and powers
-	// The `nil` range clears all entries in the collection.
-	if err := k.ValidatorIndex.Clear(ctx, nil); err != nil {
-		k.Logger(ctx).Error("failed to clear validator index", "error", err)
-		return err
-	}
-	if err := k.ValidatorPower.Clear(ctx, nil); err != nil {
-		k.Logger(ctx).Error("failed to clear validator power", "error", err)
-		return err
-	}
-
-	// Build new indices for all attesters with voting power of 1
-	index := uint16(0)
-	for _, attesterAddr := range attesters {
-		power := uint64(1) // Assign voting power of 1 to all attesters
-		if err := k.SetValidatorIndex(ctx, attesterAddr, index, power); err != nil {
-			// Consider how to handle partial failures; potentially log and continue or return error.
-			k.Logger(ctx).Error("failed to set validator index during build", "attester", attesterAddr, "error", err)
-			return err
-		}
-		k.Logger(ctx).Debug("assigned index to attester", "attester", attesterAddr, "index", index, "power", power)
-		index++
-	}
-	k.Logger(ctx).Info("rebuilt validator index map for attesters", "count", len(attesters))
-	return nil
-}
-
 // GetCurrentEpoch returns the current epoch number
 func (k Keeper) GetCurrentEpoch(ctx sdk.Context) uint64 {
 	params := k.GetParams(ctx)
@@ -277,13 +256,11 @@ func (k Keeper) GetTotalPower(ctx sdk.Context) (uint64, error) {
 // CheckQuorum checks if the voted power meets quorum
 func (k Keeper) CheckQuorum(ctx sdk.Context, votedPower, totalPower uint64) (bool, error) {
 	params := k.GetParams(ctx)
-	quorumFrac, err := math.LegacyNewDecFromStr(params.QuorumFraction)
-	if err != nil {
+	if _, err := math.LegacyNewDecFromStr(params.QuorumFraction); err != nil {
 		return false, fmt.Errorf("invalid quorum fraction: %w", err)
 	}
 
-	requiredPower := math.LegacyNewDec(int64(totalPower)).Mul(quorumFrac).TruncateInt().Uint64()
-	return votedPower >= requiredPower, nil
+	return votedPower*3 > totalPower*2, nil
 }
 
 // IsSoftConfirmed checks if a block at a given height is soft-confirmed
@@ -373,28 +350,36 @@ func (k Keeper) GetAllSignaturesForHeight(ctx sdk.Context, height int64) (map[st
 		return signatures, nil // No attestations for this height
 	}
 
-	// Get all attesters to map indices to addresses
-	attesters, err := k.GetAllAttesters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get all attesters: %w", err)
+	type indexedAttester struct {
+		addr  string
+		index uint16
 	}
 
-	// Check each attester to see if they signed
-	for i, attesterAddr := range attesters {
-		if i >= len(bitmap)*8 {
-			break // Don't go beyond bitmap size
+	var attesters []indexedAttester
+	if err := k.ValidatorIndex.Walk(ctx, nil, func(addr string, index uint16) (bool, error) {
+		attesters = append(attesters, indexedAttester{addr: addr, index: index})
+		return false, nil
+	}); err != nil {
+		return nil, fmt.Errorf("walk validator index: %w", err)
+	}
+	sort.Slice(attesters, func(i, j int) bool {
+		return attesters[i].index < attesters[j].index
+	})
+
+	for _, attester := range attesters {
+		if int(attester.index) >= len(bitmap)*8 {
+			continue
 		}
 
-		// Check if this attester signed (bit is set in bitmap)
-		if k.bitmapHelper.IsSet(bitmap, i) {
-			signature, err := k.GetSignature(ctx, height, attesterAddr)
+		if k.bitmapHelper.IsSet(bitmap, int(attester.index)) {
+			signature, err := k.GetSignature(ctx, height, attester.addr)
 			if err != nil && !errors.Is(err, collections.ErrNotFound) {
 				k.Logger(ctx).Error("failed to get signature for attester",
-					"height", height, "attester", attesterAddr, "error", err)
+					"height", height, "attester", attester.addr, "error", err)
 				continue
 			}
 			if signature != nil {
-				signatures[attesterAddr] = signature
+				signatures[attester.addr] = signature
 			}
 		}
 	}

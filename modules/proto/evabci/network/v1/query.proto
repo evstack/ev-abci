@@ -6,6 +6,8 @@ option go_package = "github.com/evstack/ev-abci/modules/network/types";
 
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/any.proto";
+import "cosmos_proto/cosmos.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "evabci/network/v1/types.proto";
 import "evabci/network/v1/attester.proto";
@@ -50,6 +52,11 @@ service Query {
   // AttesterInfo queries the attester information including public key
   rpc AttesterInfo(QueryAttesterInfoRequest) returns (QueryAttesterInfoResponse) {
     option (google.api.http).get = "/evabci/network/v1/attester/{validator_address}";
+  }
+
+  // AttesterSet queries the full ordered attester set
+  rpc AttesterSet(QueryAttesterSetRequest) returns (QueryAttesterSetResponse) {
+    option (google.api.http).get = "/evabci/network/v1/attester_set";
   }
 }
 
@@ -142,4 +149,22 @@ message QueryAttesterInfoRequest {
 // QueryAttesterInfoResponse is the response type for the Query/AttesterInfo RPC method.
 message QueryAttesterInfoResponse {
   AttesterInfo attester_info = 1;
+}
+
+// QueryAttesterSetRequest is the request type for the Query/AttesterSet RPC method.
+message QueryAttesterSetRequest {}
+
+// AttesterSetEntry is a single entry in the attester set, ordered by index.
+message AttesterSetEntry {
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string consensus_address = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  uint32 index = 3;
+  google.protobuf.Any pubkey = 4 [(cosmos_proto.accepts_interface) = "cosmos.crypto.PubKey"];
+}
+
+// QueryAttesterSetResponse is the response type for the Query/AttesterSet RPC method.
+message QueryAttesterSetResponse {
+  repeated AttesterSetEntry entries = 1 [(gogoproto.nullable) = false];
 }
