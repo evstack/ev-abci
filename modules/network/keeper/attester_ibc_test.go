@@ -144,6 +144,54 @@ func TestAttesterCommit_BelowQuorum(t *testing.T) {
 	require.Less(t, lastAttested, height, "LastAttestedHeight should not advance below quorum")
 }
 
+func TestAttesterCommit_ExactTwoThirdsDoesNotAdvanceLastAttestedHeight(t *testing.T) {
+	chainID := "ibc-test-chain"
+	const height int64 = 201
+
+	privs := []cmted25519.PrivKey{
+		cmted25519.GenPrivKey(),
+		cmted25519.GenPrivKey(),
+		cmted25519.GenPrivKey(),
+	}
+	attesters := make([]types.AttesterInfo, 0, len(privs))
+	for _, p := range privs {
+		pub := p.PubKey().(cmted25519.PubKey)
+		sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+		require.NoError(t, err)
+		ai, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+		require.NoError(t, err)
+		attesters = append(attesters, *ai)
+	}
+
+	k, ctx, _ := newKeeperForGenesis(t)
+	gs := types.GenesisState{
+		Params:        types.DefaultParams(),
+		AttesterInfos: attesters,
+	}
+	require.NoError(t, network.InitGenesis(ctx, k, gs))
+	ctx = ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID, Height: height}).
+		WithChainID(chainID)
+
+	blockIDHash := ibcMakeBlockHash(fmt.Sprintf("height-%d", height))
+	k.SetBlockIDProvider(staticBlockIDProvider{hash: blockIDHash})
+
+	msgServer := keeper.NewMsgServerImpl(k)
+	for _, p := range privs[:2] {
+		pub := p.PubKey().(cmted25519.PubKey)
+		_, err := msgServer.Attest(ctx, &types.MsgAttest{
+			Authority:        sdk.AccAddress(pub.Address()).String(),
+			ConsensusAddress: sdk.ConsAddress(pub.Address()).String(),
+			Height:           height,
+			Vote:             ibcSignVote(t, chainID, height, p, blockIDHash),
+		})
+		require.NoError(t, err)
+	}
+
+	lastAttested, err := k.GetLastAttestedHeight(ctx)
+	require.NoError(t, err)
+	require.Less(t, lastAttested, height, "exactly 2/3 voting power must not advance LastAttestedHeight")
+}
+
 // -- helpers --
 
 func ibcMakeBlockHash(seed string) []byte {

@@ -256,13 +256,11 @@ func (k Keeper) GetTotalPower(ctx sdk.Context) (uint64, error) {
 // CheckQuorum checks if the voted power meets quorum
 func (k Keeper) CheckQuorum(ctx sdk.Context, votedPower, totalPower uint64) (bool, error) {
 	params := k.GetParams(ctx)
-	quorumFrac, err := math.LegacyNewDecFromStr(params.QuorumFraction)
-	if err != nil {
+	if _, err := math.LegacyNewDecFromStr(params.QuorumFraction); err != nil {
 		return false, fmt.Errorf("invalid quorum fraction: %w", err)
 	}
 
-	requiredPower := math.LegacyNewDec(int64(totalPower)).Mul(quorumFrac).TruncateInt().Uint64()
-	return votedPower >= requiredPower, nil
+	return votedPower*3 > totalPower*2, nil
 }
 
 // IsSoftConfirmed checks if a block at a given height is soft-confirmed
