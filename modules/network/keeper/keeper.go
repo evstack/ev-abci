@@ -3,6 +3,7 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/core/store"
@@ -351,28 +352,36 @@ func (k Keeper) GetAllSignaturesForHeight(ctx sdk.Context, height int64) (map[st
 		return signatures, nil // No attestations for this height
 	}
 
-	// Get all attesters to map indices to addresses
-	attesters, err := k.GetAllAttesters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get all attesters: %w", err)
+	type indexedAttester struct {
+		addr  string
+		index uint16
 	}
 
-	// Check each attester to see if they signed
-	for i, attesterAddr := range attesters {
-		if i >= len(bitmap)*8 {
-			break // Don't go beyond bitmap size
+	var attesters []indexedAttester
+	if err := k.ValidatorIndex.Walk(ctx, nil, func(addr string, index uint16) (bool, error) {
+		attesters = append(attesters, indexedAttester{addr: addr, index: index})
+		return false, nil
+	}); err != nil {
+		return nil, fmt.Errorf("walk validator index: %w", err)
+	}
+	sort.Slice(attesters, func(i, j int) bool {
+		return attesters[i].index < attesters[j].index
+	})
+
+	for _, attester := range attesters {
+		if int(attester.index) >= len(bitmap)*8 {
+			continue
 		}
 
-		// Check if this attester signed (bit is set in bitmap)
-		if k.bitmapHelper.IsSet(bitmap, i) {
-			signature, err := k.GetSignature(ctx, height, attesterAddr)
+		if k.bitmapHelper.IsSet(bitmap, int(attester.index)) {
+			signature, err := k.GetSignature(ctx, height, attester.addr)
 			if err != nil && !errors.Is(err, collections.ErrNotFound) {
 				k.Logger(ctx).Error("failed to get signature for attester",
-					"height", height, "attester", attesterAddr, "error", err)
+					"height", height, "attester", attester.addr, "error", err)
 				continue
 			}
 			if signature != nil {
-				signatures[attesterAddr] = signature
+				signatures[attester.addr] = signature
 			}
 		}
 	}

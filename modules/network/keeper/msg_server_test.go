@@ -348,6 +348,32 @@ func TestAttestHeightBounds(t *testing.T) {
 	}
 }
 
+func TestGetAllSignaturesForHeightUsesValidatorIndexOrder(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	const height int64 = 42
+	indexZeroAddr := "z-index-zero"
+	indexOneAddr := "a-index-one"
+	signature := []byte("signature-for-index-zero")
+
+	require.NoError(t, keeper.SetAttesterSetMember(ctx, indexZeroAddr))
+	require.NoError(t, keeper.SetAttesterSetMember(ctx, indexOneAddr))
+	require.NoError(t, keeper.SetValidatorIndex(ctx, indexZeroAddr, 0, 1))
+	require.NoError(t, keeper.SetValidatorIndex(ctx, indexOneAddr, 1, 1))
+
+	bitmap := keeper.bitmapHelper.NewBitmap(2)
+	keeper.bitmapHelper.SetBit(bitmap, 0)
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, height, bitmap))
+	require.NoError(t, keeper.SetSignature(ctx, height, indexZeroAddr, signature))
+
+	signatures, err := keeper.GetAllSignaturesForHeight(ctx, height)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]byte{
+		indexZeroAddr: signature,
+	}, signatures)
+}
+
 var _ types.StakingKeeper = &MockStakingKeeper{}
 
 type MockStakingKeeper struct {
