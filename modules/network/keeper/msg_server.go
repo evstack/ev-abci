@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,16 +9,15 @@ import (
 	"cosmossdk.io/collections"
 	sdkerr "cosmossdk.io/errors"
 	"cosmossdk.io/math"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	"github.com/cosmos/gogoproto/proto"
 
 	"github.com/evstack/ev-abci/modules/network/types"
 )
-
-// MinVoteLen is the minimum vote payload length in bytes.
-// 64 is the size of a Ed25519 signature
-const MinVoteLen = 64
 
 type msgServer struct {
 	Keeper
@@ -34,16 +34,12 @@ var _ types.MsgServer = msgServer{}
 func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.MsgAttestResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	if k.GetParams(ctx).SignMode == types.SignMode_SIGN_MODE_CHECKPOINT &&
-		!k.IsCheckpointHeight(ctx, msg.Height) {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "height %d is not a checkpoint", msg.Height)
-	}
-
-	if len(msg.Vote) < MinVoteLen {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote payload too short: got %d bytes, minimum %d", len(msg.Vote), MinVoteLen)
-	}
-
 	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
+		return nil, err
+	}
+
+	// Verify the vote: decode, internal checks, signature check.
+	if _, err := k.verifyVote(ctx, msg.ConsensusAddress, msg.Vote, msg.Height); err != nil {
 		return nil, err
 	}
 
@@ -52,18 +48,12 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "validator index not found for %s", msg.ConsensusAddress)
 	}
 
-	// Enforce attestation height upper bound to prevent storage exhaustion
-	// from future-height spam.
+	// Height bounds
 	currentHeight := ctx.BlockHeight()
 	maxFutureHeight := currentHeight + 1
 	if msg.Height > maxFutureHeight {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d exceeds max allowed height %d", msg.Height, maxFutureHeight)
 	}
-
-	// Enforce attestation height lower bound: reject heights that fall below
-	// the PruneAfter retention window. Attesting pruned/about-to-be-pruned
-	// heights wastes storage and serves no purpose. This uses the same epoch
-	// calculation as PruneOldBitmaps so the two stay aligned.
 	params := k.GetParams(ctx)
 	minHeight := int64(1)
 	if params.PruneAfter > 0 && params.EpochLength > 0 {
@@ -75,6 +65,7 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 	if msg.Height < minHeight {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below retention window (min %d)", msg.Height, minHeight)
 	}
+
 	bitmap, err := k.GetAttestationBitmap(ctx, msg.Height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
 		return nil, sdkerr.Wrap(err, "get attestation bitmap")
@@ -84,51 +75,39 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		if err != nil {
 			return nil, err
 		}
-		numAttesters := len(attesters)
-		bitmap = k.bitmapHelper.NewBitmap(numAttesters)
+		bitmap = k.bitmapHelper.NewBitmap(len(attesters))
 	}
 
 	if k.bitmapHelper.IsSet(bitmap, int(index)) {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s already attested for height %d", msg.ConsensusAddress, msg.Height)
 	}
 
-	// Set the bit
 	k.bitmapHelper.SetBit(bitmap, int(index))
 	if err := k.SetAttestationBitmap(ctx, msg.Height, bitmap); err != nil {
 		return nil, sdkerr.Wrap(err, "set attestation bitmap")
 	}
-
-	// Store signature using the consensus address (this is the key fix for IBC)
 	if err := k.SetSignature(ctx, msg.Height, msg.ConsensusAddress, msg.Vote); err != nil {
 		return nil, sdkerr.Wrap(err, "store signature")
 	}
 
-	// Check if quorum is reached after this attestation
 	votedPower, err := k.CalculateVotedPower(ctx, bitmap)
 	if err != nil {
 		return nil, sdkerr.Wrap(err, "calculate voted power")
 	}
-
 	totalPower, err := k.GetTotalPower(ctx)
 	if err != nil {
 		return nil, sdkerr.Wrap(err, "get total power")
 	}
-
 	quorumReached, err := k.CheckQuorum(ctx, votedPower, totalPower)
 	if err != nil {
 		return nil, sdkerr.Wrap(err, "check quorum")
 	}
-
-	// If quorum is reached, update the last attested height
 	if quorumReached {
 		if err := k.UpdateLastAttestedHeight(ctx, msg.Height); err != nil {
 			return nil, sdkerr.Wrap(err, "update last attested height")
 		}
-
 		k.Logger(ctx).Info("block reached quorum and is now soft confirmed",
-			"height", msg.Height,
-			"voted_power", votedPower,
-			"total_power", totalPower)
+			"height", msg.Height, "voted_power", votedPower, "total_power", totalPower)
 	}
 
 	epoch := k.GetCurrentEpoch(ctx)
@@ -138,15 +117,13 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		if err != nil {
 			return nil, err
 		}
-		numAttesters := len(attesters)
-		epochBitmap = k.bitmapHelper.NewBitmap(numAttesters)
+		epochBitmap = k.bitmapHelper.NewBitmap(len(attesters))
 	}
 	k.bitmapHelper.SetBit(epochBitmap, int(index))
 	if err := k.SetEpochBitmap(ctx, epoch, epochBitmap); err != nil {
 		return nil, sdkerr.Wrap(err, "set epoch bitmap")
 	}
 
-	// Emit event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.TypeMsgAttest,
@@ -155,7 +132,6 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 			sdk.NewAttribute("height", math.NewInt(msg.Height).String()),
 		),
 	)
-
 	return &types.MsgAttestResponse{}, nil
 }
 
@@ -183,6 +159,84 @@ func (k msgServer) assertValidValidatorAuthority(ctx sdk.Context, consensusAddre
 		return sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "address %s", authority)
 	}
 	return nil
+}
+
+// verifyVote decodes vote bytes, performs internal-consistency checks, and
+// verifies the signature against the pubkey registered for consensusAddress.
+// Returns the decoded vote on success.
+func (k msgServer) verifyVote(ctx sdk.Context, consensusAddress string, voteBytes []byte, msgHeight int64) (*cmtproto.Vote, error) {
+	var v cmtproto.Vote
+	if err := proto.Unmarshal(voteBytes, &v); err != nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "unmarshal vote: %v", err)
+	}
+	if v.Type != cmtproto.PrecommitType {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote type must be Precommit, got %s", v.Type)
+	}
+	if v.Height != msgHeight {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote height %d != msg height %d", v.Height, msgHeight)
+	}
+	if v.Round != 0 {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "vote round must be 0, got %d", v.Round)
+	}
+
+	info, err := k.AttesterInfo.Get(ctx, consensusAddress)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "consensus address %s not registered", consensusAddress)
+		}
+		return nil, sdkerr.Wrap(err, "get attester info")
+	}
+	pk, err := info.GetPubKey()
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "decode pubkey")
+	}
+	if !bytes.Equal(v.ValidatorAddress, pk.Address()) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized,
+			"vote validator address %X does not match registered pubkey address %X",
+			v.ValidatorAddress, pk.Address())
+	}
+	voteBlockID, err := cmttypes.BlockIDFromProto(&v.BlockID)
+	if err != nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"invalid vote BlockID: %v", err)
+	}
+
+	sig := v.Signature
+	v.Signature = nil
+	signBytes := cmttypes.VoteSignBytes(ctx.ChainID(), &v)
+	if !pk.VerifySignature(signBytes, sig) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "invalid vote signature")
+	}
+	v.Signature = sig
+
+	// Pin the full signed BlockID to the sequencer's real BlockID for this
+	// height. CometBFT sign bytes include both Hash and PartSetHeader; accepting
+	// a vote over a different PartSetHeader would later fail VerifyCommitLight.
+	provider := k.blockIDProvider()
+	if provider == nil {
+		return nil, sdkerr.Wrap(sdkerrors.ErrLogic,
+			"block ID provider not wired; cannot verify vote BlockID")
+	}
+	storedID, err := provider.GetBlockID(ctx, uint64(msgHeight))
+	if err != nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"get block ID for height %d: %v", msgHeight, err)
+	}
+	if storedID == nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"block ID for height %d not found", msgHeight)
+	}
+	if !storedID.Equals(*voteBlockID) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"vote BlockID %v does not match sequencer BlockID %v at height %d",
+			voteBlockID, storedID, msgHeight)
+	}
+	return &v, nil
+}
+
+// VerifyVoteForTest exposes verifyVote for unit testing. Not for production use.
+func (k Keeper) VerifyVoteForTest(ctx sdk.Context, consensusAddress string, voteBytes []byte, msgHeight int64) (*cmtproto.Vote, error) {
+	return msgServer{Keeper: k}.verifyVote(ctx, consensusAddress, voteBytes, msgHeight)
 }
 
 // UpdateParams handles MsgUpdateParams
