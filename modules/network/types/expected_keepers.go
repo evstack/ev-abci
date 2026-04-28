@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"cosmossdk.io/math"
+	cmttypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -31,4 +32,10 @@ type BankKeeper interface {
 // BlockSource is the block store
 type BlockSource interface {
 	GetBlockData(ctx context.Context, height uint64) (*tyrollkittypes.SignedHeader, *tyrollkittypes.Data, error)
+}
+
+// BlockIDProvider returns the canonical CometBFT BlockID for a given rollkit height.
+// Used by the network module to pin attester votes to the sequencer's block hash.
+type BlockIDProvider interface {
+	GetBlockID(ctx context.Context, height uint64) (*cmttypes.BlockID, error)
 }
