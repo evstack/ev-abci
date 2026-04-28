@@ -195,6 +195,11 @@ func (k msgServer) verifyVote(ctx sdk.Context, consensusAddress string, voteByte
 			"vote validator address %X does not match registered pubkey address %X",
 			v.ValidatorAddress, pk.Address())
 	}
+	voteBlockID, err := cmttypes.BlockIDFromProto(&v.BlockID)
+	if err != nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"invalid vote BlockID: %v", err)
+	}
 
 	sig := v.Signature
 	v.Signature = nil
@@ -211,11 +216,6 @@ func (k msgServer) verifyVote(ctx sdk.Context, consensusAddress string, voteByte
 	if provider == nil {
 		return nil, sdkerr.Wrap(sdkerrors.ErrLogic,
 			"block ID provider not wired; cannot verify vote BlockID")
-	}
-	voteBlockID, err := cmttypes.BlockIDFromProto(&v.BlockID)
-	if err != nil {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
-			"invalid vote BlockID: %v", err)
 	}
 	storedID, err := provider.GetBlockID(ctx, uint64(msgHeight))
 	if err != nil {
