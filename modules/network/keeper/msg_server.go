@@ -161,86 +161,14 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 
 // JoinAttesterSet handles MsgJoinAttesterSet
 func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAttesterSet) (*types.MsgJoinAttesterSetResponse, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	// Validate the consensus address format
-	_, err := sdk.ValAddressFromBech32(msg.ConsensusAddress)
-	if err != nil {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidAddress, "invalid consensus address: %s", err)
-	}
-
-	// NOTE: Removed bonded validator requirement to allow any address to join attester set
-	// This allows external attesters that are not part of the validator set
-
-	// Check if already in attester set (use consensus address)
-	has, err := k.IsInAttesterSet(ctx, msg.ConsensusAddress)
-	if err != nil {
-		return nil, sdkerr.Wrapf(err, "in attester set")
-	}
-	if has {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address already in attester set")
-	}
-
-	// Enforce maximum attester set size to prevent unbounded growth and uint16 index overflow
-	attesters, err := k.GetAllAttesters(ctx)
-	if err != nil {
-		return nil, sdkerr.Wrap(err, "get all attesters")
-	}
-	if len(attesters) >= MaxAttesters {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attester set is full: %d/%d", len(attesters), MaxAttesters)
-	}
-
-	// Store the attester information including pubkey (key by consensus address)
-	attesterInfo := &types.AttesterInfo{
-		Authority:    msg.Authority,
-		Pubkey:       msg.Pubkey,
-		JoinedHeight: ctx.BlockHeight(),
-	}
-
-	if err := k.SetAttesterInfo(ctx, msg.ConsensusAddress, attesterInfo); err != nil {
-		return nil, sdkerr.Wrap(err, "set attester info")
-	}
-	// TODO (Alex): the valset should be updated at the end of an epoch only
-	if err := k.SetAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
-		return nil, sdkerr.Wrap(err, "set attester set member")
-	}
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.TypeMsgJoinAttesterSet,
-			sdk.NewAttribute("consensus_address", msg.ConsensusAddress),
-			sdk.NewAttribute("authority", msg.Authority),
-		),
-	)
-	k.Logger(ctx).Info("+++ joined attester set", "consensus_address", msg.ConsensusAddress, "authority", msg.Authority)
-	return &types.MsgJoinAttesterSetResponse{}, nil
+	return nil, sdkerr.Wrap(sdkerrors.ErrInvalidRequest,
+		"attester set changes disabled; the set is fixed at genesis")
 }
 
 // LeaveAttesterSet handles MsgLeaveAttesterSet
 func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAttesterSet) (*types.MsgLeaveAttesterSetResponse, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
-		return nil, err
-	}
-
-	if err := k.AttesterInfo.Remove(ctx, msg.ConsensusAddress); err != nil {
-		return nil, sdkerr.Wrap(err, "remove attester info")
-	}
-	// TODO (Alex): the valset should be updated at the end of an epoch only
-	if err := k.RemoveAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
-		return nil, sdkerr.Wrap(err, "remove attester set member")
-	}
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.TypeMsgLeaveAttesterSet,
-			sdk.NewAttribute("consensus_address", msg.ConsensusAddress),
-			sdk.NewAttribute("authority", msg.Authority),
-		),
-	)
-
-	return &types.MsgLeaveAttesterSetResponse{}, nil
+	return nil, sdkerr.Wrap(sdkerrors.ErrInvalidRequest,
+		"attester set changes disabled; the set is fixed at genesis")
 }
 
 func (k msgServer) assertValidValidatorAuthority(ctx sdk.Context, consensusAddress, authority string) error {
