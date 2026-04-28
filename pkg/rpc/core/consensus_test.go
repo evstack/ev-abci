@@ -6,18 +6,24 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmtstate "github.com/cometbft/cometbft/state"
 	cmttypes "github.com/cometbft/cometbft/types"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
+	"github.com/cosmos/gogoproto/proto"
 	ds "github.com/ipfs/go-datastore"
 	testifyassert "github.com/stretchr/testify/assert"
 	testifymock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	networktypes "github.com/evstack/ev-abci/modules/network/types"
 	rollkitmocks "github.com/evstack/ev-node/test/mocks"
 
 	"github.com/evstack/ev-abci/pkg/adapter"
@@ -220,6 +226,106 @@ func TestValidators(t *testing.T) {
 		assert.Contains(err.Error(), "failed to get height")
 		mockStore.AssertExpectations(t)
 	})
+}
+
+func TestValidatorsAttesterModeReturnsFullAttesterSet(t *testing.T) {
+	chainID := "test-chain"
+	height := int64(100)
+	privs := []ed25519.PrivKey{
+		ed25519.GenPrivKey(),
+		ed25519.GenPrivKey(),
+		ed25519.GenPrivKey(),
+		ed25519.GenPrivKey(),
+	}
+
+	setEntries := make([]networktypes.AttesterSetEntry, 0, len(privs))
+	attesterInfoByAddr := make(map[string]*networktypes.AttesterInfo)
+	for i, priv := range privs {
+		pub := priv.PubKey()
+		sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+		require.NoError(t, err)
+		any, err := codectypes.NewAnyWithValue(sdkPk)
+		require.NoError(t, err)
+		consAddr := sdk.ConsAddress(pub.Address()).String()
+		setEntries = append(setEntries, networktypes.AttesterSetEntry{
+			Authority:        sdk.AccAddress(pub.Address()).String(),
+			ConsensusAddress: consAddr,
+			Index:            uint32(i), //nolint:gosec
+			Pubkey:           any,
+		})
+		attesterInfoByAddr[consAddr] = &networktypes.AttesterInfo{
+			Authority:        sdk.AccAddress(pub.Address()).String(),
+			Pubkey:           any,
+			ConsensusAddress: consAddr,
+		}
+	}
+
+	setRespBz, err := proto.Marshal(&networktypes.QueryAttesterSetResponse{Entries: setEntries})
+	require.NoError(t, err)
+
+	signatures := make([]*networktypes.AttesterSignature, 0, 3)
+	blockID := cmtproto.BlockID{Hash: make([]byte, 32), PartSetHeader: cmtproto.PartSetHeader{}}
+	for i, priv := range privs[:3] {
+		vote := cmtproto.Vote{
+			Type:             cmtproto.PrecommitType,
+			Height:           height,
+			Round:            0,
+			BlockID:          blockID,
+			Timestamp:        time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC),
+			ValidatorAddress: priv.PubKey().Address(),
+			ValidatorIndex:   int32(i), //nolint:gosec
+		}
+		sig, err := priv.Sign(cmttypes.VoteSignBytes(chainID, &vote))
+		require.NoError(t, err)
+		vote.Signature = sig
+		voteBz, err := proto.Marshal(&vote)
+		require.NoError(t, err)
+		signatures = append(signatures, &networktypes.AttesterSignature{
+			ValidatorAddress: setEntries[i].ConsensusAddress,
+			Signature:        voteBz,
+		})
+	}
+	sigRespBz, err := proto.Marshal(&networktypes.QueryAttesterSignaturesResponse{Signatures: signatures})
+	require.NoError(t, err)
+
+	mApp := new(MockApp)
+	mApp.On("Query", testifymock.Anything, testifymock.MatchedBy(func(r *abci.RequestQuery) bool {
+		return r.Path == "/evabci.network.v1.Query/AttesterSet"
+	})).Return(&abci.ResponseQuery{Code: 0, Value: setRespBz}, nil)
+	mApp.On("Query", testifymock.Anything, testifymock.MatchedBy(func(r *abci.RequestQuery) bool {
+		return r.Path == "/evabci.network.v1.Query/AttesterSignatures"
+	})).Return(&abci.ResponseQuery{Code: 0, Value: sigRespBz}, nil).Maybe()
+	for consAddr, info := range attesterInfoByAddr {
+		infoRespBz, err := proto.Marshal(&networktypes.QueryAttesterInfoResponse{AttesterInfo: info})
+		require.NoError(t, err)
+		consAddr := consAddr
+		mApp.On("Query", testifymock.Anything, testifymock.MatchedBy(func(r *abci.RequestQuery) bool {
+			if r.Path != "/evabci.network.v1.Query/AttesterInfo" {
+				return false
+			}
+			var req networktypes.QueryAttesterInfoRequest
+			if err := proto.Unmarshal(r.Data, &req); err != nil {
+				return false
+			}
+			return req.ValidatorAddress == consAddr
+		})).Return(&abci.ResponseQuery{Code: 0, Value: infoRespBz}, nil).Maybe()
+	}
+
+	env = &Environment{
+		Adapter:      &adapter.Adapter{App: mApp},
+		AttesterMode: true,
+		Logger:       cmtlog.NewNopLogger(),
+	}
+
+	result, err := Validators(&rpctypes.Context{}, &height, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, result.Validators, 4)
+	require.Equal(t, 4, result.Count)
+	require.Equal(t, 4, result.Total)
+	for i, validator := range result.Validators {
+		require.Equal(t, privs[i].PubKey().Address(), validator.Address)
+		require.Equal(t, int64(1), validator.VotingPower)
+	}
 }
 
 func TestDumpConsensusState(t *testing.T) {
