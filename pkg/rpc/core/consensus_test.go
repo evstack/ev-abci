@@ -23,9 +23,9 @@ import (
 	testifymock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	networktypes "github.com/evstack/ev-abci/modules/network/types"
 	rollkitmocks "github.com/evstack/ev-node/test/mocks"
 
+	networktypes "github.com/evstack/ev-abci/modules/network/types"
 	"github.com/evstack/ev-abci/pkg/adapter"
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
