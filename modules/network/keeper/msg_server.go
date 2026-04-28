@@ -204,24 +204,32 @@ func (k msgServer) verifyVote(ctx sdk.Context, consensusAddress string, voteByte
 	}
 	v.Signature = sig
 
-	// Pin the signed BlockID.Hash to the sequencer's real block hash for this
-	// height. Without this, an attester could sign over an arbitrary BlockID
-	// — the signature would self-verify, but the reconstructed commit would
-	// fail 07-tendermint VerifyCommitLight on IBC counterparties.
+	// Pin the full signed BlockID to the sequencer's real BlockID for this
+	// height. CometBFT sign bytes include both Hash and PartSetHeader; accepting
+	// a vote over a different PartSetHeader would later fail VerifyCommitLight.
 	provider := k.blockIDProvider()
 	if provider == nil {
 		return nil, sdkerr.Wrap(sdkerrors.ErrLogic,
 			"block ID provider not wired; cannot verify vote BlockID")
+	}
+	voteBlockID, err := cmttypes.BlockIDFromProto(&v.BlockID)
+	if err != nil {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"invalid vote BlockID: %v", err)
 	}
 	storedID, err := provider.GetBlockID(ctx, uint64(msgHeight))
 	if err != nil {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
 			"get block ID for height %d: %v", msgHeight, err)
 	}
-	if !bytes.Equal(v.BlockID.Hash, storedID.Hash) {
+	if storedID == nil {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
-			"vote BlockID hash %X does not match sequencer block hash %X at height %d",
-			v.BlockID.Hash, storedID.Hash, msgHeight)
+			"block ID for height %d not found", msgHeight)
+	}
+	if !storedID.Equals(*voteBlockID) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"vote BlockID %v does not match sequencer BlockID %v at height %d",
+			voteBlockID, storedID, msgHeight)
 	}
 	return &v, nil
 }

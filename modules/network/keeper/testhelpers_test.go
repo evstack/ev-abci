@@ -16,23 +16,32 @@ import (
 // staticBlockIDProvider is a test double returning the same BlockID regardless
 // of height. Mirrors the sequencer's view of a stored block hash.
 type staticBlockIDProvider struct {
-	hash []byte
+	hash          []byte
+	partSetHeader cmttypes.PartSetHeader
 }
 
 func (s staticBlockIDProvider) GetBlockID(_ context.Context, _ uint64) (*cmttypes.BlockID, error) {
-	return &cmttypes.BlockID{Hash: s.hash}, nil
+	return &cmttypes.BlockID{Hash: s.hash, PartSetHeader: s.partSetHeader}, nil
 }
 
 // signTestVote builds a cmtproto.Vote for the given height and key and returns
 // the protobuf-marshaled bytes with the signature attached.
 func signTestVote(t *testing.T, chainID string, height int64, priv cmted25519.PrivKey, blockIDHash []byte) []byte {
 	t.Helper()
+	return signTestVoteWithBlockID(t, chainID, height, priv, cmtproto.BlockID{
+		Hash:          blockIDHash,
+		PartSetHeader: cmtproto.PartSetHeader{},
+	})
+}
+
+func signTestVoteWithBlockID(t *testing.T, chainID string, height int64, priv cmted25519.PrivKey, blockID cmtproto.BlockID) []byte {
+	t.Helper()
 	pub := priv.PubKey().(cmted25519.PubKey)
 	v := cmtproto.Vote{
 		Type:             cmtproto.PrecommitType,
 		Height:           height,
 		Round:            0,
-		BlockID:          cmtproto.BlockID{Hash: blockIDHash, PartSetHeader: cmtproto.PartSetHeader{}},
+		BlockID:          blockID,
 		Timestamp:        testTimeUTC(),
 		ValidatorAddress: pub.Address(),
 		ValidatorIndex:   0,

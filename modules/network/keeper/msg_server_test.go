@@ -565,12 +565,52 @@ func TestVerifyVote_RejectsMismatchedBlockIDHash(t *testing.T) {
 	forgedVote := signTestVote(t, chainID, 42, priv, forgedHash)
 	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, forgedVote, 42)
 	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
-	require.Contains(t, err.Error(), "does not match sequencer block hash")
+	require.Contains(t, err.Error(), "does not match sequencer BlockID")
 
 	// Control: the same machinery accepts a vote over the real hash.
 	realVote := signTestVote(t, chainID, 42, priv, sequencerHash)
 	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, realVote, 42)
 	require.NoError(t, err)
+}
+
+func TestVerifyVote_RejectsMismatchedBlockIDPartSetHeader(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	blockHash := bytes.Repeat([]byte{0xaa}, 32)
+	storedPartSetHash := bytes.Repeat([]byte{0x11}, 32)
+	forgedPartSetHash := bytes.Repeat([]byte{0x22}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(staticBlockIDProvider{
+		hash: blockHash,
+		partSetHeader: cmttypes.PartSetHeader{
+			Total: 1,
+			Hash:  storedPartSetHash,
+		},
+	})
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+	forgedBlockID := cmtproto.BlockID{
+		Hash: blockHash,
+		PartSetHeader: cmtproto.PartSetHeader{
+			Total: 1,
+			Hash:  forgedPartSetHash,
+		},
+	}
+	forgedVote := signTestVoteWithBlockID(t, chainID, 42, priv, forgedBlockID)
+
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, forgedVote, 42)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "does not match sequencer BlockID")
 }
 
 // TestVerifyVote_RejectsUnwiredProvider guards against a misconfigured app
