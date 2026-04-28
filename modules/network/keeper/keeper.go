@@ -185,46 +185,6 @@ func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
 	return attesters, nil
 }
 
-// BuildValidatorIndexMap rebuilds the validator index mapping
-func (k Keeper) BuildValidatorIndexMap(ctx sdk.Context) error {
-	// Get all attesters instead of bonded validators
-	attesters, err := k.GetAllAttesters(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Guard against uint16 overflow (defense-in-depth).
-	if len(attesters) > int(^uint16(0)) {
-		return fmt.Errorf("attester count %d exceeds uint16 max %d", len(attesters), ^uint16(0))
-	}
-
-	// Clear existing indices and powers
-	// The `nil` range clears all entries in the collection.
-	if err := k.ValidatorIndex.Clear(ctx, nil); err != nil {
-		k.Logger(ctx).Error("failed to clear validator index", "error", err)
-		return err
-	}
-	if err := k.ValidatorPower.Clear(ctx, nil); err != nil {
-		k.Logger(ctx).Error("failed to clear validator power", "error", err)
-		return err
-	}
-
-	// Build new indices for all attesters with voting power of 1
-	index := uint16(0)
-	for _, attesterAddr := range attesters {
-		power := uint64(1) // Assign voting power of 1 to all attesters
-		if err := k.SetValidatorIndex(ctx, attesterAddr, index, power); err != nil {
-			// Consider how to handle partial failures; potentially log and continue or return error.
-			k.Logger(ctx).Error("failed to set validator index during build", "attester", attesterAddr, "error", err)
-			return err
-		}
-		k.Logger(ctx).Debug("assigned index to attester", "attester", attesterAddr, "index", index, "power", power)
-		index++
-	}
-	k.Logger(ctx).Info("rebuilt validator index map for attesters", "count", len(attesters))
-	return nil
-}
-
 // GetCurrentEpoch returns the current epoch number
 func (k Keeper) GetCurrentEpoch(ctx sdk.Context) uint64 {
 	params := k.GetParams(ctx)

@@ -20,7 +20,6 @@ import (
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/evstack/ev-abci/modules/network/types"
@@ -85,9 +84,9 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 			sk := NewMockStakingKeeper()
 			server, keeper, ctx := newTestServer(t, &sk)
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
-			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
 			require.NoError(t, keeper.SetAttesterInfo(ctx, myValAddr.String(), &types.AttesterInfo{Authority: myValAddr.String()}))
-			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.SetValidatorIndex(ctx, myValAddr.String(), 0, 1))
 
 			msg := &types.MsgAttest{
 				Authority:        myValAddr.String(),
@@ -108,7 +107,6 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 	}
 }
 
-
 func TestAttest(t *testing.T) {
 	ownerAddr := sdk.ValAddress("attester_owner")
 	otherAddr := sdk.ValAddress("other_sender")
@@ -124,13 +122,9 @@ func TestAttest(t *testing.T) {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
 				t.Helper()
 				require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+				require.NoError(t, keeper.SetAttesterInfo(ctx, ownerAddr.String(), &types.AttesterInfo{Authority: ownerAddr.String()}))
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, ownerAddr.String()))
+				require.NoError(t, keeper.SetValidatorIndex(ctx, ownerAddr.String(), 0, 1))
 			},
 			msg: &types.MsgAttest{
 				Authority:        ownerAddr.String(),
@@ -154,13 +148,9 @@ func TestAttest(t *testing.T) {
 		"wrong_authority": {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
 				t.Helper()
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+				require.NoError(t, keeper.SetAttesterInfo(ctx, ownerAddr.String(), &types.AttesterInfo{Authority: ownerAddr.String()}))
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, ownerAddr.String()))
+				require.NoError(t, keeper.SetValidatorIndex(ctx, ownerAddr.String(), 0, 1))
 			},
 			msg: &types.MsgAttest{
 				Authority:        otherAddr.String(),
@@ -269,13 +259,9 @@ func TestAttestHeightBounds(t *testing.T) {
 
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 
-			joinMsg := &types.MsgJoinAttesterSet{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: myValAddr.String(),
-			}
-			_, err := server.JoinAttesterSet(ctx, joinMsg)
-			require.NoError(t, err)
-			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			require.NoError(t, keeper.SetAttesterInfo(ctx, myValAddr.String(), &types.AttesterInfo{Authority: ownerAddr.String()}))
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.SetValidatorIndex(ctx, myValAddr.String(), 0, 1))
 
 			// when
 			msg := &types.MsgAttest{
