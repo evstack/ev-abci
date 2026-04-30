@@ -185,52 +185,6 @@ func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
 	return attesters, nil
 }
 
-// MaxAttesters is the maximum number of attesters allowed in the set.
-// This prevents unbounded growth, EndBlocker stalling, and uint16 index overflow
-// in BuildValidatorIndexMap.
-const MaxAttesters = 10_000
-
-// BuildValidatorIndexMap rebuilds the validator index mapping
-func (k Keeper) BuildValidatorIndexMap(ctx sdk.Context) error {
-	// Get all attesters instead of bonded validators
-	attesters, err := k.GetAllAttesters(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Guard against uint16 overflow — should not happen if MaxAttesters is enforced
-	// at join time, but defense-in-depth
-	if len(attesters) > int(^uint16(0)) {
-		return fmt.Errorf("attester count %d exceeds uint16 max %d", len(attesters), ^uint16(0))
-	}
-
-	// Clear existing indices and powers
-	// The `nil` range clears all entries in the collection.
-	if err := k.ValidatorIndex.Clear(ctx, nil); err != nil {
-		k.Logger(ctx).Error("failed to clear validator index", "error", err)
-		return err
-	}
-	if err := k.ValidatorPower.Clear(ctx, nil); err != nil {
-		k.Logger(ctx).Error("failed to clear validator power", "error", err)
-		return err
-	}
-
-	// Build new indices for all attesters with voting power of 1
-	index := uint16(0)
-	for _, attesterAddr := range attesters {
-		power := uint64(1) // Assign voting power of 1 to all attesters
-		if err := k.SetValidatorIndex(ctx, attesterAddr, index, power); err != nil {
-			// Consider how to handle partial failures; potentially log and continue or return error.
-			k.Logger(ctx).Error("failed to set validator index during build", "attester", attesterAddr, "error", err)
-			return err
-		}
-		k.Logger(ctx).Debug("assigned index to attester", "attester", attesterAddr, "index", index, "power", power)
-		index++
-	}
-	k.Logger(ctx).Info("rebuilt validator index map for attesters", "count", len(attesters))
-	return nil
-}
-
 // GetCurrentEpoch returns the current epoch number
 func (k Keeper) GetCurrentEpoch(ctx sdk.Context) uint64 {
 	params := k.GetParams(ctx)
@@ -306,43 +260,6 @@ func (k Keeper) IsSoftConfirmed(ctx sdk.Context, height int64) (bool, error) {
 	}
 
 	return k.CheckQuorum(ctx, votedPower, totalPower)
-}
-
-// PruneOldBitmaps removes bitmaps older than PruneAfter epochs
-func (k Keeper) PruneOldBitmaps(ctx sdk.Context, currentEpoch uint64) error {
-	params := k.GetParams(ctx)
-	if params.PruneAfter == 0 { // Avoid pruning if PruneAfter is zero or not set
-		return nil
-	}
-	if currentEpoch <= params.PruneAfter {
-		return nil
-	}
-
-	pruneBeforeEpoch := currentEpoch - params.PruneAfter
-	pruneHeight := int64(pruneBeforeEpoch * params.EpochLength) // Assuming EpochLength defines blocks per epoch
-
-	// Prune attestation bitmaps (raw bitmaps)
-	attestationRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(pruneHeight)
-	if err := k.AttestationBitmap.Clear(ctx, attestationRange); err != nil {
-		return fmt.Errorf("clearing attestation bitmaps before height %d: %w", pruneHeight, err)
-	}
-	// Prune stored attestation info (full AttestationBitmap objects)
-	storedAttestationInfoRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(pruneHeight)
-	if err := k.StoredAttestationInfo.Clear(ctx, storedAttestationInfoRange); err != nil {
-		return fmt.Errorf("clearing stored attestation info before height %d: %w", pruneHeight, err)
-	}
-
-	// Prune epoch bitmaps
-	epochRange := new(collections.Range[uint64]).StartInclusive(0).EndExclusive(pruneBeforeEpoch)
-	if err := k.EpochBitmap.Clear(ctx, epochRange); err != nil {
-		return fmt.Errorf("clearing epoch bitmaps before epoch %d: %w", pruneBeforeEpoch, err)
-	}
-
-	// TODO: Consider pruning signatures associated with pruned heights.
-	// This would involve iterating k.Signatures and removing entries where height < pruneHeight.
-
-	k.Logger(ctx).Info("Pruned old bitmaps and attestation info", "prunedBeforeEpoch", pruneBeforeEpoch, "prunedBeforeHeight", pruneHeight)
-	return nil
 }
 
 // SetSignature stores the vote signature for a given height and validator

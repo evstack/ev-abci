@@ -1,9 +1,12 @@
 package network
 
 import (
+	"bytes"
 	"fmt"
+	"sort"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 
 	"github.com/evstack/ev-abci/modules/network/keeper"
 	"github.com/evstack/ev-abci/modules/network/types"
@@ -11,38 +14,80 @@ import (
 
 // InitGenesis initializes the network module's state from a provided genesis state.
 func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) error {
-	// Set module params
 	if err := k.SetParams(ctx, genState.Params); err != nil {
 		return fmt.Errorf("set params: %s", err)
 	}
 
-	// Set validator indices
-	for _, vi := range genState.ValidatorIndices {
-		if err := k.SetValidatorIndex(ctx, vi.Address, uint16(vi.Index), vi.Power); err != nil {
-			return err
+	// Load attesters: validate pubkey/address match, then insert and assign indices.
+	attesters := make([]types.AttesterInfo, len(genState.AttesterInfos))
+	copy(attesters, genState.AttesterInfos)
+
+	for i := range attesters {
+		info := attesters[i]
+		pk, err := info.GetPubKey()
+		if err != nil {
+			return fmt.Errorf("attester %d: %w", i, err)
 		}
-		// Also add to attester set
-		if err := k.SetAttesterSetMember(ctx, vi.Address); err != nil {
-			return err
+		// Validate pubkey ↔ consensus_address match at the raw-bytes level so
+		// the check is independent of bech32 prefix (e.g. "cosmosvalcons" vs
+		// "celestiavalcons"). Whatever prefix was used in genesis, the 20-byte
+		// payload must equal the pubkey's Address().
+		_, rawAddr, decErr := bech32.DecodeAndConvert(info.ConsensusAddress)
+		if decErr != nil {
+			return fmt.Errorf("attester %d: decode consensus_address %q: %w", i, info.ConsensusAddress, decErr)
+		}
+		if !bytes.Equal(rawAddr, pk.Address()) {
+			return fmt.Errorf("attester %d: pubkey address mismatch (derived bytes %x, stated bytes %x)",
+				i, pk.Address(), rawAddr)
+		}
+		// Re-encode consensus_address with the runtime SDK config so the
+		// stored value matches what ConsAddress().String() produces elsewhere
+		// in the module at runtime.
+		derived := sdk.ConsAddress(pk.Address()).String()
+		info.ConsensusAddress = derived
+		attesters[i] = info
+	}
+
+	// Order by pubkey.Address() bytes ascending to match cmttypes.NewValidatorSet.
+	sort.Slice(attesters, func(i, j int) bool {
+		pki, _ := attesters[i].GetPubKey()
+		pkj, _ := attesters[j].GetPubKey()
+		return bytes.Compare(pki.Address(), pkj.Address()) < 0
+	})
+
+	for idx, info := range attesters {
+		if err := k.SetAttesterInfo(ctx, info.ConsensusAddress, &info); err != nil {
+			return fmt.Errorf("set attester info: %w", err)
+		}
+		if err := k.SetAttesterSetMember(ctx, info.ConsensusAddress); err != nil {
+			return fmt.Errorf("set attester set member: %w", err)
+		}
+		if err := k.SetValidatorIndex(ctx, info.ConsensusAddress, uint16(idx), 1); err != nil {
+			return fmt.Errorf("set validator index: %w", err)
 		}
 	}
 
-	// Set attestation bitmaps
+	// Still load historical bitmaps if provided (upgrade/dump scenarios).
 	for _, ab := range genState.AttestationBitmaps {
 		if err := k.SetAttestationBitmap(ctx, ab.Height, ab.Bitmap); err != nil {
 			return err
 		}
-		// Store full attestation info using collections API
 		if err := k.StoredAttestationInfo.Set(ctx, ab.Height, ab); err != nil {
 			return err
 		}
-
 		if ab.SoftConfirmed {
 			if err := setSoftConfirmed(ctx, k, ab.Height); err != nil {
 				return err
 			}
 		}
 	}
+
+	// Legacy: genState.ValidatorIndices is now derived from AttesterInfos and
+	// ignored. Warn if non-empty so operators notice.
+	if len(genState.ValidatorIndices) > 0 {
+		k.Logger(ctx).Error("genesis.validator_indices is deprecated and ignored; use attester_infos")
+	}
+
 	return nil
 }
 
@@ -51,29 +96,22 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	genesis := types.DefaultGenesisState()
 	genesis.Params = k.GetParams(ctx)
 
-	// Export validator indices using collections API
-	var validatorIndices []types.ValidatorIndex
-	// Iterate through all validator indices
-	if err := k.ValidatorIndex.Walk(ctx, nil, func(addr string, index uint16) (bool, error) {
-		power, err := k.GetValidatorPower(ctx, index)
-		if err != nil {
-			return false, fmt.Errorf("get validator power: %w", err)
-		}
-		validatorIndices = append(validatorIndices, types.ValidatorIndex{
-			Address: addr,
-			Index:   uint32(index),
-			Power:   power,
-		})
+	var attesters []types.AttesterInfo
+	if err := k.AttesterInfo.Walk(ctx, nil, func(_ string, info types.AttesterInfo) (bool, error) {
+		attesters = append(attesters, info)
 		return false, nil
 	}); err != nil {
 		panic(err)
 	}
-	genesis.ValidatorIndices = validatorIndices
+	sort.Slice(attesters, func(i, j int) bool {
+		pki, _ := attesters[i].GetPubKey()
+		pkj, _ := attesters[j].GetPubKey()
+		return bytes.Compare(pki.Address(), pkj.Address()) < 0
+	})
+	genesis.AttesterInfos = attesters
 
-	// Export attestation bitmaps using collections API
 	var attestationBitmaps []types.AttestationBitmap
-	// Iterate through all stored attestation info
-	if err := k.StoredAttestationInfo.Walk(ctx, nil, func(height int64, ab types.AttestationBitmap) (bool, error) {
+	if err := k.StoredAttestationInfo.Walk(ctx, nil, func(_ int64, ab types.AttestationBitmap) (bool, error) {
 		attestationBitmaps = append(attestationBitmaps, ab)
 		return false, nil
 	}); err != nil {
@@ -81,24 +119,18 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	}
 	genesis.AttestationBitmaps = attestationBitmaps
 
+	// ValidatorIndices no longer exported: they are derived deterministically
+	// from AttesterInfos order.
+	genesis.ValidatorIndices = nil
+
 	return genesis
 }
 
-// Helper function to set soft confirmed status
 func setSoftConfirmed(ctx sdk.Context, k keeper.Keeper, height int64) error {
-	// Get the existing attestation bitmap
 	ab, err := k.StoredAttestationInfo.Get(ctx, height)
 	if err != nil {
-		// If there's no existing attestation bitmap, we can't set it as soft confirmed
 		return err
 	}
-
-	// Set the SoftConfirmed field to true
 	ab.SoftConfirmed = true
-
-	// Update the attestation bitmap in the collection
-	if err := k.StoredAttestationInfo.Set(ctx, height, ab); err != nil {
-		return err
-	}
-	return nil
+	return k.StoredAttestationInfo.Set(ctx, height, ab)
 }

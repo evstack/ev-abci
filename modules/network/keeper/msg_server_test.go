@@ -20,112 +20,36 @@ import (
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/evstack/ev-abci/modules/network/types"
 )
 
-func TestJoinAttesterSet(t *testing.T) {
-	myValAddr := sdk.ValAddress("validator4")
+func TestJoinAttesterSetDisabled(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	server, _, ctx := newTestServer(t, &sk)
 
-	type testCase struct {
-		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper)
-		msg    *types.MsgJoinAttesterSet
-		expErr error
-		expSet bool
+	msg := &types.MsgJoinAttesterSet{
+		Authority:        sdk.AccAddress([]byte("any-authority-20b")).String(),
+		ConsensusAddress: sdk.ConsAddress([]byte("any-cons-addr-20-b")).String(),
 	}
-
-	tests := map[string]testCase{
-		"valid": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
-				validator := stakingtypes.Validator{
-					OperatorAddress: myValAddr.String(),
-					Status:          stakingtypes.Bonded,
-				}
-				err := sk.SetValidator(ctx, validator)
-				require.NoError(t, err, "failed to set validator")
-			},
-			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
-			expSet: true,
-		},
-		"invalid_addr": {
-			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Authority: "invalidAddr", ConsensusAddress: "invalidAddr"},
-			expErr: sdkerrors.ErrInvalidAddress,
-		},
-		"already set": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
-				validator := stakingtypes.Validator{
-					OperatorAddress: myValAddr.String(),
-					Status:          stakingtypes.Bonded,
-				}
-				require.NoError(t, sk.SetValidator(ctx, validator))
-				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
-			},
-			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
-			expErr: sdkerrors.ErrInvalidRequest,
-			expSet: true,
-		},
-	}
-
-	for name, spec := range tests {
-		t.Run(name, func(t *testing.T) {
-			sk := NewMockStakingKeeper()
-			server, keeper, ctx := newTestServer(t, &sk)
-
-			spec.setup(t, ctx, &keeper, &sk)
-
-			// when
-			rsp, err := server.JoinAttesterSet(ctx, spec.msg)
-			// then
-			if spec.expErr != nil {
-				require.ErrorIs(t, err, spec.expErr)
-				require.Nil(t, rsp)
-				exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
-				require.NoError(t, gotErr)
-				assert.Equal(t, exists, spec.expSet)
-				return
-			}
-			require.NoError(t, err)
-			require.NotNil(t, rsp)
-			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
-			require.NoError(t, gotErr)
-			assert.True(t, exists)
-
-			// Verify authority is stored correctly in AttesterInfo
-			info, infoErr := keeper.GetAttesterInfo(ctx, spec.msg.ConsensusAddress)
-			require.NoError(t, infoErr)
-			assert.Equal(t, spec.msg.Authority, info.Authority)
-		})
-	}
+	rsp, err := server.JoinAttesterSet(ctx, msg)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "attester set changes disabled")
+	require.Nil(t, rsp)
 }
 
-func TestJoinAttesterSetMaxCap(t *testing.T) {
-	// Verify the constant is set to a sane value that is within uint16 range
-	require.LessOrEqual(t, MaxAttesters, int(^uint16(0)),
-		"MaxAttesters must fit in uint16 to avoid index overflow in BuildValidatorIndexMap")
+func TestLeaveAttesterSetDisabled(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	server, _, ctx := newTestServer(t, &sk)
 
-	t.Run("join succeeds under cap", func(t *testing.T) {
-		sk := NewMockStakingKeeper()
-		server, keeper, ctx := newTestServer(t, &sk)
-
-		// With an empty set, join should succeed
-		newAddr := sdk.ValAddress("new_attester")
-		msg := &types.MsgJoinAttesterSet{
-			Authority:        newAddr.String(),
-			ConsensusAddress: newAddr.String(),
-		}
-
-		rsp, err := server.JoinAttesterSet(ctx, msg)
-		require.NoError(t, err)
-		require.NotNil(t, rsp)
-
-		// Verify the attester was added
-		exists, err := keeper.AttesterSet.Has(ctx, newAddr.String())
-		require.NoError(t, err)
-		assert.True(t, exists)
-	})
+	msg := &types.MsgLeaveAttesterSet{
+		Authority:        sdk.AccAddress([]byte("any-authority-20b")).String(),
+		ConsensusAddress: sdk.ConsAddress([]byte("any-cons-addr-20-b")).String(),
+	}
+	rsp, err := server.LeaveAttesterSet(ctx, msg)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Nil(t, rsp)
 }
 
 func TestAttestVotePayloadValidation(t *testing.T) {
@@ -160,9 +84,9 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 			sk := NewMockStakingKeeper()
 			server, keeper, ctx := newTestServer(t, &sk)
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
-			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
 			require.NoError(t, keeper.SetAttesterInfo(ctx, myValAddr.String(), &types.AttesterInfo{Authority: myValAddr.String()}))
-			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.SetValidatorIndex(ctx, myValAddr.String(), 0, 1))
 
 			msg := &types.MsgAttest{
 				Authority:        myValAddr.String(),
@@ -183,84 +107,6 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 	}
 }
 
-func TestLeaveAttesterSet(t *testing.T) {
-	ownerAddr := sdk.ValAddress("owner1")
-	otherAddr := sdk.ValAddress("other1")
-
-	type testCase struct {
-		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer)
-		msg    *types.MsgLeaveAttesterSet
-		expErr error
-	}
-
-	tests := map[string]testCase{
-		"valid": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
-				t.Helper()
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
-			},
-		},
-		"not_in_set": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
-				t.Helper()
-			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
-			},
-			expErr: sdkerrors.ErrUnauthorized,
-		},
-		"wrong_authority": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
-				t.Helper()
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        otherAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
-			},
-			expErr: sdkerrors.ErrUnauthorized,
-		},
-	}
-
-	for name, spec := range tests {
-		t.Run(name, func(t *testing.T) {
-			sk := NewMockStakingKeeper()
-			server, keeper, ctx := newTestServer(t, &sk)
-
-			spec.setup(t, ctx, &keeper, server)
-
-			rsp, err := server.LeaveAttesterSet(ctx, spec.msg)
-			if spec.expErr != nil {
-				require.ErrorIs(t, err, spec.expErr)
-				require.Nil(t, rsp)
-				return
-			}
-			require.NoError(t, err)
-			require.NotNil(t, rsp)
-
-			// Verify actually removed from attester set
-			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
-			require.NoError(t, gotErr)
-			assert.False(t, exists)
-		})
-	}
-}
-
 func TestAttest(t *testing.T) {
 	ownerAddr := sdk.ValAddress("attester_owner")
 	otherAddr := sdk.ValAddress("other_sender")
@@ -276,13 +122,9 @@ func TestAttest(t *testing.T) {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
 				t.Helper()
 				require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+				require.NoError(t, keeper.SetAttesterInfo(ctx, ownerAddr.String(), &types.AttesterInfo{Authority: ownerAddr.String()}))
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, ownerAddr.String()))
+				require.NoError(t, keeper.SetValidatorIndex(ctx, ownerAddr.String(), 0, 1))
 			},
 			msg: &types.MsgAttest{
 				Authority:        ownerAddr.String(),
@@ -306,13 +148,9 @@ func TestAttest(t *testing.T) {
 		"wrong_authority": {
 			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
 				t.Helper()
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+				require.NoError(t, keeper.SetAttesterInfo(ctx, ownerAddr.String(), &types.AttesterInfo{Authority: ownerAddr.String()}))
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, ownerAddr.String()))
+				require.NoError(t, keeper.SetValidatorIndex(ctx, ownerAddr.String(), 0, 1))
 			},
 			msg: &types.MsgAttest{
 				Authority:        otherAddr.String(),
@@ -421,13 +259,9 @@ func TestAttestHeightBounds(t *testing.T) {
 
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 
-			joinMsg := &types.MsgJoinAttesterSet{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: myValAddr.String(),
-			}
-			_, err := server.JoinAttesterSet(ctx, joinMsg)
-			require.NoError(t, err)
-			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			require.NoError(t, keeper.SetAttesterInfo(ctx, myValAddr.String(), &types.AttesterInfo{Authority: ownerAddr.String()}))
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
+			require.NoError(t, keeper.SetValidatorIndex(ctx, myValAddr.String(), 0, 1))
 
 			// when
 			msg := &types.MsgAttest{
