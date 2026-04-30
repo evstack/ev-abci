@@ -60,10 +60,8 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d exceeds max allowed height %d", msg.Height, maxFutureHeight)
 	}
 
-	// Enforce attestation height lower bound: reject heights that fall below
-	// the PruneAfter retention window. Attesting pruned/about-to-be-pruned
-	// heights wastes storage and serves no purpose. This uses the same epoch
-	// calculation as PruneOldBitmaps so the two stay aligned.
+	// Enforce attestation height lower bound so validators cannot submit
+	// attestations for heights outside the configured attestation window.
 	params := k.GetParams(ctx)
 	minHeight := int64(1)
 	if params.PruneAfter > 0 && params.EpochLength > 0 {

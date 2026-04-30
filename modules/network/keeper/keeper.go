@@ -262,43 +262,6 @@ func (k Keeper) IsSoftConfirmed(ctx sdk.Context, height int64) (bool, error) {
 	return k.CheckQuorum(ctx, votedPower, totalPower)
 }
 
-// PruneOldBitmaps removes bitmaps older than PruneAfter epochs
-func (k Keeper) PruneOldBitmaps(ctx sdk.Context, currentEpoch uint64) error {
-	params := k.GetParams(ctx)
-	if params.PruneAfter == 0 { // Avoid pruning if PruneAfter is zero or not set
-		return nil
-	}
-	if currentEpoch <= params.PruneAfter {
-		return nil
-	}
-
-	pruneBeforeEpoch := currentEpoch - params.PruneAfter
-	pruneHeight := int64(pruneBeforeEpoch * params.EpochLength) // Assuming EpochLength defines blocks per epoch
-
-	// Prune attestation bitmaps (raw bitmaps)
-	attestationRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(pruneHeight)
-	if err := k.AttestationBitmap.Clear(ctx, attestationRange); err != nil {
-		return fmt.Errorf("clearing attestation bitmaps before height %d: %w", pruneHeight, err)
-	}
-	// Prune stored attestation info (full AttestationBitmap objects)
-	storedAttestationInfoRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(pruneHeight)
-	if err := k.StoredAttestationInfo.Clear(ctx, storedAttestationInfoRange); err != nil {
-		return fmt.Errorf("clearing stored attestation info before height %d: %w", pruneHeight, err)
-	}
-
-	// Prune epoch bitmaps
-	epochRange := new(collections.Range[uint64]).StartInclusive(0).EndExclusive(pruneBeforeEpoch)
-	if err := k.EpochBitmap.Clear(ctx, epochRange); err != nil {
-		return fmt.Errorf("clearing epoch bitmaps before epoch %d: %w", pruneBeforeEpoch, err)
-	}
-
-	// TODO: Consider pruning signatures associated with pruned heights.
-	// This would involve iterating k.Signatures and removing entries where height < pruneHeight.
-
-	k.Logger(ctx).Info("Pruned old bitmaps and attestation info", "prunedBeforeEpoch", pruneBeforeEpoch, "prunedBeforeHeight", pruneHeight)
-	return nil
-}
-
 // SetSignature stores the vote signature for a given height and validator
 func (k Keeper) SetSignature(ctx sdk.Context, height int64, validatorAddr string, signature []byte) error {
 	return k.Signatures.Set(ctx, collections.Join(height, validatorAddr), signature)
