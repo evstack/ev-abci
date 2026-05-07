@@ -27,7 +27,7 @@ require (
 	github.com/hashicorp/go-metrics v0.5.4
 	github.com/ipfs/go-datastore v0.9.1
 	github.com/libp2p/go-libp2p v0.48.0
-	github.com/libp2p/go-libp2p-pubsub v0.15.0
+	github.com/libp2p/go-libp2p-pubsub v0.16.0
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/cors v1.11.1
@@ -35,10 +35,10 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/net v0.52.0
+	golang.org/x/net v0.53.0
 	golang.org/x/sync v0.20.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9
-	google.golang.org/grpc v1.80.0
+	google.golang.org/grpc v1.81.0
 	google.golang.org/protobuf v1.36.11
 	gotest.tools/v3 v3.5.2
 )
@@ -349,14 +349,14 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.17.0 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260311193753-579e4da9a98c // indirect
-	golang.org/x/term v0.41.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/term v0.42.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.43.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
