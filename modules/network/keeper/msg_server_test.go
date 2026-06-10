@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
@@ -446,6 +447,90 @@ func TestAttestHeightBounds(t *testing.T) {
 			require.NotNil(t, rsp)
 		})
 	}
+}
+
+func TestPruneOldBitmapsRemovesAllAttestationStateBelowRetentionWindow(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	params := types.DefaultParams()
+	params.EpochLength = 10
+	params.PruneAfter = 2
+	require.NoError(t, keeper.SetParams(ctx, params))
+
+	oldHeight := int64(19)
+	boundaryHeight := int64(20)
+	oldEpoch := uint64(1)
+	boundaryEpoch := uint64(2)
+	attester := sdk.ValAddress("validator1").String()
+
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, oldHeight, []byte{0x01}))
+	require.NoError(t, keeper.StoredAttestationInfo.Set(ctx, oldHeight, types.AttestationBitmap{
+		Height: oldHeight,
+		Bitmap: []byte{0x01},
+	}))
+	require.NoError(t, keeper.SetEpochBitmap(ctx, oldEpoch, []byte{0x01}))
+	require.NoError(t, keeper.SetSignature(ctx, oldHeight, attester, []byte("old-signature")))
+
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, boundaryHeight, []byte{0x02}))
+	require.NoError(t, keeper.StoredAttestationInfo.Set(ctx, boundaryHeight, types.AttestationBitmap{
+		Height: boundaryHeight,
+		Bitmap: []byte{0x02},
+	}))
+	require.NoError(t, keeper.SetEpochBitmap(ctx, boundaryEpoch, []byte{0x02}))
+	require.NoError(t, keeper.SetSignature(ctx, boundaryHeight, attester, []byte("boundary-signature")))
+
+	require.NoError(t, keeper.PruneOldBitmaps(ctx, 4))
+
+	_, err := keeper.GetAttestationBitmap(ctx, oldHeight)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	_, err = keeper.StoredAttestationInfo.Get(ctx, oldHeight)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	require.Nil(t, keeper.GetEpochBitmap(ctx, oldEpoch))
+	hasOldSignature, err := keeper.HasSignature(ctx, oldHeight, attester)
+	require.NoError(t, err)
+	require.False(t, hasOldSignature)
+
+	bitmap, err := keeper.GetAttestationBitmap(ctx, boundaryHeight)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x02}, bitmap)
+	_, err = keeper.StoredAttestationInfo.Get(ctx, boundaryHeight)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x02}, keeper.GetEpochBitmap(ctx, boundaryEpoch))
+	hasBoundarySignature, err := keeper.HasSignature(ctx, boundaryHeight, attester)
+	require.NoError(t, err)
+	require.True(t, hasBoundarySignature)
+}
+
+func TestEndBlockerPrunesAttestationStateOnEpochBoundary(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	params := types.DefaultParams()
+	params.EpochLength = 10
+	params.PruneAfter = 2
+	require.NoError(t, keeper.SetParams(ctx, params))
+
+	ctx = ctx.WithBlockHeight(49)
+	attester := sdk.ValAddress("validator1").String()
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, 19, []byte{0x01}))
+	require.NoError(t, keeper.SetSignature(ctx, 19, attester, []byte("old-signature")))
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, 20, []byte{0x02}))
+	require.NoError(t, keeper.SetSignature(ctx, 20, attester, []byte("boundary-signature")))
+
+	require.NoError(t, keeper.EndBlocker(ctx))
+
+	_, err := keeper.GetAttestationBitmap(ctx, 19)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	hasOldSignature, err := keeper.HasSignature(ctx, 19, attester)
+	require.NoError(t, err)
+	require.False(t, hasOldSignature)
+
+	_, err = keeper.GetAttestationBitmap(ctx, 20)
+	require.NoError(t, err)
+	hasBoundarySignature, err := keeper.HasSignature(ctx, 20, attester)
+	require.NoError(t, err)
+	require.True(t, hasBoundarySignature)
 }
 
 var _ types.StakingKeeper = &MockStakingKeeper{}

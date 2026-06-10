@@ -308,7 +308,7 @@ func (k Keeper) IsSoftConfirmed(ctx sdk.Context, height int64) (bool, error) {
 	return k.CheckQuorum(ctx, votedPower, totalPower)
 }
 
-// PruneOldBitmaps removes bitmaps older than PruneAfter epochs
+// PruneOldBitmaps removes attestation state older than PruneAfter epochs.
 func (k Keeper) PruneOldBitmaps(ctx sdk.Context, currentEpoch uint64) error {
 	params := k.GetParams(ctx)
 	if params.PruneAfter == 0 { // Avoid pruning if PruneAfter is zero or not set
@@ -338,10 +338,13 @@ func (k Keeper) PruneOldBitmaps(ctx sdk.Context, currentEpoch uint64) error {
 		return fmt.Errorf("clearing epoch bitmaps before epoch %d: %w", pruneBeforeEpoch, err)
 	}
 
-	// TODO: Consider pruning signatures associated with pruned heights.
-	// This would involve iterating k.Signatures and removing entries where height < pruneHeight.
+	signatureRange := new(collections.Range[collections.Pair[int64, string]]).
+		EndExclusive(collections.Join(pruneHeight, ""))
+	if err := k.Signatures.Clear(ctx, signatureRange); err != nil {
+		return fmt.Errorf("clearing signatures before height %d: %w", pruneHeight, err)
+	}
 
-	k.Logger(ctx).Info("Pruned old bitmaps and attestation info", "prunedBeforeEpoch", pruneBeforeEpoch, "prunedBeforeHeight", pruneHeight)
+	k.Logger(ctx).Info("Pruned old attestation state", "prunedBeforeEpoch", pruneBeforeEpoch, "prunedBeforeHeight", pruneHeight)
 	return nil
 }
 
