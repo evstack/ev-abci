@@ -64,16 +64,9 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 	// the PruneAfter retention window. Attesting pruned/about-to-be-pruned
 	// heights wastes storage and serves no purpose. This uses the same epoch
 	// calculation as PruneOldBitmaps so the two stay aligned.
-	params := k.GetParams(ctx)
-	minHeight := int64(1)
-	if params.PruneAfter > 0 && params.EpochLength > 0 {
-		currentEpoch := uint64(currentHeight) / params.EpochLength
-		if currentEpoch > params.PruneAfter {
-			minHeight = int64((currentEpoch - params.PruneAfter) * params.EpochLength)
-		}
-	}
-	if msg.Height < minHeight {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below retention window (min %d)", msg.Height, minHeight)
+	boundary := k.attestationRetentionBoundary(ctx, k.GetCurrentEpoch(ctx))
+	if boundary != nil && boundary.prunesHeight(msg.Height) {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below retention window (min %d)", msg.Height, boundary.firstRetainedHeight)
 	}
 	bitmap, err := k.GetAttestationBitmap(ctx, msg.Height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {

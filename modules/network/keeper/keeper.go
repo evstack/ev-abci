@@ -308,43 +308,62 @@ func (k Keeper) IsSoftConfirmed(ctx sdk.Context, height int64) (bool, error) {
 	return k.CheckQuorum(ctx, votedPower, totalPower)
 }
 
-// PruneOldBitmaps removes attestation state older than PruneAfter epochs.
-func (k Keeper) PruneOldBitmaps(ctx sdk.Context, currentEpoch uint64) error {
+type attestationRetentionBoundary struct {
+	firstRetainedEpoch  uint64
+	firstRetainedHeight int64
+}
+
+func (b attestationRetentionBoundary) prunesHeight(height int64) bool {
+	return height < b.firstRetainedHeight
+}
+
+func (k Keeper) attestationRetentionBoundary(ctx sdk.Context, currentEpoch uint64) *attestationRetentionBoundary {
 	params := k.GetParams(ctx)
-	if params.PruneAfter == 0 { // Avoid pruning if PruneAfter is zero or not set
+	if params.PruneAfter == 0 || params.EpochLength == 0 {
 		return nil
 	}
 	if currentEpoch <= params.PruneAfter {
 		return nil
 	}
 
-	pruneBeforeEpoch := currentEpoch - params.PruneAfter
-	pruneHeight := int64(pruneBeforeEpoch * params.EpochLength) // Assuming EpochLength defines blocks per epoch
+	firstRetainedEpoch := currentEpoch - params.PruneAfter
+	return &attestationRetentionBoundary{
+		firstRetainedEpoch:  firstRetainedEpoch,
+		firstRetainedHeight: int64(firstRetainedEpoch * params.EpochLength),
+	}
+}
+
+// PruneOldBitmaps removes attestation state older than PruneAfter epochs.
+func (k Keeper) PruneOldBitmaps(ctx sdk.Context, currentEpoch uint64) error {
+	boundary := k.attestationRetentionBoundary(ctx, currentEpoch)
+	if boundary == nil {
+		return nil
+	}
 
 	// Prune attestation bitmaps (raw bitmaps)
-	attestationRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(pruneHeight)
+	attestationRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(boundary.firstRetainedHeight)
 	if err := k.AttestationBitmap.Clear(ctx, attestationRange); err != nil {
-		return fmt.Errorf("clearing attestation bitmaps before height %d: %w", pruneHeight, err)
+		return fmt.Errorf("clearing attestation bitmaps before height %d: %w", boundary.firstRetainedHeight, err)
 	}
 	// Prune stored attestation info (full AttestationBitmap objects)
-	storedAttestationInfoRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(pruneHeight)
+	storedAttestationInfoRange := new(collections.Range[int64]).StartInclusive(0).EndExclusive(boundary.firstRetainedHeight)
 	if err := k.StoredAttestationInfo.Clear(ctx, storedAttestationInfoRange); err != nil {
-		return fmt.Errorf("clearing stored attestation info before height %d: %w", pruneHeight, err)
+		return fmt.Errorf("clearing stored attestation info before height %d: %w", boundary.firstRetainedHeight, err)
 	}
 
 	// Prune epoch bitmaps
-	epochRange := new(collections.Range[uint64]).StartInclusive(0).EndExclusive(pruneBeforeEpoch)
+	epochRange := new(collections.Range[uint64]).StartInclusive(0).EndExclusive(boundary.firstRetainedEpoch)
 	if err := k.EpochBitmap.Clear(ctx, epochRange); err != nil {
-		return fmt.Errorf("clearing epoch bitmaps before epoch %d: %w", pruneBeforeEpoch, err)
+		return fmt.Errorf("clearing epoch bitmaps before epoch %d: %w", boundary.firstRetainedEpoch, err)
 	}
 
 	signatureRange := new(collections.Range[collections.Pair[int64, string]]).
-		EndExclusive(collections.Join(pruneHeight, ""))
+		EndExclusive(collections.Join(boundary.firstRetainedHeight, ""))
 	if err := k.Signatures.Clear(ctx, signatureRange); err != nil {
-		return fmt.Errorf("clearing signatures before height %d: %w", pruneHeight, err)
+		return fmt.Errorf("clearing signatures before height %d: %w", boundary.firstRetainedHeight, err)
 	}
 
-	k.Logger(ctx).Info("Pruned old attestation state", "prunedBeforeEpoch", pruneBeforeEpoch, "prunedBeforeHeight", pruneHeight)
+	k.Logger(ctx).Info("Pruned old attestation state", "prunedBeforeEpoch", boundary.firstRetainedEpoch, "prunedBeforeHeight", boundary.firstRetainedHeight)
 	return nil
 }
 

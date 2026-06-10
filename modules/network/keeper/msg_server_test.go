@@ -502,6 +502,25 @@ func TestPruneOldBitmapsRemovesAllAttestationStateBelowRetentionWindow(t *testin
 	require.True(t, hasBoundarySignature)
 }
 
+func TestAttestationRetentionBoundary(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	params := types.DefaultParams()
+	params.EpochLength = 10
+	params.PruneAfter = 2
+	require.NoError(t, keeper.SetParams(ctx, params))
+
+	require.Nil(t, keeper.attestationRetentionBoundary(ctx, 2))
+
+	boundary := keeper.attestationRetentionBoundary(ctx, 4)
+	require.NotNil(t, boundary)
+	require.Equal(t, uint64(2), boundary.firstRetainedEpoch)
+	require.Equal(t, int64(20), boundary.firstRetainedHeight)
+	require.True(t, boundary.prunesHeight(19))
+	require.False(t, boundary.prunesHeight(20))
+}
+
 func TestEndBlockerPrunesAttestationStateOnEpochBoundary(t *testing.T) {
 	sk := NewMockStakingKeeper()
 	_, keeper, ctx := newTestServer(t, &sk)
