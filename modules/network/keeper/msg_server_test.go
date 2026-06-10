@@ -360,12 +360,14 @@ func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.
 func TestAttestHeightBounds(t *testing.T) {
 	myValAddr := sdk.ValAddress("validator1")
 	ownerAddr := sdk.ValAddress("attester_owner")
-	// With DefaultParams: EpochLength=1, PruneAfter=15
-	// At blockHeight=100: currentEpoch=100, minHeight=(100-7)*1=93
+	shortRetentionParams := types.DefaultParams()
+	shortRetentionParams.PruneAfter = 15
+
 	specs := map[string]struct {
-		blockHeight int64
-		attestH     int64
-		expErr      error
+		blockHeight    int64
+		attestH        int64
+		paramsOverride *types.Params
+		expErr         error
 	}{
 		"future height rejected": {
 			blockHeight: 100,
@@ -386,18 +388,25 @@ func TestAttestHeightBounds(t *testing.T) {
 			attestH:     101,
 		},
 		"stale height rejected": {
-			blockHeight: 100,
-			attestH:     1,
-			expErr:      sdkerrors.ErrInvalidRequest,
+			blockHeight:    100,
+			attestH:        1,
+			paramsOverride: &shortRetentionParams,
+			expErr:         sdkerrors.ErrInvalidRequest,
 		},
 		"below retention window rejected": {
-			blockHeight: 100,
-			attestH:     84, // minHeight = 85
-			expErr:      sdkerrors.ErrInvalidRequest,
+			blockHeight:    100,
+			attestH:        84, // minHeight = 85
+			paramsOverride: &shortRetentionParams,
+			expErr:         sdkerrors.ErrInvalidRequest,
 		},
 		"at retention boundary accepted": {
-			blockHeight: 100,
-			attestH:     93, // exactly minHeight
+			blockHeight:    100,
+			attestH:        85,
+			paramsOverride: &shortRetentionParams,
+		},
+		"default retention keeps IBC handshake history": {
+			blockHeight: 139,
+			attestH:     25,
 		},
 		"early chain no stale rejection": {
 			blockHeight: 16,
@@ -420,7 +429,11 @@ func TestAttestHeightBounds(t *testing.T) {
 				Height:  spec.blockHeight,
 			}, false, logger).WithContext(t.Context())
 
-			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+			params := types.DefaultParams()
+			if spec.paramsOverride != nil {
+				params = *spec.paramsOverride
+			}
+			require.NoError(t, keeper.SetParams(ctx, params))
 
 			joinMsg := &types.MsgJoinAttesterSet{
 				Authority:        ownerAddr.String(),
