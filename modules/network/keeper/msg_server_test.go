@@ -362,6 +362,9 @@ func TestAttestHeightBounds(t *testing.T) {
 	ownerAddr := sdk.ValAddress("attester_owner")
 	shortRetentionParams := types.DefaultParams()
 	shortRetentionParams.PruneAfter = 15
+	epochRetentionParams := types.DefaultParams()
+	epochRetentionParams.EpochLength = 10
+	epochRetentionParams.PruneAfter = 2
 
 	specs := map[string]struct {
 		blockHeight    int64
@@ -395,14 +398,19 @@ func TestAttestHeightBounds(t *testing.T) {
 		},
 		"below retention window rejected": {
 			blockHeight:    100,
-			attestH:        84, // minHeight = 85
+			attestH:        83, // minHeight = 84
 			paramsOverride: &shortRetentionParams,
 			expErr:         sdkerrors.ErrInvalidRequest,
 		},
 		"at retention boundary accepted": {
 			blockHeight:    100,
-			attestH:        85,
+			attestH:        84,
 			paramsOverride: &shortRetentionParams,
+		},
+		"retained checkpoint accepted before next epoch pruning runs": {
+			blockHeight:    50,
+			attestH:        20,
+			paramsOverride: &epochRetentionParams,
 		},
 		"default retention keeps IBC handshake history": {
 			blockHeight: 139,
