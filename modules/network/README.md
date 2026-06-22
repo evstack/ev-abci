@@ -128,7 +128,20 @@ The module's `EndBlocker` is executed at the end of every block and performs the
 
 1.  **Quorum Evaluation**: It iterates through recent blocks that have received attestations and checks if the cumulative voting power of the attesters has reached the required quorum.
 2.  **Checkpoint Emission**: If quorum is met for a block, it emits an `EventSoftCheckpoint` with the `height`, `block_hash`, a bitmap of the participating attesters, and the total voting power.
-3.  **Epoch Processing**: It checks if the current block is the end of an epoch. If it is, it performs accounting tasks, such as updating the attester index map for the next epoch.
+3.  **Epoch Processing**: It checks if the current block is the end of an epoch. If it is, it performs accounting tasks, such as pruning old attestation state and updating the attester index map for the next epoch.
+
+## Attestation State Retention
+
+Attestation state is retained for the last `prune_after` epochs. At each epoch boundary, the module computes the first retained epoch as `current_epoch - prune_after` and prunes all attestation data below that boundary.
+
+The retention policy covers the attestation stores together:
+
+- raw per-height attestation bitmaps
+- stored attestation metadata
+- per-epoch participation bitmaps
+- per-height attester signatures
+
+Queries for pruned heights behave like queries for missing data. `MsgAttest` uses the same height boundary and rejects attestations below the retention window so new writes cannot recreate pruned state.
 
 ## Genesis and Queries
 

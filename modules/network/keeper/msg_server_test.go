@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
@@ -359,12 +360,17 @@ func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.
 func TestAttestHeightBounds(t *testing.T) {
 	myValAddr := sdk.ValAddress("validator1")
 	ownerAddr := sdk.ValAddress("attester_owner")
-	// With DefaultParams: EpochLength=1, PruneAfter=15
-	// At blockHeight=100: currentEpoch=100, minHeight=(100-7)*1=93
+	shortRetentionParams := types.DefaultParams()
+	shortRetentionParams.PruneAfter = 15
+	epochRetentionParams := types.DefaultParams()
+	epochRetentionParams.EpochLength = 10
+	epochRetentionParams.PruneAfter = 2
+
 	specs := map[string]struct {
-		blockHeight int64
-		attestH     int64
-		expErr      error
+		blockHeight    int64
+		attestH        int64
+		paramsOverride *types.Params
+		expErr         error
 	}{
 		"future height rejected": {
 			blockHeight: 100,
@@ -385,18 +391,30 @@ func TestAttestHeightBounds(t *testing.T) {
 			attestH:     101,
 		},
 		"stale height rejected": {
-			blockHeight: 100,
-			attestH:     1,
-			expErr:      sdkerrors.ErrInvalidRequest,
+			blockHeight:    100,
+			attestH:        1,
+			paramsOverride: &shortRetentionParams,
+			expErr:         sdkerrors.ErrInvalidRequest,
 		},
 		"below retention window rejected": {
-			blockHeight: 100,
-			attestH:     84, // minHeight = 85
-			expErr:      sdkerrors.ErrInvalidRequest,
+			blockHeight:    100,
+			attestH:        83, // minHeight = 84
+			paramsOverride: &shortRetentionParams,
+			expErr:         sdkerrors.ErrInvalidRequest,
 		},
 		"at retention boundary accepted": {
-			blockHeight: 100,
-			attestH:     93, // exactly minHeight
+			blockHeight:    100,
+			attestH:        84,
+			paramsOverride: &shortRetentionParams,
+		},
+		"retained checkpoint accepted before next epoch pruning runs": {
+			blockHeight:    50,
+			attestH:        20,
+			paramsOverride: &epochRetentionParams,
+		},
+		"default retention keeps IBC handshake history": {
+			blockHeight: 139,
+			attestH:     25,
 		},
 		"early chain no stale rejection": {
 			blockHeight: 16,
@@ -419,7 +437,11 @@ func TestAttestHeightBounds(t *testing.T) {
 				Height:  spec.blockHeight,
 			}, false, logger).WithContext(t.Context())
 
-			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+			params := types.DefaultParams()
+			if spec.paramsOverride != nil {
+				params = *spec.paramsOverride
+			}
+			require.NoError(t, keeper.SetParams(ctx, params))
 
 			joinMsg := &types.MsgJoinAttesterSet{
 				Authority:        ownerAddr.String(),
@@ -446,6 +468,109 @@ func TestAttestHeightBounds(t *testing.T) {
 			require.NotNil(t, rsp)
 		})
 	}
+}
+
+func TestPruneOldBitmapsRemovesAllAttestationStateBelowRetentionWindow(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	params := types.DefaultParams()
+	params.EpochLength = 10
+	params.PruneAfter = 2
+	require.NoError(t, keeper.SetParams(ctx, params))
+
+	oldHeight := int64(19)
+	boundaryHeight := int64(20)
+	oldEpoch := uint64(1)
+	boundaryEpoch := uint64(2)
+	attester := sdk.ValAddress("validator1").String()
+
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, oldHeight, []byte{0x01}))
+	require.NoError(t, keeper.StoredAttestationInfo.Set(ctx, oldHeight, types.AttestationBitmap{
+		Height: oldHeight,
+		Bitmap: []byte{0x01},
+	}))
+	require.NoError(t, keeper.SetEpochBitmap(ctx, oldEpoch, []byte{0x01}))
+	require.NoError(t, keeper.SetSignature(ctx, oldHeight, attester, []byte("old-signature")))
+
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, boundaryHeight, []byte{0x02}))
+	require.NoError(t, keeper.StoredAttestationInfo.Set(ctx, boundaryHeight, types.AttestationBitmap{
+		Height: boundaryHeight,
+		Bitmap: []byte{0x02},
+	}))
+	require.NoError(t, keeper.SetEpochBitmap(ctx, boundaryEpoch, []byte{0x02}))
+	require.NoError(t, keeper.SetSignature(ctx, boundaryHeight, attester, []byte("boundary-signature")))
+
+	require.NoError(t, keeper.PruneOldBitmaps(ctx, 4))
+
+	_, err := keeper.GetAttestationBitmap(ctx, oldHeight)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	_, err = keeper.StoredAttestationInfo.Get(ctx, oldHeight)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	require.Nil(t, keeper.GetEpochBitmap(ctx, oldEpoch))
+	hasOldSignature, err := keeper.HasSignature(ctx, oldHeight, attester)
+	require.NoError(t, err)
+	require.False(t, hasOldSignature)
+
+	bitmap, err := keeper.GetAttestationBitmap(ctx, boundaryHeight)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x02}, bitmap)
+	_, err = keeper.StoredAttestationInfo.Get(ctx, boundaryHeight)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x02}, keeper.GetEpochBitmap(ctx, boundaryEpoch))
+	hasBoundarySignature, err := keeper.HasSignature(ctx, boundaryHeight, attester)
+	require.NoError(t, err)
+	require.True(t, hasBoundarySignature)
+}
+
+func TestAttestationRetentionBoundary(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	params := types.DefaultParams()
+	params.EpochLength = 10
+	params.PruneAfter = 2
+	require.NoError(t, keeper.SetParams(ctx, params))
+
+	require.Nil(t, keeper.attestationRetentionBoundary(ctx, 2))
+
+	boundary := keeper.attestationRetentionBoundary(ctx, 4)
+	require.NotNil(t, boundary)
+	require.Equal(t, uint64(2), boundary.firstRetainedEpoch)
+	require.Equal(t, int64(20), boundary.firstRetainedHeight)
+	require.True(t, boundary.prunesHeight(19))
+	require.False(t, boundary.prunesHeight(20))
+}
+
+func TestEndBlockerPrunesAttestationStateOnEpochBoundary(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	params := types.DefaultParams()
+	params.EpochLength = 10
+	params.PruneAfter = 2
+	require.NoError(t, keeper.SetParams(ctx, params))
+
+	ctx = ctx.WithBlockHeight(49)
+	attester := sdk.ValAddress("validator1").String()
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, 19, []byte{0x01}))
+	require.NoError(t, keeper.SetSignature(ctx, 19, attester, []byte("old-signature")))
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, 20, []byte{0x02}))
+	require.NoError(t, keeper.SetSignature(ctx, 20, attester, []byte("boundary-signature")))
+
+	require.NoError(t, keeper.EndBlocker(ctx))
+
+	_, err := keeper.GetAttestationBitmap(ctx, 19)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	hasOldSignature, err := keeper.HasSignature(ctx, 19, attester)
+	require.NoError(t, err)
+	require.False(t, hasOldSignature)
+
+	_, err = keeper.GetAttestationBitmap(ctx, 20)
+	require.NoError(t, err)
+	hasBoundarySignature, err := keeper.HasSignature(ctx, 20, attester)
+	require.NoError(t, err)
+	require.True(t, hasBoundarySignature)
 }
 
 var _ types.StakingKeeper = &MockStakingKeeper{}

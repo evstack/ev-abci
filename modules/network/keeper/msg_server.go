@@ -60,20 +60,13 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d exceeds max allowed height %d", msg.Height, maxFutureHeight)
 	}
 
-	// Enforce attestation height lower bound: reject heights that fall below
-	// the PruneAfter retention window. Attesting pruned/about-to-be-pruned
-	// heights wastes storage and serves no purpose. This uses the same epoch
-	// calculation as PruneOldBitmaps so the two stay aligned.
-	params := k.GetParams(ctx)
-	minHeight := int64(1)
-	if params.PruneAfter > 0 && params.EpochLength > 0 {
-		currentEpoch := uint64(currentHeight) / params.EpochLength
-		if currentEpoch > params.PruneAfter {
-			minHeight = int64((currentEpoch - params.PruneAfter) * params.EpochLength)
+	// Txs run before EndBlocker, so the current epoch's pruning has not run yet.
+	currentEpoch := k.GetCurrentEpoch(ctx)
+	if currentEpoch > 0 {
+		boundary := k.attestationRetentionBoundary(ctx, currentEpoch-1)
+		if boundary != nil && boundary.prunesHeight(msg.Height) {
+			return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below retention window (min %d)", msg.Height, boundary.firstRetainedHeight)
 		}
-	}
-	if msg.Height < minHeight {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "attestation height %d is below retention window (min %d)", msg.Height, minHeight)
 	}
 	bitmap, err := k.GetAttestationBitmap(ctx, msg.Height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
