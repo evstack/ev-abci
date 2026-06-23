@@ -432,28 +432,13 @@ func submitAttestation(
 		return fmt.Errorf("getting original block ID: %w", err)
 	}
 
-	vote := cmtproto.Vote{
-		Type:             cmtproto.PrecommitType,
-		Height:           height,
-		Round:            0,
-		BlockID:          blockID,
-		Timestamp:        header.Time(),
-		ValidatorAddress: pv.Key.PubKey.Address(),
-		ValidatorIndex:   0,
-	}
-	signBytes := cmttypes.VoteSignBytes(config.ChainID, &vote)
-	sig, err := pv.Key.PrivKey.Sign(signBytes)
+	voteBytes, err := buildAttesterVoteBytes(config.ChainID, height, blockID, header.Time(), pv)
 	if err != nil {
-		return fmt.Errorf("sign vote: %w", err)
-	}
-	vote.Signature = sig
-	voteBytes, err := proto.Marshal(&vote)
-	if err != nil {
-		return fmt.Errorf("marshal vote: %w", err)
+		return err
 	}
 
 	authorityAddr := sdk.AccAddress(senderKey.PubKey().Address()).String()
-	consensusAddr := sdk.ConsAddress(pv.Key.PubKey.Address()).String()
+	consensusAddr := sdk.ConsAddress(pv.Key.Address).String()
 	msg := networktypes.NewMsgAttest(authorityAddr, consensusAddr, height, voteBytes)
 
 	txHash, err := broadcastTx(ctx, config, msg, senderKey, clientCtx)
@@ -464,6 +449,36 @@ func submitAttestation(
 		fmt.Printf("Attestation submitted for block %d with hash: %s\n", height, txHash)
 	}
 	return nil
+}
+
+func buildAttesterVoteBytes(
+	chainID string,
+	height int64,
+	blockID cmtproto.BlockID,
+	timestamp time.Time,
+	pv *pvm.FilePV,
+) ([]byte, error) {
+	validatorAddress := pv.Key.Address
+	vote := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           height,
+		Round:            0,
+		BlockID:          blockID,
+		Timestamp:        timestamp,
+		ValidatorAddress: validatorAddress,
+		ValidatorIndex:   0,
+	}
+	signBytes := cmttypes.VoteSignBytes(chainID, &vote)
+	sig, err := pv.Key.PrivKey.Sign(signBytes)
+	if err != nil {
+		return nil, fmt.Errorf("sign vote: %w", err)
+	}
+	vote.Signature = sig
+	voteBytes, err := proto.Marshal(&vote)
+	if err != nil {
+		return nil, fmt.Errorf("marshal vote: %w", err)
+	}
+	return voteBytes, nil
 }
 
 // getLatestHeight returns the latest raw block height the sequencer has

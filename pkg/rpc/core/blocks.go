@@ -447,11 +447,11 @@ func getAttesterSignatures(ctx context.Context, height int64) (map[string][]byte
 		Data: signaturesReq,
 	})
 	if err != nil {
-		return make(map[string][]byte), nil
+		return nil, fmt.Errorf("query attester signatures: %w", err)
 	}
 
 	if result.Code != 0 {
-		return make(map[string][]byte), nil
+		return nil, fmt.Errorf("attester signatures query failed: code %d, log: %s", result.Code, result.Log)
 	}
 
 	var signaturesResp networktypes.QueryAttesterSignaturesResponse

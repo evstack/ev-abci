@@ -6,7 +6,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/cometbft/cometbft/crypto/ed25519"
+	pvm "github.com/cometbft/cometbft/privval"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -309,6 +315,42 @@ func TestGetEvolveHeader(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "parsing time")
 	})
+}
+
+func TestBuildAttesterVoteBytesSignsSerializedValidatorAddress(t *testing.T) {
+	privKey := ed25519.GenPrivKey()
+	validatorAddress := cmttypes.Address(bytesOf(0xAB, 20))
+	pv := &pvm.FilePV{
+		Key: pvm.FilePVKey{
+			Address: validatorAddress,
+			PubKey:  privKey.PubKey(),
+			PrivKey: privKey,
+		},
+	}
+	blockID := cmtproto.BlockID{
+		Hash: bytesOf(0xCD, 32),
+		PartSetHeader: cmtproto.PartSetHeader{
+			Total: 1,
+			Hash:  bytesOf(0xEF, 32),
+		},
+	}
+	timestamp := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+
+	voteBytes, err := buildAttesterVoteBytes("test-chain", 7, blockID, timestamp, pv)
+	require.NoError(t, err)
+
+	var vote cmtproto.Vote
+	require.NoError(t, proto.Unmarshal(voteBytes, &vote))
+	require.Equal(t, validatorAddress, cmttypes.Address(vote.ValidatorAddress))
+	require.True(t, privKey.PubKey().VerifySignature(cmttypes.VoteSignBytes("test-chain", &vote), vote.Signature))
+}
+
+func bytesOf(value byte, length int) []byte {
+	bytes := make([]byte, length)
+	for i := range bytes {
+		bytes[i] = value
+	}
+	return bytes
 }
 
 func newAttesterRPCTestServer(t *testing.T, response string) string {
