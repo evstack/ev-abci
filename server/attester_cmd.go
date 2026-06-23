@@ -175,7 +175,7 @@ func pullBlocksAndAttest(
 		return err
 	}
 
-	var nextHeight int64 = 1
+	var nextHeight int64
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -191,6 +191,12 @@ func pullBlocksAndAttest(
 			fmt.Printf("⚠️  status poll failed: %v\n", err)
 			continue
 		}
+		if nextHeight == 0 {
+			nextHeight = initialAttestationHeight(currentHeight)
+		}
+		if currentHeight < nextHeight {
+			continue
+		}
 		for h := nextHeight; h <= currentHeight; h++ {
 			if err := submitAttestation(ctx, config, h, valAddr, operatorPrivKey, consensusPrivKey, clientCtx); err != nil {
 				// duplicate or transient — log and move on
@@ -199,6 +205,13 @@ func pullBlocksAndAttest(
 		}
 		nextHeight = currentHeight + 1
 	}
+}
+
+func initialAttestationHeight(latestHeight int64) int64 {
+	if latestHeight < 2 {
+		return 2
+	}
+	return latestHeight
 }
 
 var accSeq uint64 = 0

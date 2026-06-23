@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -19,26 +18,51 @@ import (
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
+	pvm "github.com/cometbft/cometbft/privval"
 	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/cosmos/ibc-go/v8/modules/apps/transfer"
 	ibctransfer "github.com/cosmos/ibc-go/v8/modules/apps/transfer"
 	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
 )
 
-// TestAttesterSystem is an empty test case using the DockerIntegrationTestSuite
+const (
+	dockerAttesterCount    = 4
+	dockerAttesterQuorum   = 3
+	dockerCommitScanWindow = 500
+)
+
+type generatedAttesterIdentity struct {
+	OperatorArmor          string
+	OperatorAddress        sdk.AccAddress
+	ConsensusAddress       string
+	ConsensusPubKey        cmted25519.PubKey
+	PrivValidatorKeyJSON   []byte
+	PrivValidatorStateJSON []byte
+}
+
+type configuredAttester struct {
+	Config AttesterConfig
+	Node   *Attester
+}
+
+// TestAttesterSystem runs the Docker e2e flow with multiple attesters.
 func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	gmChain := s.getGmChain(ctx)
+	attesterIdentities, err := generateAttesterIdentities(dockerAttesterCount)
+	require.NoError(s.T(), err)
+
+	gmChain := s.getGmChain(ctx, attesterIdentities)
 
 	// Start GM chain in a goroutine
 	go func() {
@@ -50,7 +74,7 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	}()
 
 	// Wait for GM chain RPC to be ready
-	err := wait.ForCondition(ctx, time.Second*30, time.Second, func() (bool, error) {
+	err = wait.ForCondition(ctx, time.Second*30, time.Second, func() (bool, error) {
 		node := gmChain.GetNodes()[0]
 		rpcClient, _ := node.GetRPCClient()
 		if rpcClient != nil {
@@ -64,117 +88,83 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	})
 	s.Require().NoError(err)
 
-	kr, err := gmChain.GetNodes()[0].GetKeyring()
-	require.NoError(s.T(), err)
+	attesters := s.getAttesters(ctx, gmChain, attesterIdentities)
+	for _, attester := range attesters {
+		s.T().Logf("Initializing attester node %s", attester.Node.Name())
+		err = attester.Node.Init(ctx, attester.Config.ChainID, attester.Config.GMNodeURL)
+		require.NoError(s.T(), err)
 
-	keys, err := kr.List()
-	require.NoError(s.T(), err)
-	s.T().Logf("Available keys in keyring: %d", len(keys))
-
-	// Log all available keys and find validator key
-	var validatorKey *keyring.Record
-	for i, key := range keys {
-		keyAddr, _ := key.GetAddress()
-		s.T().Logf("Key %d: Name=%s, Address=%s", i, key.Name, keyAddr.String())
-
-		if key.Name == "validator" {
-			validatorKey = key
-		}
+		s.T().Logf("Starting attester node %s", attester.Node.Name())
+		err = attester.Node.Start(ctx, attester.Config)
+		require.NoError(s.T(), err)
 	}
+	s.T().Logf("Started %d attester nodes", len(attesters))
 
-	s.Require().NotNil(validatorKey, "validator key not found in keyring")
-
-	validatorArmoredKey, err := kr.ExportPrivKeyArmor("validator", "")
-	s.Require().NoError(err, "failed to export validator private key")
-
-	attesterConfig, attesterNode := s.getAttester(ctx, gmChain, validatorArmoredKey)
-
-	s.T().Logf("Initializing attester node %s", attesterNode.Name())
-	err = attesterNode.Init(ctx, attesterConfig.ChainID, attesterConfig.GMNodeURL)
-	require.NoError(s.T(), err)
-
-	s.T().Logf("Starting attester node %s", attesterNode.Name())
-	err = attesterNode.Start(ctx, attesterConfig)
-	require.NoError(s.T(), err)
-	s.T().Log("Attester node started successfully")
-
-	// Wait for the attester to attest some blocks and LastAttestedHeight to advance.
+	// Wait for the attesters to reach quorum on reconstructed commits.
 	s.T().Log("Waiting for attestations to reach quorum...")
-	var targetHeight int64 = 10
-	err = wait.ForCondition(ctx, 2*time.Minute, 2*time.Second, func() (bool, error) {
+	valSet := validatorSetFromAttesters(attesterIdentities)
+	var verifiedHeight int64
+	var lastSignatureCount int
+	var lastVerifyErr error
+	err = wait.ForCondition(ctx, 5*time.Minute, 2*time.Second, func() (bool, error) {
 		node := gmChain.GetNodes()[0]
 		rpcClient, _ := node.GetRPCClient()
 		if rpcClient == nil {
 			return false, nil
 		}
-		status, statusErr := rpcClient.Status(ctx)
-		if statusErr != nil {
+
+		latestBlockResp, blockErr := rpcClient.Block(ctx, nil)
+		if blockErr != nil || latestBlockResp == nil || latestBlockResp.Block == nil {
+			lastVerifyErr = fmt.Errorf("latest block unavailable: %v", blockErr)
 			return false, nil
 		}
-		return status.SyncInfo.LatestBlockHeight >= targetHeight, nil
-	})
-	s.Require().NoError(err, "chain did not reach target height %d", targetHeight)
-
-	// Fetch /commit for the target height and assert VerifyCommitLight passes.
-	{
-		node := gmChain.GetNodes()[0]
-		rpcClient, err := node.GetRPCClient()
-		s.Require().NoError(err)
-		commitResp, err := rpcClient.Commit(ctx, &targetHeight)
-		s.Require().NoError(err, "fetch commit at height %d", targetHeight)
-
-		privValJSONBz, err := node.ReadFile(ctx, "config/priv_validator_key.json")
-		s.Require().NoError(err)
-		var pv struct {
-			PubKey struct {
-				Type  string `json:"type"`
-				Value string `json:"value"`
-			} `json:"pub_key"`
+		latestHeight := latestBlockResp.Block.Height
+		if latestHeight < 2 {
+			lastVerifyErr = fmt.Errorf("latest height %d is too low", latestHeight)
+			return false, nil
 		}
-		s.Require().NoError(json.Unmarshal(privValJSONBz, &pv))
-		pkBytes, err := base64.StdEncoding.DecodeString(pv.PubKey.Value)
-		s.Require().NoError(err)
-		cmtPub := cmted25519.PubKey(pkBytes)
-		valSet := cmttypes.NewValidatorSet([]*cmttypes.Validator{cmttypes.NewValidator(cmtPub, 1)})
 
-		commit := commitResp.SignedHeader.Commit
-		s.Require().NoError(
-			valSet.VerifyCommitLight("gm", commit.BlockID, targetHeight, commit),
-			"reconstructed commit must pass 07-tendermint light-client verification",
-		)
-		s.T().Logf("commit at height %d passes VerifyCommitLight with %d signatures", targetHeight, len(commit.Signatures))
-	}
-
-	hermes, err := relayer.NewHermes(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
-	require.NoError(s.T(), err, "failed to create hermes relayer")
-
-	err = hermes.Init(ctx, []types.Chain{s.celestiaChain, gmChain}, func(cfg *relayer.HermesConfig) {
-		for i := range cfg.Chains {
-			// switch hermes to pull mode to avoid WebSocket connection issues
-			cfg.Chains[i].EventSource = map[string]interface{}{
-				"mode":     "pull",
-				"interval": "200ms",
+		startHeight := latestHeight - dockerCommitScanWindow
+		if startHeight < 2 {
+			startHeight = 2
+		}
+		lastVerifyErr = fmt.Errorf("no quorum commit found in height range [%d,%d]", startHeight, latestHeight)
+		for height := latestHeight; height >= startHeight; height-- {
+			commitResp, commitErr := rpcClient.Commit(ctx, &height)
+			if commitErr != nil || commitResp == nil || commitResp.SignedHeader.Commit == nil {
+				continue
 			}
-			cfg.Chains[i].ClockDrift = "60s"
+			commit := commitResp.SignedHeader.Commit
+			if len(commit.Signatures) != dockerAttesterCount {
+				continue
+			}
+			signatureCount := countCommitSignatures(commit)
+			if signatureCount < dockerAttesterQuorum {
+				lastVerifyErr = fmt.Errorf("commit at height %d has %d signatures, expected quorum", height, signatureCount)
+				continue
+			}
+			verifyErr := valSet.VerifyCommitLight("gm", commit.BlockID, height, commit)
+			if verifyErr != nil {
+				lastVerifyErr = fmt.Errorf("verify commit at height %d: %w", height, verifyErr)
+				continue
+			}
+			verifiedHeight = height
+			lastSignatureCount = signatureCount
+			return true, nil
 		}
+
+		return false, nil
 	})
-	require.NoError(s.T(), err, "failed to initialize relayer")
-
-	connection, channel := setupIBCConnection(s.T(), ctx, s.celestiaChain, gmChain, hermes)
-	s.T().Logf("Established IBC connection %s and channel %s between Celestia and GM chain", connection.ConnectionID, channel.ChannelID)
-
-	s.testIBCTransfers(ctx, s.celestiaChain, gmChain, channel, hermes)
+	s.Require().NoError(err, "attesters did not reconstruct a quorum commit: %v", lastVerifyErr)
+	s.T().Logf("commit at height %d passes VerifyCommitLight with %d/%d signatures",
+		verifiedHeight, lastSignatureCount, dockerAttesterCount)
 }
 
-func (s *DockerIntegrationTestSuite) getAttester(ctx context.Context, gmChain *cosmos.Chain, validatorArmoredKey string) (AttesterConfig, *Attester) {
-	// Create attester configuration
-	attesterConfig := DefaultAttesterConfig()
-
-	// Set armored key (required)
-	require.NotEmpty(s.T(), validatorArmoredKey, "validator armored key is required")
-	attesterConfig.PrivKeyArmor = validatorArmoredKey
-
-	// Get the internal network addresses for the GM chain
+func (s *DockerIntegrationTestSuite) getAttesters(
+	ctx context.Context,
+	gmChain *cosmos.Chain,
+	identities []generatedAttesterIdentity,
+) []configuredAttester {
 	gmNodes := gmChain.GetNodes()
 	require.NotEmpty(s.T(), gmNodes, "no GM chain nodes available")
 
@@ -182,103 +172,61 @@ func (s *DockerIntegrationTestSuite) getAttester(ctx context.Context, gmChain *c
 	gmNodeInfo, err := gmNode.GetNetworkInfo(ctx)
 	require.NoError(s.T(), err)
 
-	privValidatorKeyJSON, err := gmNode.ReadFile(ctx, "config/priv_validator_key.json")
-	require.NoError(s.T(), err, "unable to read priv_validator_key.json from GM node")
-
-	privValidatorStateJSON, err := gmNode.ReadFile(ctx, "data/priv_validator_state.json")
-	require.NoError(s.T(), err, "unable to read priv_validator_state.json from GM node")
-
-	// Derive attester account address from armored key
-	attesterAccAddr, err := deriveAttesterAccountFromArmor(attesterConfig.PrivKeyArmor)
-	require.NoError(s.T(), err, "failed to derive attester account address from armored key")
-
 	fromAddr, err := sdkacc.AddressFromWallet(gmChain.GetFaucetWallet())
 	require.NoError(s.T(), err, "failed to retrieve faucet address")
-	coins := sdk.NewCoins(sdk.NewCoin(gmChain.Config.Denom, sdkmath.NewInt(5_000_000_000)))
-	fundingMsg := banktypes.NewMsgSend(fromAddr, attesterAccAddr, coins)
-	resp, err := gmChain.BroadcastMessages(ctx, gmChain.GetFaucetWallet(), fundingMsg)
-	require.NoError(s.T(), err, "failed to fund attester account")
-	require.Zero(s.T(), resp.Code, "funding tx failed: %s", resp.RawLog)
-	s.T().Logf("funded attester account %s with %s", attesterAccAddr.String(), coins)
 
-	// Use internal addresses for communication within docker network
-	attesterConfig.GMNodeURL = fmt.Sprintf("tcp://%s:26657", gmNodeInfo.Internal.Hostname)
+	fundingMsgs := make([]sdk.Msg, 0, len(identities))
+	for _, identity := range identities {
+		coins := sdk.NewCoins(sdk.NewCoin(gmChain.Config.Denom, sdkmath.NewInt(5_000_000_000)))
+		fundingMsgs = append(fundingMsgs, banktypes.NewMsgSend(fromAddr, identity.OperatorAddress, coins))
+	}
+	for start := 0; start < len(fundingMsgs); start += 2 {
+		end := start + 2
+		if end > len(fundingMsgs) {
+			end = len(fundingMsgs)
+		}
+		resp, err := gmChain.BroadcastMessages(ctx, gmChain.GetFaucetWallet(), fundingMsgs[start:end]...)
+		require.NoError(s.T(), err, "failed to fund attester accounts")
+		require.Zero(s.T(), resp.Code, "funding tx failed for attester accounts: %s", resp.RawLog)
+	}
+	s.T().Logf("funded %d attester accounts", len(identities))
 
-	// Create and start the attester
-	attesterNode, err := NewAttester(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
-	require.NoError(s.T(), err)
-	require.NoError(s.T(), attesterNode.WriteFile(
-		ctx,
-		"config/priv_validator_key.json",
-		privValidatorKeyJSON,
-	))
-	require.NoError(s.T(), attesterNode.WriteFile(
-		ctx,
-		"data/priv_validator_state.json",
-		privValidatorStateJSON,
-	))
+	configured := make([]configuredAttester, 0, len(identities))
+	for i, identity := range identities {
+		attesterConfig := DefaultAttesterConfig()
+		attesterConfig.PrivKeyArmor = identity.OperatorArmor
+		attesterConfig.GMNodeURL = fmt.Sprintf("tcp://%s:26657", gmNodeInfo.Internal.Hostname)
 
-	// Verify validator key can be imported (demonstration)
-	s.T().Log("Setting up attester keyring with validator key...")
+		attesterNode, err := NewAttester(ctx, s.dockerClient, s.T().Name(), s.networkID, i, s.logger)
+		require.NoError(s.T(), err)
+		require.NoError(s.T(), attesterNode.WriteFile(
+			ctx,
+			"config/priv_validator_key.json",
+			identity.PrivValidatorKeyJSON,
+		))
+		require.NoError(s.T(), attesterNode.WriteFile(
+			ctx,
+			"data/priv_validator_state.json",
+			identity.PrivValidatorStateJSON,
+		))
 
-	// Create an in-memory keyring for the attester
-	// Include transfer module so MsgTransfer is registered in the interface registry
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, ibctransfer.AppModuleBasic{})
-	attesterKeyring := keyring.NewInMemory(testEncCfg.Codec)
-
-	// Import the validator key into the attester keyring
-	err = attesterKeyring.ImportPrivKey("validator", validatorArmoredKey, "")
-	require.NoError(s.T(), err, "failed to import validator key into attester keyring")
-
-	s.T().Log("Validator key imported successfully into attester keyring")
-
-	// List keys in attester keyring to verify
-	attesterKeys, err := attesterKeyring.List()
-	require.NoError(s.T(), err)
-	s.T().Logf("Attester keyring now has %d keys", len(attesterKeys))
-
-	for i, key := range attesterKeys {
-		keyAddr, _ := key.GetAddress()
-		s.T().Logf("Attester Key %d: Name=%s, Address=%s", i, key.Name, keyAddr.String())
+		configured = append(configured, configuredAttester{
+			Config: attesterConfig,
+			Node:   attesterNode,
+		})
 	}
 
-	return attesterConfig, attesterNode
+	return configured
 }
 
-func deriveAttesterAccountFromArmor(armoredKey string) (sdk.AccAddress, error) {
-	// Create a temporary in-memory keyring for importing
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{})
-	kr := keyring.NewInMemory(testEncCfg.Codec)
-
-	// Import the armored key into the temporary keyring
-	err := kr.ImportPrivKey("temp", armoredKey, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to import armored private key: %w", err)
-	}
-
-	// Get the key record
-	keyRecord, err := kr.Key("temp")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get imported key: %w", err)
-	}
-
-	// Get the address from the key record
-	keyAddr, err := keyRecord.GetAddress()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get address from key: %w", err)
-	}
-
-	return keyAddr, nil
-}
-
-func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Chain {
+func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context, attesters []generatedAttesterIdentity) *cosmos.Chain {
 	daAddress, authToken, _, err := s.getDANetworkParams(ctx)
 	require.NoError(s.T(), err)
 
 	s.T().Log("Creating GM chain connected to DA network...")
 	sdk.GetConfig().SetBech32PrefixForAccount("celestia", "celestiapub")
 	gmImg := container.NewImage("evabci/gm", "local", "1000:1000")
-	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, transfer.AppModuleBasic{})
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, ibctransfer.AppModuleBasic{})
 	gmChain, err := cosmos.NewChainBuilder(s.T()).
 		WithEncodingConfig(&testEncCfg).
 		WithDockerClient(s.dockerClient).
@@ -307,7 +255,7 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--log_level", "*:info",
 		).
 		WithNode(cosmos.NewChainNodeConfigBuilder().
-			WithPostInit(AddSingleSequencer, AddGenesisAttester, writePasshraseFile("12345678")).
+			WithPostInit(AddSingleSequencer, AddGenesisAttesters(attesters), writePasshraseFile("12345678")).
 			Build()).
 		Build(ctx)
 	require.NoError(s.T(), err)
@@ -315,8 +263,6 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 	return gmChain
 }
 
-// AddSingleSequencer modifies the genesis file to add a single sequencer with specified power and public key.
-// Reads the genesis file from the node, updates the validators with the sequencer info, and writes the updated file back.
 func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
 	genesisBz, err := node.ReadFile(ctx, "config/genesis.json")
 	if err != nil {
@@ -356,67 +302,118 @@ func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
 	return node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
 }
 
-// AddGenesisAttester populates app_state.network.attester_infos with a single
-// attester entry derived from the node's priv_validator_key.json and the
-// operator address of the "validator" keyring entry.
-func AddGenesisAttester(ctx context.Context, node *cosmos.ChainNode) error {
-	genesisBz, err := node.ReadFile(ctx, "config/genesis.json")
-	if err != nil {
-		return fmt.Errorf("read genesis: %w", err)
+func generateAttesterIdentities(count int) ([]generatedAttesterIdentity, error) {
+	testEncCfg := testutil.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, ibctransfer.AppModuleBasic{})
+	kr := keyring.NewInMemory(testEncCfg.Codec)
+
+	identities := make([]generatedAttesterIdentity, 0, count)
+	for i := range count {
+		name := fmt.Sprintf("attester-%d", i)
+		record, _, err := kr.NewMnemonic(name, keyring.English, sdk.FullFundraiserPath, keyring.DefaultBIP39Passphrase, hd.Secp256k1)
+		if err != nil {
+			return nil, fmt.Errorf("create operator key %d: %w", i, err)
+		}
+		operatorAddress, err := record.GetAddress()
+		if err != nil {
+			return nil, fmt.Errorf("get operator address %d: %w", i, err)
+		}
+		operatorArmor, err := kr.ExportPrivKeyArmor(name, "")
+		if err != nil {
+			return nil, fmt.Errorf("export operator key %d: %w", i, err)
+		}
+
+		consensusPrivKey := cmted25519.GenPrivKey()
+		consensusPubKey := consensusPrivKey.PubKey().(cmted25519.PubKey)
+		pv := pvm.NewFilePV(consensusPrivKey, "", "")
+		privValidatorKeyJSON, err := cmtjson.MarshalIndent(pv.Key, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshal priv validator key %d: %w", i, err)
+		}
+		privValidatorStateJSON, err := cmtjson.MarshalIndent(pvm.FilePVLastSignState{}, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshal priv validator state %d: %w", i, err)
+		}
+
+		identities = append(identities, generatedAttesterIdentity{
+			OperatorArmor:          operatorArmor,
+			OperatorAddress:        operatorAddress,
+			ConsensusAddress:       sdk.ConsAddress(consensusPubKey.Address()).String(),
+			ConsensusPubKey:        consensusPubKey,
+			PrivValidatorKeyJSON:   privValidatorKeyJSON,
+			PrivValidatorStateJSON: privValidatorStateJSON,
+		})
 	}
 
-	pubKey, err := getPubKey(ctx, node)
-	if err != nil {
-		return fmt.Errorf("get consensus pubkey: %w", err)
-	}
+	return identities, nil
+}
 
-	// Consensus address (cosmosvalcons1... derived from ed25519 Address())
-	consensusAddress := sdk.ConsAddress(pubKey.Address()).String()
-
-	// Operator address: run `gmd keys show validator -a` inside the node container.
-	stdout, stderr, err := node.Exec(ctx, []string{
-		node.BinaryName,
-		"keys", "show", "validator", "-a",
-		"--keyring-backend", "test",
-		"--home", node.HomeDir(),
-	}, nil)
-	if err != nil {
-		return fmt.Errorf("query validator operator address (stderr=%q): %w", string(stderr), err)
+// AddGenesisAttesters populates app_state.network.attester_infos with the fixed
+// attester set used by the Docker e2e.
+func AddGenesisAttesters(attesters []generatedAttesterIdentity) func(context.Context, *cosmos.ChainNode) error {
+	return func(ctx context.Context, node *cosmos.ChainNode) error {
+		genesisBz, err := node.ReadFile(ctx, "config/genesis.json")
+		if err != nil {
+			return fmt.Errorf("read genesis: %w", err)
+		}
+		updatedBz, err := setGenesisAttesters(genesisBz, attesters)
+		if err != nil {
+			return err
+		}
+		return node.WriteFile(ctx, "config/genesis.json", updatedBz)
 	}
-	authority := strings.TrimSpace(string(stdout))
-	if authority == "" {
-		return fmt.Errorf("empty operator address for validator keyring entry")
-	}
+}
 
-	attesterInfo := map[string]interface{}{
-		"authority": authority,
-		"pubkey": map[string]interface{}{
-			"@type": "/cosmos.crypto.ed25519.PubKey",
-			"key":   base64.StdEncoding.EncodeToString(pubKey.Bytes()),
-		},
-		"joined_height":     0,
-		"consensus_address": consensusAddress,
-	}
-
+func setGenesisAttesters(genesisBz []byte, attesters []generatedAttesterIdentity) ([]byte, error) {
 	var genDoc map[string]interface{}
 	if err := json.Unmarshal(genesisBz, &genDoc); err != nil {
-		return fmt.Errorf("parse genesis: %w", err)
+		return nil, fmt.Errorf("parse genesis: %w", err)
 	}
 	appState, ok := genDoc["app_state"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("genesis has no app_state object")
+		return nil, fmt.Errorf("genesis has no app_state object")
 	}
 	network, ok := appState["network"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("genesis has no app_state.network object")
+		return nil, fmt.Errorf("genesis has no app_state.network object")
 	}
-	network["attester_infos"] = []interface{}{attesterInfo}
+
+	attesterInfos := make([]interface{}, 0, len(attesters))
+	for _, attester := range attesters {
+		attesterInfos = append(attesterInfos, map[string]interface{}{
+			"authority": attester.OperatorAddress.String(),
+			"pubkey": map[string]interface{}{
+				"@type": "/cosmos.crypto.ed25519.PubKey",
+				"key":   base64.StdEncoding.EncodeToString(attester.ConsensusPubKey.Bytes()),
+			},
+			"joined_height":     0,
+			"consensus_address": attester.ConsensusAddress,
+		})
+	}
+	network["attester_infos"] = attesterInfos
 
 	updatedBz, err := json.MarshalIndent(genDoc, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal genesis: %w", err)
+		return nil, fmt.Errorf("marshal genesis: %w", err)
 	}
-	return node.WriteFile(ctx, "config/genesis.json", updatedBz)
+	return updatedBz, nil
+}
+
+func validatorSetFromAttesters(attesters []generatedAttesterIdentity) *cmttypes.ValidatorSet {
+	validators := make([]*cmttypes.Validator, 0, len(attesters))
+	for _, attester := range attesters {
+		validators = append(validators, cmttypes.NewValidator(attester.ConsensusPubKey, 1))
+	}
+	return cmttypes.NewValidatorSet(validators)
+}
+
+func countCommitSignatures(commit *cmttypes.Commit) int {
+	count := 0
+	for _, signature := range commit.Signatures {
+		if signature.BlockIDFlag == cmttypes.BlockIDFlagCommit {
+			count++
+		}
+	}
+	return count
 }
 
 // setupIBCConnection establishes a complete IBC connection and channel

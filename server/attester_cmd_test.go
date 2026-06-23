@@ -226,6 +226,13 @@ func TestGetLatestHeight(t *testing.T) {
 	})
 }
 
+func TestInitialAttestationHeight(t *testing.T) {
+	require.Equal(t, int64(2), initialAttestationHeight(0))
+	require.Equal(t, int64(2), initialAttestationHeight(1))
+	require.Equal(t, int64(2), initialAttestationHeight(2))
+	require.Equal(t, int64(42), initialAttestationHeight(42))
+}
+
 func TestGetEvolveHeader(t *testing.T) {
 	t.Run("valid response builds Evolve header", func(t *testing.T) {
 		nodeURL := newAttesterRPCTestServer(t, `{
