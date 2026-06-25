@@ -112,6 +112,10 @@ func (k Keeper) processEpochEnd(ctx sdk.Context, epoch uint64) error {
 		}
 	}
 
+	if err := k.PruneOldBitmaps(ctx, epoch); err != nil {
+		return fmt.Errorf("pruning old data at epoch %d: %w", epoch, err)
+	}
+
 	// Validator indices are established at genesis and never mutate at runtime
 	// (MsgJoin/MsgLeave are disabled). Nothing to rebuild here.
 	return nil
