@@ -175,7 +175,7 @@ func pullBlocksAndAttest(
 		return err
 	}
 
-	var nextHeight int64 = 1
+	var nextHeight int64
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -191,6 +191,12 @@ func pullBlocksAndAttest(
 			fmt.Printf("⚠️  status poll failed: %v\n", err)
 			continue
 		}
+		if nextHeight == 0 {
+			nextHeight = initialAttestationHeight(currentHeight)
+		}
+		if currentHeight < nextHeight {
+			continue
+		}
 		for h := nextHeight; h <= currentHeight; h++ {
 			if err := submitAttestation(ctx, config, h, valAddr, operatorPrivKey, consensusPrivKey, clientCtx); err != nil {
 				// duplicate or transient — log and move on
@@ -199,6 +205,13 @@ func pullBlocksAndAttest(
 		}
 		nextHeight = currentHeight + 1
 	}
+}
+
+func initialAttestationHeight(latestHeight int64) int64 {
+	if latestHeight < 2 {
+		return 2
+	}
+	return latestHeight
 }
 
 var accSeq uint64 = 0
@@ -432,28 +445,13 @@ func submitAttestation(
 		return fmt.Errorf("getting original block ID: %w", err)
 	}
 
-	vote := cmtproto.Vote{
-		Type:             cmtproto.PrecommitType,
-		Height:           height,
-		Round:            0,
-		BlockID:          blockID,
-		Timestamp:        header.Time(),
-		ValidatorAddress: pv.Key.PubKey.Address(),
-		ValidatorIndex:   0,
-	}
-	signBytes := cmttypes.VoteSignBytes(config.ChainID, &vote)
-	sig, err := pv.Key.PrivKey.Sign(signBytes)
+	voteBytes, err := buildAttesterVoteBytes(config.ChainID, height, blockID, header.Time(), pv)
 	if err != nil {
-		return fmt.Errorf("sign vote: %w", err)
-	}
-	vote.Signature = sig
-	voteBytes, err := proto.Marshal(&vote)
-	if err != nil {
-		return fmt.Errorf("marshal vote: %w", err)
+		return err
 	}
 
 	authorityAddr := sdk.AccAddress(senderKey.PubKey().Address()).String()
-	consensusAddr := sdk.ConsAddress(pv.Key.PubKey.Address()).String()
+	consensusAddr := sdk.ConsAddress(pv.Key.Address).String()
 	msg := networktypes.NewMsgAttest(authorityAddr, consensusAddr, height, voteBytes)
 
 	txHash, err := broadcastTx(ctx, config, msg, senderKey, clientCtx)
@@ -464,6 +462,36 @@ func submitAttestation(
 		fmt.Printf("Attestation submitted for block %d with hash: %s\n", height, txHash)
 	}
 	return nil
+}
+
+func buildAttesterVoteBytes(
+	chainID string,
+	height int64,
+	blockID cmtproto.BlockID,
+	timestamp time.Time,
+	pv *pvm.FilePV,
+) ([]byte, error) {
+	validatorAddress := pv.Key.Address
+	vote := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           height,
+		Round:            0,
+		BlockID:          blockID,
+		Timestamp:        timestamp,
+		ValidatorAddress: validatorAddress,
+		ValidatorIndex:   0,
+	}
+	signBytes := cmttypes.VoteSignBytes(chainID, &vote)
+	sig, err := pv.Key.PrivKey.Sign(signBytes)
+	if err != nil {
+		return nil, fmt.Errorf("sign vote: %w", err)
+	}
+	vote.Signature = sig
+	voteBytes, err := proto.Marshal(&vote)
+	if err != nil {
+		return nil, fmt.Errorf("marshal vote: %w", err)
+	}
+	return voteBytes, nil
 }
 
 // getLatestHeight returns the latest raw block height the sequencer has
