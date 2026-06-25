@@ -1,17 +1,60 @@
 package server
 
 import (
+	"context"
 	_ "embed"
 	"strings"
 	"testing"
 
+	cmtlog "cosmossdk.io/log"
+	cmttypes "github.com/cometbft/cometbft/types"
 	sdkserver "github.com/cosmos/cosmos-sdk/server"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
+	networktypes "github.com/evstack/ev-abci/modules/network/types"
 	"github.com/evstack/ev-node/pkg/genesis"
 )
+
+type testNetworkKeeperBlockIDWirer struct {
+	provider networktypes.BlockIDProvider
+}
+
+func (w *testNetworkKeeperBlockIDWirer) SetNetworkKeeperBlockIDProvider(p networktypes.BlockIDProvider) {
+	w.provider = p
+}
+
+type testBlockIDProvider struct{}
+
+func (testBlockIDProvider) GetBlockID(context.Context, uint64) (*cmttypes.BlockID, error) {
+	return nil, nil
+}
+
+func TestWireNetworkKeeperBlockIDProvider(t *testing.T) {
+	t.Run("fails in attester mode without wirer", func(t *testing.T) {
+		err := wireNetworkKeeperBlockIDProvider(struct{}{}, testBlockIDProvider{}, true, cmtlog.NewNopLogger())
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "networkKeeperBlockIDWirer")
+	})
+
+	t.Run("allows missing wirer outside attester mode", func(t *testing.T) {
+		err := wireNetworkKeeperBlockIDProvider(struct{}{}, testBlockIDProvider{}, false, cmtlog.NewNopLogger())
+
+		require.NoError(t, err)
+	})
+
+	t.Run("wires provider when app exposes wirer", func(t *testing.T) {
+		provider := testBlockIDProvider{}
+		app := &testNetworkKeeperBlockIDWirer{}
+
+		err := wireNetworkKeeperBlockIDProvider(app, provider, true, cmtlog.NewNopLogger())
+
+		require.NoError(t, err)
+		require.Equal(t, provider, app.provider)
+	})
+}
 
 func TestParseDAStartHeightFromGenesis(t *testing.T) {
 	testCases := []struct {

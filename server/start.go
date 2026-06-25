@@ -70,6 +70,24 @@ type networkKeeperBlockIDWirer interface {
 	SetNetworkKeeperBlockIDProvider(types.BlockIDProvider)
 }
 
+func wireNetworkKeeperBlockIDProvider(
+	app any,
+	provider types.BlockIDProvider,
+	attesterMode bool,
+	sdkLogger log.Logger,
+) error {
+	if w, ok := app.(networkKeeperBlockIDWirer); ok {
+		w.SetNetworkKeeperBlockIDProvider(provider)
+		return nil
+	}
+	if attesterMode {
+		return errors.New("app does not implement networkKeeperBlockIDWirer; MsgAttest will reject votes in attester mode")
+	}
+
+	sdkLogger.Warn("app does not implement networkKeeperBlockIDWirer; MsgAttest will reject votes if attester mode is enabled")
+	return nil
+}
+
 const (
 	flagTraceStore = "trace-store"
 	flagGRPCOnly   = "grpc-only"
@@ -447,10 +465,8 @@ func setupNodeAndExecutor(
 
 	// Give the network module's MsgAttest handler access to the adapter's
 	// block store so it can pin each vote to the sequencer's real BlockID.
-	if w, ok := app.(networkKeeperBlockIDWirer); ok {
-		w.SetNetworkKeeperBlockIDProvider(executor.Store)
-	} else {
-		sdkLogger.Warn("app does not implement networkKeeperBlockIDWirer; MsgAttest will reject votes if attester mode is enabled")
+	if err := wireNetworkKeeperBlockIDProvider(app, executor.Store, srvCtx.Viper.GetBool(FlagAttesterMode), sdkLogger); err != nil {
+		return nil, nil, cleanupFn, err
 	}
 
 	cmtApp := sdkserver.NewCometABCIWrapper(app)
