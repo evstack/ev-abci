@@ -1,12 +1,10 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,7 +21,6 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -129,11 +126,6 @@ func NewAttesterCmd() *cobra.Command {
 				cancel()
 			}()
 
-			cmd.Println("Joining attester set...")
-			if err := joinAttesterSet(ctx, config, valAddr, operatorPrivKey, consensusPrivKey, clientCtx); err != nil {
-				return fmt.Errorf("join attester set: %w", err)
-			}
-
 			cmd.Println("Starting to watch for new blocks...")
 			if err := pullBlocksAndAttest(ctx, config, valAddr, operatorPrivKey, consensusPrivKey, clientCtx); err != nil {
 				return fmt.Errorf("error watching blocks: %w", err)
@@ -152,7 +144,26 @@ func NewAttesterCmd() *cobra.Command {
 	return cmd
 }
 
-func joinAttesterSet(
+func assertRegistered(
+	ctx context.Context,
+	consensusPrivKey *pvm.FilePV,
+	clientCtx client.Context,
+) error {
+	consAddr := sdk.ConsAddress(consensusPrivKey.Key.PubKey.Address()).String()
+	queryClient := networktypes.NewQueryClient(clientCtx)
+	resp, err := queryClient.AttesterSet(ctx, &networktypes.QueryAttesterSetRequest{})
+	if err != nil {
+		return fmt.Errorf("query attester set: %w", err)
+	}
+	for _, e := range resp.Entries {
+		if e.ConsensusAddress == consAddr {
+			return nil
+		}
+	}
+	return fmt.Errorf("consensus address %s is not in the attester set; must be registered in genesis", consAddr)
+}
+
+func pullBlocksAndAttest(
 	ctx context.Context,
 	config *AttesterConfig,
 	valAddr sdk.ValAddress,
@@ -160,269 +171,33 @@ func joinAttesterSet(
 	consensusPrivKey *pvm.FilePV,
 	clientCtx client.Context,
 ) error {
-	sdkPubKey, err := cryptocodec.FromCmtPubKeyInterface(consensusPrivKey.Key.PubKey)
-	if err != nil {
-		return fmt.Errorf("convert public key: %w", err)
+	if err := assertRegistered(ctx, consensusPrivKey, clientCtx); err != nil {
+		return err
 	}
 
-	authorityAddr, err := clientCtx.InterfaceRegistry.SigningContext().AddressCodec().BytesToString(operatorPrivKey.PubKey().Address())
-	if err != nil {
-		return fmt.Errorf("convert authority address: %w", err)
-	}
-
-	msg, err := networktypes.NewMsgJoinAttesterSet(authorityAddr, valAddr.String(), sdkPubKey)
-	if err != nil {
-		return fmt.Errorf("create join attester set msg: %w", err)
-	}
-
-	txHash, err := broadcastTx(ctx, config, msg, operatorPrivKey, clientCtx)
-	if err != nil {
-		return fmt.Errorf("broadcast join attester set tx: %w", err)
-	}
-
-	if config.Verbose {
-		fmt.Printf("📝 Transaction submitted with hash: %s\n", txHash)
-	}
-
-	time.Sleep(500 * time.Millisecond)
-
-	var txResult *sdk.TxResponse
-	var retries = 10
-	for range retries {
-		txResult, err = authtx.QueryTx(clientCtx, txHash)
-		if err == nil {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	if err != nil {
-		return fmt.Errorf("transaction %s not found after %d attempts: %w", txHash, retries, err)
-	}
-
-	if config.Verbose {
-		fmt.Printf("📊 Transaction Result: Code=%d, Height=%d\n", txResult.Code, txResult.Height)
-	}
-
-	if txResult.Code != 0 {
-		fmt.Printf("❌ MsgJoinAttesterSet FAILED with code %d\n", txResult.Code)
-		fmt.Printf("   Error details: %s\n", txResult.RawLog)
-
-		if txResult.Code == 18 && strings.Contains(txResult.RawLog, "validator already in attester set") {
-			fmt.Printf("ℹ️  Already in attester set, proceeding...\n")
-			return nil
-		}
-
-		switch txResult.Code {
-		case 4:
-			fmt.Println("   Error: Unauthorized - The address may not be a valid validator")
-		case 5:
-			fmt.Println("   Error: Insufficient funds")
-		case 11:
-			fmt.Println("   Error: Out of gas")
-		case 18:
-			fmt.Println("   Error: Invalid request")
-		default:
-			fmt.Printf("   Error code %d\n", txResult.Code)
-		}
-
-		return fmt.Errorf("MsgJoinAttesterSet failed with code %d: %s", txResult.Code, txResult.RawLog)
-	}
-
-	fmt.Printf("✅ Successfully joined attester set\n")
-	time.Sleep(500 * time.Millisecond)
-
-	return nil
-}
-
-func pullBlocksAndAttest(
-	ctx context.Context,
-	config *AttesterConfig,
-	valAddr sdk.ValAddress,
-	senderKey *secp256k1.PrivKey,
-	pv *pvm.FilePV,
-	clientCtx client.Context,
-) error {
-	parsed, err := url.Parse(config.Node)
-	if err != nil {
-		return fmt.Errorf("parse node URL: %w", err)
-	}
-
-	httpClient := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := httpClient.Get(fmt.Sprintf("http://%s/status", parsed.Host))
-	if err != nil {
-		return fmt.Errorf("error querying status: %v", err)
-	}
-
-	var statusResponse struct {
-		Result struct {
-			SyncInfo struct {
-				LatestBlockHeight string `json:"latest_block_height"`
-			} `json:"sync_info"`
-		} `json:"result"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&statusResponse); err != nil {
-		_ = resp.Body.Close()
-		return fmt.Errorf("error parsing status response: %v", err)
-	}
-	_ = resp.Body.Close()
-
-	currentHeight, err := strconv.ParseInt(statusResponse.Result.SyncInfo.LatestBlockHeight, 10, 64)
-	if err != nil {
-		return fmt.Errorf("error parsing current height: %v", err)
-	}
-
-	fmt.Printf("📊 Current blockchain height: %d\n", currentHeight)
-	fmt.Printf("📝 Attesting blocks 1-%d...\n", currentHeight)
-
-	failedBlocks := make(map[int64]int)
-	maxRetries := 3
-
-	for height := int64(1); height <= currentHeight; height++ {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			if height%10 == 0 || height == 1 || height == currentHeight {
-				fmt.Printf("📦 Attesting blocks... %d/%d\n", height, currentHeight)
-			}
-
-			err = submitAttestation(ctx, config, height, valAddr, senderKey, pv, clientCtx)
-			if err != nil {
-				fmt.Printf("⚠️  Error attesting block %d: %v\n", height, err)
-				failedBlocks[height] = 1
-				continue
-			}
-
-			time.Sleep(time.Millisecond * 100)
-		}
-	}
-
-	if len(failedBlocks) > 0 {
-		fmt.Printf("\n🔄 Retrying %d failed blocks...\n", len(failedBlocks))
-		for retryRound := 1; retryRound <= maxRetries && len(failedBlocks) > 0; retryRound++ {
-			fmt.Printf("  Round %d/%d - %d blocks remaining\n", retryRound, maxRetries, len(failedBlocks))
-
-			blocksToRetry := make([]int64, 0, len(failedBlocks))
-			for height := range failedBlocks {
-				blocksToRetry = append(blocksToRetry, height)
-			}
-
-			for i := 0; i < len(blocksToRetry); i++ {
-				for j := i + 1; j < len(blocksToRetry); j++ {
-					if blocksToRetry[i] > blocksToRetry[j] {
-						blocksToRetry[i], blocksToRetry[j] = blocksToRetry[j], blocksToRetry[i]
-					}
-				}
-			}
-
-			for _, height := range blocksToRetry {
-				select {
-				case <-ctx.Done():
-					return nil
-				default:
-					fmt.Printf("  🔄 Retrying block %d (attempt %d)...\n", height, failedBlocks[height]+1)
-					err = submitAttestation(ctx, config, height, valAddr, senderKey, pv, clientCtx)
-					if err != nil {
-						failedBlocks[height]++
-						if failedBlocks[height] >= maxRetries {
-							fmt.Printf("  ❌ Block %d failed after %d attempts\n", height, maxRetries)
-							delete(failedBlocks, height)
-						}
-					} else {
-						fmt.Printf("  ✅ Block %d attested successfully\n", height)
-						delete(failedBlocks, height)
-					}
-
-					time.Sleep(time.Millisecond * 300)
-				}
-			}
-
-			if len(failedBlocks) > 0 {
-				time.Sleep(time.Second * 2)
-			}
-		}
-
-		if len(failedBlocks) > 0 {
-			fmt.Printf("\n❌ Failed to attest %d blocks after all retries\n", len(failedBlocks))
-			for height := range failedBlocks {
-				fmt.Printf("  - Block %d\n", height)
-			}
-		}
-	}
-
-	fmt.Printf("✅ Finished historical blocks. Watching for new blocks...\n")
-
-	lastAttested := currentHeight
+	var nextHeight int64 = 1
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
-		default:
-			resp, err := httpClient.Get(fmt.Sprintf("http://%s/block", parsed.Host))
-			if err != nil {
-				fmt.Printf("Error querying block: %v\n", err)
-				time.Sleep(time.Second / 10)
-				continue
-			}
-
-			var blockResponse struct {
-				Result struct {
-					Block struct {
-						Header struct {
-							Height  string `json:"height"`
-							AppHash string `json:"app_hash"`
-						} `json:"header"`
-					} `json:"block"`
-				} `json:"result"`
-			}
-
-			var buf bytes.Buffer
-			if err := json.NewDecoder(io.TeeReader(resp.Body, &buf)).Decode(&blockResponse); err != nil {
-				fmt.Printf("Error parsing response: %v: %s\n", err, buf.String())
-				_ = resp.Body.Close()
-				time.Sleep(time.Second / 10)
-				continue
-			}
-			_ = resp.Body.Close()
-
-			heightStr := blockResponse.Result.Block.Header.Height
-			if heightStr == "" {
-				if config.Verbose {
-					fmt.Println("Height field is empty in response, retrying...")
-				}
-				time.Sleep(time.Second / 10)
-				continue
-			}
-			height, err := strconv.ParseInt(heightStr, 10, 64)
-			if err != nil {
-				fmt.Printf("Error parsing height: %v\n", err)
-				time.Sleep(time.Second / 10)
-				continue
-			}
-
-			if height > lastAttested {
-				for missedHeight := lastAttested + 1; missedHeight <= height; missedHeight++ {
-					fmt.Printf("📦 New block %d - attesting...\n", missedHeight)
-
-					err = submitAttestation(ctx, config, missedHeight, valAddr, senderKey, pv, clientCtx)
-					if err != nil {
-						fmt.Printf("⚠️  Error submitting attestation for block %d: %v\n", missedHeight, err)
-						continue
-					}
-					fmt.Printf("✅ Attested block %d\n", missedHeight)
-				}
-
-				lastAttested = height
-			}
-
-			time.Sleep(50 * time.Millisecond)
+			return ctx.Err()
+		case <-ticker.C:
 		}
+
+		currentHeight, err := getLatestHeight(config.Node)
+		if err != nil {
+			fmt.Printf("⚠️  status poll failed: %v\n", err)
+			continue
+		}
+		for h := nextHeight; h <= currentHeight; h++ {
+			if err := submitAttestation(ctx, config, h, valAddr, operatorPrivKey, consensusPrivKey, clientCtx); err != nil {
+				// duplicate or transient — log and move on
+				fmt.Printf("attest h=%d: %v\n", h, err)
+			}
+		}
+		nextHeight = currentHeight + 1
 	}
 }
 
@@ -652,7 +427,6 @@ func submitAttestation(
 	if err != nil {
 		return fmt.Errorf("getting Evolve header: %w", err)
 	}
-
 	blockID, err := getOriginalBlockID(ctx, config.Node, height)
 	if err != nil {
 		return fmt.Errorf("getting original block ID: %w", err)
@@ -661,58 +435,76 @@ func submitAttestation(
 	vote := cmtproto.Vote{
 		Type:             cmtproto.PrecommitType,
 		Height:           height,
-		BlockID:          blockID,
 		Round:            0,
+		BlockID:          blockID,
 		Timestamp:        header.Time(),
-		ValidatorAddress: pv.Key.PrivKey.PubKey().Address(),
+		ValidatorAddress: pv.Key.PubKey.Address(),
 		ValidatorIndex:   0,
 	}
-
 	signBytes := cmttypes.VoteSignBytes(config.ChainID, &vote)
-
-	signature, err := pv.Key.PrivKey.Sign(signBytes)
+	sig, err := pv.Key.PrivKey.Sign(signBytes)
 	if err != nil {
-		return fmt.Errorf("signing payload: %w", err)
+		return fmt.Errorf("sign vote: %w", err)
 	}
-
-	validatorAddr := pv.Key.Address
-
-	fmt.Printf("🔍 DEBUG ValidatorAddr used in vote: %X\n", validatorAddr)
-	fmt.Printf("🔍 DEBUG pv.GetAddress(): %X\n", pv.GetAddress())
-	fmt.Printf("🔍 DEBUG pubKey.Address(): %X\n", pv.Key.PubKey.Address())
-
-	attesterVote := &cmtproto.Vote{
-		Type:             cmtproto.PrecommitType,
-		ValidatorAddress: validatorAddr,
-		Height:           height,
-		Round:            0,
-		BlockID:          cmtproto.BlockID{Hash: header.Hash(), PartSetHeader: cmtproto.PartSetHeader{}},
-		Timestamp:        header.Time(),
-		Signature:        signature,
-	}
-
-	voteBytes, err := proto.Marshal(attesterVote)
+	vote.Signature = sig
+	voteBytes, err := proto.Marshal(&vote)
 	if err != nil {
 		return fmt.Errorf("marshal vote: %w", err)
 	}
 
 	authorityAddr := sdk.AccAddress(senderKey.PubKey().Address()).String()
-	msg := networktypes.NewMsgAttest(
-		authorityAddr,
-		valAddr.String(),
-		height,
-		voteBytes,
-	)
+	consensusAddr := sdk.ConsAddress(pv.Key.PubKey.Address()).String()
+	msg := networktypes.NewMsgAttest(authorityAddr, consensusAddr, height, voteBytes)
 
 	txHash, err := broadcastTx(ctx, config, msg, senderKey, clientCtx)
 	if err != nil {
 		return fmt.Errorf("broadcast attest tx: %w", err)
 	}
-
 	if config.Verbose {
 		fmt.Printf("Attestation submitted for block %d with hash: %s\n", height, txHash)
 	}
 	return nil
+}
+
+// getLatestHeight returns the latest raw block height the sequencer has
+// produced. It cannot use /status in attester mode because /status reports
+// the last-attested height there (which is 0 before any attestation is made,
+// causing a deadlock: attester waits for blocks to attest, but /status can't
+// advance until attestations land). Instead, it hits /block with no height,
+// which the RPC resolves to RollkitStore.Height — the real production height.
+func getLatestHeight(nodeURL string) (int64, error) {
+	parsed, err := url.Parse(nodeURL)
+	if err != nil {
+		return 0, fmt.Errorf("parse node URL: %w", err)
+	}
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.Get(fmt.Sprintf("http://%s/block", parsed.Host))
+	if err != nil {
+		return 0, fmt.Errorf("query block: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var blockResp struct {
+		Result struct {
+			Block struct {
+				Header struct {
+					Height string `json:"height"`
+				} `json:"header"`
+			} `json:"block"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&blockResp); err != nil {
+		return 0, fmt.Errorf("decode block: %w", err)
+	}
+	heightStr := blockResp.Result.Block.Header.Height
+	if heightStr == "" {
+		return 0, nil
+	}
+	h, err := strconv.ParseInt(heightStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse height %q: %w", heightStr, err)
+	}
+	return h, nil
 }
 
 func getEvolveHeader(node string, height int64) (*evolvetypes.Header, error) {
