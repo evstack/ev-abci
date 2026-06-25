@@ -2,8 +2,10 @@ package integration_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +18,8 @@ import (
 	"github.com/celestiaorg/tastora/framework/testutil/sdkacc"
 	"github.com/celestiaorg/tastora/framework/testutil/wait"
 	"github.com/celestiaorg/tastora/framework/types"
+	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
+	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -93,6 +97,53 @@ func (s *DockerIntegrationTestSuite) TestAttesterSystem() {
 	err = attesterNode.Start(ctx, attesterConfig)
 	require.NoError(s.T(), err)
 	s.T().Log("Attester node started successfully")
+
+	// Wait for the attester to attest some blocks and LastAttestedHeight to advance.
+	s.T().Log("Waiting for attestations to reach quorum...")
+	var targetHeight int64 = 10
+	err = wait.ForCondition(ctx, 2*time.Minute, 2*time.Second, func() (bool, error) {
+		node := gmChain.GetNodes()[0]
+		rpcClient, _ := node.GetRPCClient()
+		if rpcClient == nil {
+			return false, nil
+		}
+		status, statusErr := rpcClient.Status(ctx)
+		if statusErr != nil {
+			return false, nil
+		}
+		return status.SyncInfo.LatestBlockHeight >= targetHeight, nil
+	})
+	s.Require().NoError(err, "chain did not reach target height %d", targetHeight)
+
+	// Fetch /commit for the target height and assert VerifyCommitLight passes.
+	{
+		node := gmChain.GetNodes()[0]
+		rpcClient, err := node.GetRPCClient()
+		s.Require().NoError(err)
+		commitResp, err := rpcClient.Commit(ctx, &targetHeight)
+		s.Require().NoError(err, "fetch commit at height %d", targetHeight)
+
+		privValJSONBz, err := node.ReadFile(ctx, "config/priv_validator_key.json")
+		s.Require().NoError(err)
+		var pv struct {
+			PubKey struct {
+				Type  string `json:"type"`
+				Value string `json:"value"`
+			} `json:"pub_key"`
+		}
+		s.Require().NoError(json.Unmarshal(privValJSONBz, &pv))
+		pkBytes, err := base64.StdEncoding.DecodeString(pv.PubKey.Value)
+		s.Require().NoError(err)
+		cmtPub := cmted25519.PubKey(pkBytes)
+		valSet := cmttypes.NewValidatorSet([]*cmttypes.Validator{cmttypes.NewValidator(cmtPub, 1)})
+
+		commit := commitResp.SignedHeader.Commit
+		s.Require().NoError(
+			valSet.VerifyCommitLight("gm", commit.BlockID, targetHeight, commit),
+			"reconstructed commit must pass 07-tendermint light-client verification",
+		)
+		s.T().Logf("commit at height %d passes VerifyCommitLight with %d signatures", targetHeight, len(commit.Signatures))
+	}
 
 	hermes, err := relayer.NewHermes(ctx, s.dockerClient, s.T().Name(), s.networkID, 0, s.logger)
 	require.NoError(s.T(), err, "failed to create hermes relayer")
@@ -256,7 +307,7 @@ func (s *DockerIntegrationTestSuite) getGmChain(ctx context.Context) *cosmos.Cha
 			"--log_level", "*:info",
 		).
 		WithNode(cosmos.NewChainNodeConfigBuilder().
-			WithPostInit(AddSingleSequencer, writePasshraseFile("12345678")).
+			WithPostInit(AddSingleSequencer, AddGenesisAttester, writePasshraseFile("12345678")).
 			Build()).
 		Build(ctx)
 	require.NoError(s.T(), err)
@@ -303,6 +354,69 @@ func AddSingleSequencer(ctx context.Context, node *cosmos.ChainNode) error {
 		return fmt.Errorf("failed to marshal genesis: %w", err)
 	}
 	return node.WriteFile(ctx, "config/genesis.json", updatedGenesis)
+}
+
+// AddGenesisAttester populates app_state.network.attester_infos with a single
+// attester entry derived from the node's priv_validator_key.json and the
+// operator address of the "validator" keyring entry.
+func AddGenesisAttester(ctx context.Context, node *cosmos.ChainNode) error {
+	genesisBz, err := node.ReadFile(ctx, "config/genesis.json")
+	if err != nil {
+		return fmt.Errorf("read genesis: %w", err)
+	}
+
+	pubKey, err := getPubKey(ctx, node)
+	if err != nil {
+		return fmt.Errorf("get consensus pubkey: %w", err)
+	}
+
+	// Consensus address (cosmosvalcons1... derived from ed25519 Address())
+	consensusAddress := sdk.ConsAddress(pubKey.Address()).String()
+
+	// Operator address: run `gmd keys show validator -a` inside the node container.
+	stdout, stderr, err := node.Exec(ctx, []string{
+		node.BinaryName,
+		"keys", "show", "validator", "-a",
+		"--keyring-backend", "test",
+		"--home", node.HomeDir(),
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("query validator operator address (stderr=%q): %w", string(stderr), err)
+	}
+	authority := strings.TrimSpace(string(stdout))
+	if authority == "" {
+		return fmt.Errorf("empty operator address for validator keyring entry")
+	}
+
+	attesterInfo := map[string]interface{}{
+		"authority": authority,
+		"pubkey": map[string]interface{}{
+			"@type": "/cosmos.crypto.ed25519.PubKey",
+			"key":   base64.StdEncoding.EncodeToString(pubKey.Bytes()),
+		},
+		"joined_height":     0,
+		"consensus_address": consensusAddress,
+	}
+
+	var genDoc map[string]interface{}
+	if err := json.Unmarshal(genesisBz, &genDoc); err != nil {
+		return fmt.Errorf("parse genesis: %w", err)
+	}
+	appState, ok := genDoc["app_state"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("genesis has no app_state object")
+	}
+	network, ok := appState["network"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("genesis has no app_state.network object")
+	}
+	network["attester_infos"] = []interface{}{attesterInfo}
+
+	updatedBz, err := json.MarshalIndent(genDoc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal genesis: %w", err)
+	}
+	return node.WriteFile(ctx, "config/genesis.json", updatedBz)
 }
 
 // setupIBCConnection establishes a complete IBC connection and channel

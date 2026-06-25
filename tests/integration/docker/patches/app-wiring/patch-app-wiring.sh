@@ -189,6 +189,18 @@ func (app *App) GetNetworkKeeper() networkkeeper.Keeper {
 EOF
 fi
 
+# Add BlockID provider setter (required by ev-abci server wiring)
+if ! grep -q "SetNetworkKeeperBlockIDProvider" "$APP_GO"; then
+  echo "[patch-app-wiring] Adding SetNetworkKeeperBlockIDProvider method"
+  add_import "$APP_GO" $'\tnetworktypes "github.com/evstack/ev-abci/modules/network/types"'
+  cat >>"$APP_GO" <<'EOF'
+
+func (app *App) SetNetworkKeeperBlockIDProvider(p networktypes.BlockIDProvider) {
+    app.NetworkKeeper.SetBlockIDProvider(p)
+}
+EOF
+fi
+
 echo "[patch-app-wiring] Step 5: Final validation"
 
 # Validate critical components
