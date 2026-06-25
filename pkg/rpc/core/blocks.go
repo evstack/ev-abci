@@ -15,7 +15,7 @@ import (
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	cmttypes "github.com/cometbft/cometbft/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/gogoproto/proto"
 
 	storepkg "github.com/evstack/ev-node/pkg/store"
@@ -334,82 +334,109 @@ func BlockchainInfo(ctx *rpctypes.Context, minHeight, maxHeight int64) (*ctypes.
 	}, nil
 }
 
-// getCommitForHeight returns commit info for a specific height,
-// using attester signatures if in attester mode, otherwise sequencer signatures
+// getCommitForHeight returns a deterministic cmttypes.Commit for height.
+// In attester mode it builds the commit from the ordered attester set, placing
+// BlockIDFlagAbsent for non-signers and refusing to return until 2/3 quorum is met.
 func getCommitForHeight(ctx context.Context, height uint64) (*cmttypes.Commit, error) {
-	// Debug: Log attester mode status
-	env.Logger.Info("getCommitForHeight called",
-		"height", height,
-		"AttesterMode", env.AttesterMode)
-
-	// If not in attester mode, use the original sequencer-based commit
 	if !env.AttesterMode {
-		env.Logger.Info("Using sequencer mode - returning sequencer signatures")
 		return env.Adapter.GetLastCommit(ctx, height+1)
 	}
 
-	// In attester mode, try to construct commit from attester signatures
 	blockID, err := env.Adapter.Store.GetBlockID(ctx, height)
 	if err != nil {
 		return nil, fmt.Errorf("get block ID for height %d: %w", height, err)
 	}
 
-	// Query attester signatures from the network module
-	env.Logger.Info("In attester mode - querying attester signatures", "height", height)
+	entries, err := getAttesterSet(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get attester set: %w", err)
+	}
 	signatures, err := getAttesterSignatures(ctx, int64(height))
 	if err != nil {
-		env.Logger.Error("failed to get attester signatures",
-			"height", height, "error", err)
-		return nil, fmt.Errorf("attester mode: failed to get attester signatures for height %d: %w", height, err)
+		return nil, fmt.Errorf("get attester signatures: %w", err)
 	}
 
-	// Build commit with attester signatures
-	commitSigs := make([]cmttypes.CommitSig, 0, len(signatures))
-	for validatorAddr, signature := range signatures {
-		// Parse the signature bytes (they should be marshaled cmtproto.Vote)
+	commitSigs := make([]cmttypes.CommitSig, 0, len(entries))
+	signedCount := 0
+	for _, e := range entries {
+		voteBytes, ok := signatures[e.ConsensusAddress]
+		if !ok {
+			commitSigs = append(commitSigs, cmttypes.CommitSig{BlockIDFlag: cmttypes.BlockIDFlagAbsent})
+			continue
+		}
 		var vote cmtproto.Vote
-		if err := proto.Unmarshal(signature, &vote); err != nil {
-			env.Logger.Error("failed to unmarshal attester vote",
-				"validator", validatorAddr, "error", err)
+		if err := proto.Unmarshal(voteBytes, &vote); err != nil {
+			commitSigs = append(commitSigs, cmttypes.CommitSig{BlockIDFlag: cmttypes.BlockIDFlagAbsent})
 			continue
 		}
-
-		// Decode bech32 validator address to get 20-byte address
-		valAddrBytes, err := sdk.ValAddressFromBech32(validatorAddr)
-		if err != nil {
-			env.Logger.Error("failed to decode validator address",
-				"validator", validatorAddr, "error", err)
-			continue
-		}
-
 		commitSigs = append(commitSigs, cmttypes.CommitSig{
 			BlockIDFlag:      cmttypes.BlockIDFlagCommit,
-			ValidatorAddress: cmttypes.Address(valAddrBytes),
+			ValidatorAddress: e.ValidatorAddress,
 			Timestamp:        vote.Timestamp,
 			Signature:        vote.Signature,
 		})
+		signedCount++
 	}
 
-	// If no valid attester signatures, return error instead of fallback
-	if len(commitSigs) == 0 {
-		env.Logger.Error("no attester signatures found for block", "height", height)
-		return nil, fmt.Errorf("attester mode: no attester signatures found for height %d - block not attested", height)
+	total := len(entries)
+	if signedCount*3 <= total*2 {
+		return nil, fmt.Errorf("height %d not yet attested (signed %d of %d)", height, signedCount, total)
 	}
 
 	return &cmttypes.Commit{
-		Height:     int64(height),
+		Height:     int64(height), //nolint:gosec
 		Round:      0,
 		BlockID:    *blockID,
 		Signatures: commitSigs,
 	}, nil
 }
 
-// getAttesterSignatures queries the network module to get all attester signatures for a height
-func getAttesterSignatures(ctx context.Context, height int64) (map[string][]byte, error) {
-	// Use the new AttesterSignatures gRPC endpoint
-	env.Logger.Info("Querying AttesterSignatures endpoint", "height", height)
+// attesterSetEntry holds an ordered attester set entry used for commit reconstruction.
+type attesterSetEntry struct {
+	ConsensusAddress string
+	ValidatorAddress []byte
+	Pubkey           cryptotypes.PubKey
+}
 
-	// Query individual attester signatures using the new endpoint
+// getAttesterSet fetches the ordered attester set from the network module via ABCI query.
+func getAttesterSet(ctx context.Context) ([]attesterSetEntry, error) {
+	req, err := proto.Marshal(&networktypes.QueryAttesterSetRequest{})
+	if err != nil {
+		return nil, err
+	}
+	result, err := env.Adapter.App.Query(ctx, &abci.RequestQuery{
+		Path: "/evabci.network.v1.Query/AttesterSet",
+		Data: req,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("query AttesterSet failed: %s", result.Log)
+	}
+	var resp networktypes.QueryAttesterSetResponse
+	if err := proto.Unmarshal(result.Value, &resp); err != nil {
+		return nil, err
+	}
+	sort.Slice(resp.Entries, func(i, j int) bool { return resp.Entries[i].Index < resp.Entries[j].Index })
+
+	out := make([]attesterSetEntry, 0, len(resp.Entries))
+	for _, e := range resp.Entries {
+		var pk cryptotypes.PubKey
+		if err := networktypes.ModuleCdc.InterfaceRegistry().UnpackAny(e.Pubkey, &pk); err != nil {
+			return nil, fmt.Errorf("unpack pubkey for %s: %w", e.ConsensusAddress, err)
+		}
+		out = append(out, attesterSetEntry{
+			ConsensusAddress: e.ConsensusAddress,
+			ValidatorAddress: pk.Address(),
+			Pubkey:           pk,
+		})
+	}
+	return out, nil
+}
+
+// getAttesterSignatures queries the network module to get all attester signatures for a height.
+func getAttesterSignatures(ctx context.Context, height int64) (map[string][]byte, error) {
 	signaturesReq, err := proto.Marshal(&networktypes.QueryAttesterSignaturesRequest{Height: height})
 	if err != nil {
 		return nil, fmt.Errorf("marshal attester signatures request: %w", err)
@@ -420,12 +447,10 @@ func getAttesterSignatures(ctx context.Context, height int64) (map[string][]byte
 		Data: signaturesReq,
 	})
 	if err != nil {
-		env.Logger.Debug("AttesterSignatures query failed", "error", err)
 		return make(map[string][]byte), nil
 	}
 
 	if result.Code != 0 {
-		env.Logger.Info("AttesterSignatures not found", "height", height, "code", result.Code)
 		return make(map[string][]byte), nil
 	}
 
@@ -434,13 +459,18 @@ func getAttesterSignatures(ctx context.Context, height int64) (map[string][]byte
 		return nil, fmt.Errorf("unmarshal attester signatures response: %w", err)
 	}
 
-	// Convert to map format
 	signatures := make(map[string][]byte)
 	for _, sig := range signaturesResp.Signatures {
 		signatures[sig.ValidatorAddress] = sig.Signature
 	}
 
-	env.Logger.Info("Found AttesterSignatures", "height", height, "count", len(signatures))
-
 	return signatures, nil
+}
+
+// GetCommitForHeightForTest is exported only for tests in this package.
+func GetCommitForHeightForTest(ctx context.Context, e *Environment, height uint64) (*cmttypes.Commit, error) {
+	previousEnv := env
+	env = e
+	defer func() { env = previousEnv }()
+	return getCommitForHeight(ctx, height)
 }
