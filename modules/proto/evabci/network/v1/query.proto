@@ -152,7 +152,11 @@ message QueryAttesterInfoResponse {
 }
 
 // QueryAttesterSetRequest is the request type for the Query/AttesterSet RPC method.
-message QueryAttesterSetRequest {}
+message QueryAttesterSetRequest {
+  // height selects the attester set active for that height. If unset, the
+  // current attester set is returned.
+  int64 height = 1;
+}
 
 // AttesterSetEntry is a single entry in the attester set, ordered by index.
 message AttesterSetEntry {

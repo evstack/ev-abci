@@ -12,9 +12,13 @@ import (
 	pvm "github.com/cometbft/cometbft/privval"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
+	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 
 func TestPrivateKeyFromMnemonic(t *testing.T) {
@@ -231,6 +235,61 @@ func TestInitialAttestationHeight(t *testing.T) {
 	require.Equal(t, int64(2), initialAttestationHeight(1))
 	require.Equal(t, int64(2), initialAttestationHeight(2))
 	require.Equal(t, int64(42), initialAttestationHeight(42))
+}
+
+type fakeAttesterSetQueryClient struct {
+	entriesByHeight map[int64][]networktypes.AttesterSetEntry
+	requestedHeight []int64
+}
+
+func (f *fakeAttesterSetQueryClient) AttesterSet(
+	_ context.Context,
+	req *networktypes.QueryAttesterSetRequest,
+	_ ...grpc.CallOption,
+) (*networktypes.QueryAttesterSetResponse, error) {
+	f.requestedHeight = append(f.requestedHeight, req.Height)
+	return &networktypes.QueryAttesterSetResponse{Entries: f.entriesByHeight[req.Height]}, nil
+}
+
+func TestAssertRegisteredAtHeightQueriesRequestedHeight(t *testing.T) {
+	privKey := ed25519.GenPrivKey()
+	pv := &pvm.FilePV{
+		Key: pvm.FilePVKey{
+			Address: privKey.PubKey().Address(),
+			PubKey:  privKey.PubKey(),
+			PrivKey: privKey,
+		},
+	}
+	consAddr := sdk.ConsAddress(privKey.PubKey().Address()).String()
+	queryClient := &fakeAttesterSetQueryClient{
+		entriesByHeight: map[int64][]networktypes.AttesterSetEntry{
+			7: {{ConsensusAddress: consAddr}},
+		},
+	}
+
+	err := assertRegisteredAtHeight(context.Background(), pv, queryClient, 7)
+	require.NoError(t, err)
+	require.Equal(t, []int64{7}, queryClient.requestedHeight)
+}
+
+func TestAssertRegisteredAtHeightRejectsRemovedAttester(t *testing.T) {
+	privKey := ed25519.GenPrivKey()
+	pv := &pvm.FilePV{
+		Key: pvm.FilePVKey{
+			Address: privKey.PubKey().Address(),
+			PubKey:  privKey.PubKey(),
+			PrivKey: privKey,
+		},
+	}
+	queryClient := &fakeAttesterSetQueryClient{
+		entriesByHeight: map[int64][]networktypes.AttesterSetEntry{
+			11: {},
+		},
+	}
+
+	err := assertRegisteredAtHeight(context.Background(), pv, queryClient, 11)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not in the attester set at height 11")
 }
 
 func TestGetEvolveHeader(t *testing.T) {

@@ -29,6 +29,7 @@ var (
 	EpochBitmapPrefix           = collections.NewPrefix("epoch_bitmap")
 	AttesterSetPrefix           = collections.NewPrefix("attester_set")
 	AttesterInfoPrefix          = collections.NewPrefix("attester_info")
+	AttesterSetSnapshotPrefix   = collections.NewPrefix("attester_snapshot")
 	SignaturePrefix             = collections.NewPrefix("signature")
 	StoredAttestationInfoPrefix = collections.NewPrefix("stored_attestation_info")
 	LastAttestedHeightKey       = collections.NewPrefix("last_attested_height")

@@ -347,7 +347,7 @@ func getCommitForHeight(ctx context.Context, height uint64) (*cmttypes.Commit, e
 		return nil, fmt.Errorf("get block ID for height %d: %w", height, err)
 	}
 
-	entries, err := getAttesterSet(ctx)
+	entries, err := getAttesterSet(ctx, int64(height))
 	if err != nil {
 		return nil, fmt.Errorf("get attester set: %w", err)
 	}
@@ -399,8 +399,8 @@ type attesterSetEntry struct {
 }
 
 // getAttesterSet fetches the ordered attester set from the network module via ABCI query.
-func getAttesterSet(ctx context.Context) ([]attesterSetEntry, error) {
-	req, err := proto.Marshal(&networktypes.QueryAttesterSetRequest{})
+func getAttesterSet(ctx context.Context, height int64) ([]attesterSetEntry, error) {
+	req, err := proto.Marshal(&networktypes.QueryAttesterSetRequest{Height: height})
 	if err != nil {
 		return nil, err
 	}

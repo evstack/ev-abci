@@ -34,6 +34,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 
 	evolvetypes "github.com/evstack/ev-node/types"
 
@@ -149,9 +150,21 @@ func assertRegistered(
 	consensusPrivKey *pvm.FilePV,
 	clientCtx client.Context,
 ) error {
+	return assertRegisteredAtHeight(ctx, consensusPrivKey, networktypes.NewQueryClient(clientCtx), 0)
+}
+
+type attesterSetQueryClient interface {
+	AttesterSet(context.Context, *networktypes.QueryAttesterSetRequest, ...grpc.CallOption) (*networktypes.QueryAttesterSetResponse, error)
+}
+
+func assertRegisteredAtHeight(
+	ctx context.Context,
+	consensusPrivKey *pvm.FilePV,
+	queryClient attesterSetQueryClient,
+	height int64,
+) error {
 	consAddr := sdk.ConsAddress(consensusPrivKey.Key.PubKey.Address()).String()
-	queryClient := networktypes.NewQueryClient(clientCtx)
-	resp, err := queryClient.AttesterSet(ctx, &networktypes.QueryAttesterSetRequest{})
+	resp, err := queryClient.AttesterSet(ctx, &networktypes.QueryAttesterSetRequest{Height: height})
 	if err != nil {
 		return fmt.Errorf("query attester set: %w", err)
 	}
@@ -160,7 +173,10 @@ func assertRegistered(
 			return nil
 		}
 	}
-	return fmt.Errorf("consensus address %s is not in the attester set; must be registered in genesis", consAddr)
+	if height == 0 {
+		return fmt.Errorf("consensus address %s is not in the attester set", consAddr)
+	}
+	return fmt.Errorf("consensus address %s is not in the attester set at height %d", consAddr, height)
 }
 
 func pullBlocksAndAttest(
@@ -174,6 +190,7 @@ func pullBlocksAndAttest(
 	if err := assertRegistered(ctx, consensusPrivKey, clientCtx); err != nil {
 		return err
 	}
+	queryClient := networktypes.NewQueryClient(clientCtx)
 
 	var nextHeight int64
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -198,6 +215,10 @@ func pullBlocksAndAttest(
 			continue
 		}
 		for h := nextHeight; h <= currentHeight; h++ {
+			if err := assertRegisteredAtHeight(ctx, consensusPrivKey, queryClient, h); err != nil {
+				fmt.Printf("skip attest h=%d: %v\n", h, err)
+				continue
+			}
 			if err := submitAttestation(ctx, config, h, valAddr, operatorPrivKey, consensusPrivKey, clientCtx); err != nil {
 				// duplicate or transient — log and move on
 				fmt.Printf("attest h=%d: %v\n", h, err)

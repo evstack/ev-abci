@@ -19,7 +19,7 @@ message GenesisState {
   // attestation_bitmaps contains historical attestation data
   repeated AttestationBitmap attestation_bitmaps = 3 [(gogoproto.nullable) = false];
 
-  // attester_infos is the fixed attester set loaded at genesis. After chain
-  // start, the set is immutable (MsgJoin/MsgLeave are disabled).
+  // attester_infos is the active attester set loaded at genesis. After chain
+  // start, MsgJoinAttesterSet and MsgLeaveAttesterSet can update the active set.
   repeated AttesterInfo attester_infos = 4 [(gogoproto.nullable) = false];
 }

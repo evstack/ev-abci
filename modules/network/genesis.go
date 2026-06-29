@@ -66,6 +66,9 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 			return fmt.Errorf("set validator index: %w", err)
 		}
 	}
+	if err := k.SetAttesterSetSnapshot(ctx, ctx.BlockHeight()); err != nil {
+		return fmt.Errorf("set attester set snapshot: %w", err)
+	}
 
 	// Still load historical bitmaps if provided (upgrade/dump scenarios).
 	for _, ab := range genState.AttestationBitmaps {
@@ -96,18 +99,18 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	genesis := types.DefaultGenesisState()
 	genesis.Params = k.GetParams(ctx)
 
-	var attesters []types.AttesterInfo
-	if err := k.AttesterInfo.Walk(ctx, nil, func(_ string, info types.AttesterInfo) (bool, error) {
-		attesters = append(attesters, info)
-		return false, nil
-	}); err != nil {
+	activeEntries, err := k.CurrentAttesterSetEntries(ctx)
+	if err != nil {
 		panic(err)
 	}
-	sort.Slice(attesters, func(i, j int) bool {
-		pki, _ := attesters[i].GetPubKey()
-		pkj, _ := attesters[j].GetPubKey()
-		return bytes.Compare(pki.Address(), pkj.Address()) < 0
-	})
+	attesters := make([]types.AttesterInfo, 0, len(activeEntries))
+	for _, entry := range activeEntries {
+		info, err := k.GetAttesterInfo(ctx, entry.ConsensusAddress)
+		if err != nil {
+			panic(err)
+		}
+		attesters = append(attesters, *info)
+	}
 	genesis.AttesterInfos = attesters
 
 	var attestationBitmaps []types.AttestationBitmap

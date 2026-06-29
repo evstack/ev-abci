@@ -129,3 +129,53 @@ func TestExportGenesisRoundtripsAttesters(t *testing.T) {
 	require.Equal(t, info.ConsensusAddress, exported.AttesterInfos[0].ConsensusAddress)
 	require.Equal(t, info.Authority, exported.AttesterInfos[0].Authority)
 }
+
+func TestInitGenesisSnapshotsInitialAttesterSet(t *testing.T) {
+	k, ctx, _ := newKeeperForGenesis(t)
+
+	pk := cmted25519.GenPrivKey().PubKey().(cmted25519.PubKey)
+	info := mustAnyPubKey(t, pk)
+	info.ConsensusAddress = sdk.ConsAddress(pk.Address()).String()
+
+	gs := types.GenesisState{
+		Params:        types.DefaultParams(),
+		AttesterInfos: []types.AttesterInfo{*info},
+	}
+	require.NoError(t, network.InitGenesis(ctx, k, gs))
+
+	msgServer := keeper.NewMsgServerImpl(k)
+	_, err := msgServer.LeaveAttesterSet(ctx, &types.MsgLeaveAttesterSet{
+		Authority:        info.Authority,
+		ConsensusAddress: info.ConsensusAddress,
+	})
+	require.NoError(t, err)
+
+	entries, err := k.GetAttesterSetForHeight(ctx, ctx.BlockHeight())
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, info.ConsensusAddress, entries[0].ConsensusAddress)
+}
+
+func TestExportGenesisExcludesRemovedAttesters(t *testing.T) {
+	k, ctx, _ := newKeeperForGenesis(t)
+
+	pk := cmted25519.GenPrivKey().PubKey().(cmted25519.PubKey)
+	info := mustAnyPubKey(t, pk)
+	info.ConsensusAddress = sdk.ConsAddress(pk.Address()).String()
+
+	gs := types.GenesisState{
+		Params:        types.DefaultParams(),
+		AttesterInfos: []types.AttesterInfo{*info},
+	}
+	require.NoError(t, network.InitGenesis(ctx, k, gs))
+
+	msgServer := keeper.NewMsgServerImpl(k)
+	_, err := msgServer.LeaveAttesterSet(ctx, &types.MsgLeaveAttesterSet{
+		Authority:        info.Authority,
+		ConsensusAddress: info.ConsensusAddress,
+	})
+	require.NoError(t, err)
+
+	exported := network.ExportGenesis(ctx, k)
+	require.Empty(t, exported.AttesterInfos)
+}

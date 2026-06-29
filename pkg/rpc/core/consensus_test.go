@@ -290,7 +290,14 @@ func TestValidatorsAttesterModeReturnsFullAttesterSet(t *testing.T) {
 
 	mApp := new(MockApp)
 	mApp.On("Query", testifymock.Anything, testifymock.MatchedBy(func(r *abci.RequestQuery) bool {
-		return r.Path == "/evabci.network.v1.Query/AttesterSet"
+		if r.Path != "/evabci.network.v1.Query/AttesterSet" {
+			return false
+		}
+		var req networktypes.QueryAttesterSetRequest
+		if err := proto.Unmarshal(r.Data, &req); err != nil {
+			return false
+		}
+		return req.Height == height
 	})).Return(&abci.ResponseQuery{Code: 0, Value: setRespBz}, nil)
 	mApp.On("Query", testifymock.Anything, testifymock.MatchedBy(func(r *abci.RequestQuery) bool {
 		return r.Path == "/evabci.network.v1.Query/AttesterSignatures"

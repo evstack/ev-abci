@@ -46,30 +46,233 @@ func (nilBlockIDProvider) GetBlockID(_ context.Context, _ uint64) (*cmttypes.Blo
 	return nil, nil
 }
 
-func TestJoinAttesterSetDisabled(t *testing.T) {
+func TestJoinAttesterSetAddsAttester(t *testing.T) {
 	sk := NewMockStakingKeeper()
-	server, _, ctx := newTestServer(t, &sk)
+	server, keeper, ctx := newTestServer(t, &sk)
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
 
-	msg := &types.MsgJoinAttesterSet{
-		Authority:        sdk.AccAddress([]byte("any-authority-20b")).String(),
-		ConsensusAddress: sdk.ConsAddress([]byte("any-cons-addr-20-b")).String(),
-	}
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+
+	authority := sdk.AccAddress(pub.Address()).String()
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	msg, err := types.NewMsgJoinAttesterSet(authority, consAddr, sdkPk)
+	require.NoError(t, err)
+
 	rsp, err := server.JoinAttesterSet(ctx, msg)
-	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
-	require.Contains(t, err.Error(), "attester set changes disabled")
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+
+	stored, err := keeper.GetAttesterInfo(ctx, consAddr)
+	require.NoError(t, err)
+	require.Equal(t, authority, stored.Authority)
+	require.Equal(t, consAddr, stored.ConsensusAddress)
+	idx, found := keeper.GetValidatorIndex(ctx, consAddr)
+	require.True(t, found)
+	require.Equal(t, uint16(0), idx)
+}
+
+func TestLeaveAttesterSetRemovesAttester(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	authority := sdk.AccAddress(pub.Address()).String()
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, 0))
+
+	msg := &types.MsgLeaveAttesterSet{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+	}
+	rsp, err := server.LeaveAttesterSet(ctx, msg)
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+
+	inSet, err := keeper.IsInAttesterSet(ctx, consAddr)
+	require.NoError(t, err)
+	require.False(t, inSet)
+}
+
+func TestAttesterSetQueryExcludesRemovedAttesters(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	authority := sdk.AccAddress(pub.Address()).String()
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, 0))
+
+	_, err := server.LeaveAttesterSet(ctx, &types.MsgLeaveAttesterSet{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+	})
+	require.NoError(t, err)
+
+	queryServer := NewQueryServer(keeper)
+	resp, err := queryServer.AttesterSet(ctx, &types.QueryAttesterSetRequest{})
+	require.NoError(t, err)
+	require.Empty(t, resp.Entries)
+}
+
+func TestAttesterSetQueryReturnsSnapshotForRequestedHeight(t *testing.T) {
+	const height int64 = 10
+
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	authority := sdk.AccAddress(pub.Address()).String()
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, 0))
+	require.NoError(t, keeper.SetAttesterSetSnapshot(ctx, height))
+
+	_, err := server.LeaveAttesterSet(ctx, &types.MsgLeaveAttesterSet{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+	})
+	require.NoError(t, err)
+
+	queryServer := NewQueryServer(keeper)
+	current, err := queryServer.AttesterSet(ctx, &types.QueryAttesterSetRequest{})
+	require.NoError(t, err)
+	require.Empty(t, current.Entries)
+
+	historical, err := queryServer.AttesterSet(ctx, &types.QueryAttesterSetRequest{Height: height})
+	require.NoError(t, err)
+	require.Len(t, historical.Entries, 1)
+	require.Equal(t, consAddr, historical.Entries[0].ConsensusAddress)
+}
+
+func TestLeaveAttesterSetDoesNotChangeHistoricalQuorum(t *testing.T) {
+	const height int64 = 10
+
+	chainID := "test-chain"
+	blockHash := bytes.Repeat([]byte{0x01}, 32)
+	privs := []cmted25519.PrivKey{
+		cmted25519.GenPrivKey(),
+		cmted25519.GenPrivKey(),
+		cmted25519.GenPrivKey(),
+	}
+
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+	for idx, priv := range privs {
+		pub := priv.PubKey().(cmted25519.PubKey)
+		authority := sdk.AccAddress(pub.Address()).String()
+		consAddr := sdk.ConsAddress(pub.Address()).String()
+		require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, uint16(idx)))
+	}
+
+	for _, priv := range privs[:2] {
+		pub := priv.PubKey().(cmted25519.PubKey)
+		_, err := server.Attest(ctx, &types.MsgAttest{
+			Authority:        sdk.AccAddress(pub.Address()).String(),
+			ConsensusAddress: sdk.ConsAddress(pub.Address()).String(),
+			Height:           height,
+			Vote:             signTestVote(t, chainID, height, priv, blockHash),
+		})
+		require.NoError(t, err)
+	}
+	softConfirmed, err := keeper.IsSoftConfirmed(ctx, height)
+	require.NoError(t, err)
+	require.False(t, softConfirmed)
+
+	removedPub := privs[2].PubKey().(cmted25519.PubKey)
+	_, err = server.LeaveAttesterSet(ctx, &types.MsgLeaveAttesterSet{
+		Authority:        sdk.AccAddress(removedPub.Address()).String(),
+		ConsensusAddress: sdk.ConsAddress(removedPub.Address()).String(),
+	})
+	require.NoError(t, err)
+
+	softConfirmed, err = keeper.IsSoftConfirmed(ctx, height)
+	require.NoError(t, err)
+	require.False(t, softConfirmed)
+
+	queryServer := NewQueryServer(keeper)
+	status, err := queryServer.SoftConfirmationStatus(ctx, &types.QuerySoftConfirmationStatusRequest{Height: height})
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), status.VotedPower)
+	require.Equal(t, uint64(3), status.TotalPower)
+}
+
+func TestAttestRejectsRemovedAttester(t *testing.T) {
+	const height int64 = 10
+
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	authority := sdk.AccAddress(pub.Address()).String()
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+	require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, 0))
+
+	_, err := server.LeaveAttesterSet(ctx, &types.MsgLeaveAttesterSet{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+	})
+	require.NoError(t, err)
+
+	rsp, err := server.Attest(ctx, &types.MsgAttest{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+		Height:           height,
+		Vote:             signTestVote(t, chainID, height, priv, bytes.Repeat([]byte{0x01}, 32)),
+	})
+	require.ErrorIs(t, err, sdkerrors.ErrUnauthorized)
 	require.Nil(t, rsp)
 }
 
-func TestLeaveAttesterSetDisabled(t *testing.T) {
-	sk := NewMockStakingKeeper()
-	server, _, ctx := newTestServer(t, &sk)
+func TestLeaveAttesterSetKeepsRemovedAttesterEligibleForSnapshotHeight(t *testing.T) {
+	const height int64 = 10
 
-	msg := &types.MsgLeaveAttesterSet{
-		Authority:        sdk.AccAddress([]byte("any-authority-20b")).String(),
-		ConsensusAddress: sdk.ConsAddress([]byte("any-cons-addr-20-b")).String(),
-	}
-	rsp, err := server.LeaveAttesterSet(ctx, msg)
-	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	chainID := "test-chain"
+	blockHash := bytes.Repeat([]byte{0x01}, 32)
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	authority := sdk.AccAddress(pub.Address()).String()
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+	require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, 0))
+	require.NoError(t, keeper.SetAttesterSetSnapshot(ctx, height))
+
+	_, err := server.LeaveAttesterSet(ctx, &types.MsgLeaveAttesterSet{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+	})
+	require.NoError(t, err)
+
+	rsp, err := server.Attest(ctx, &types.MsgAttest{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+		Height:           height,
+		Vote:             signTestVote(t, chainID, height, priv, blockHash),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, rsp)
+
+	rsp, err = server.Attest(ctx, &types.MsgAttest{
+		Authority:        authority,
+		ConsensusAddress: consAddr,
+		Height:           height + 1,
+		Vote:             signTestVote(t, chainID, height+1, priv, blockHash),
+	})
+	require.ErrorIs(t, err, sdkerrors.ErrUnauthorized)
 	require.Nil(t, rsp)
 }
 
@@ -460,29 +663,54 @@ func TestAttestHeightBounds(t *testing.T) {
 	}
 }
 
-func TestGetAllSignaturesForHeightUsesValidatorIndexOrder(t *testing.T) {
+func TestGetAllSignaturesForHeightUsesCurrentAttesterSetWhenNoSnapshot(t *testing.T) {
 	sk := NewMockStakingKeeper()
 	_, keeper, ctx := newTestServer(t, &sk)
 
 	const height int64 = 42
-	indexZeroAddr := "z-index-zero"
-	indexOneAddr := "a-index-one"
-	signature := []byte("signature-for-index-zero")
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	authority := sdk.AccAddress(pub.Address()).String()
+	signature := []byte("signature-for-current-set")
 
-	require.NoError(t, keeper.SetAttesterSetMember(ctx, indexZeroAddr))
-	require.NoError(t, keeper.SetAttesterSetMember(ctx, indexOneAddr))
-	require.NoError(t, keeper.SetValidatorIndex(ctx, indexZeroAddr, 0, 1))
-	require.NoError(t, keeper.SetValidatorIndex(ctx, indexOneAddr, 1, 1))
+	require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, 0))
 
-	bitmap := keeper.bitmapHelper.NewBitmap(2)
+	bitmap := keeper.bitmapHelper.NewBitmap(1)
 	keeper.bitmapHelper.SetBit(bitmap, 0)
 	require.NoError(t, keeper.SetAttestationBitmap(ctx, height, bitmap))
-	require.NoError(t, keeper.SetSignature(ctx, height, indexZeroAddr, signature))
+	require.NoError(t, keeper.SetSignature(ctx, height, consAddr, signature))
 
 	signatures, err := keeper.GetAllSignaturesForHeight(ctx, height)
 	require.NoError(t, err)
 	require.Equal(t, map[string][]byte{
-		indexZeroAddr: signature,
+		consAddr: signature,
+	}, signatures)
+}
+
+func TestGetAllSignaturesForHeightUsesSnapshotIndices(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	const height int64 = 42
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	authority := sdk.AccAddress(pub.Address()).String()
+	signature := []byte("signature-for-snapshot-index-zero")
+
+	require.NoError(t, registerTestAttester(ctx, &keeper, authority, consAddr, pub, 3))
+	require.NoError(t, keeper.SetAttesterSetSnapshot(ctx, height))
+
+	bitmap := keeper.bitmapHelper.NewBitmap(1)
+	keeper.bitmapHelper.SetBit(bitmap, 0)
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, height, bitmap))
+	require.NoError(t, keeper.SetSignature(ctx, height, consAddr, signature))
+
+	signatures, err := keeper.GetAllSignaturesForHeight(ctx, height)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]byte{
+		consAddr: signature,
 	}, signatures)
 }
 

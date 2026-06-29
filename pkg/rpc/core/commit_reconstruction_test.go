@@ -195,7 +195,14 @@ func buildEnv(t *testing.T, height uint64, keys []cmted25519.PrivKey, signers []
 
 	mApp := new(mockABCI)
 	mApp.On("Query", mock.Anything, mock.MatchedBy(func(r *abci.RequestQuery) bool {
-		return r.Path == "/evabci.network.v1.Query/AttesterSet"
+		if r.Path != "/evabci.network.v1.Query/AttesterSet" {
+			return false
+		}
+		var req networktypes.QueryAttesterSetRequest
+		if err := proto.Unmarshal(r.Data, &req); err != nil {
+			return false
+		}
+		return req.Height == int64(height)
 	})).Return(&abci.ResponseQuery{Code: 0, Value: setRespBz}, nil)
 	mApp.On("Query", mock.Anything, mock.MatchedBy(func(r *abci.RequestQuery) bool {
 		return r.Path == "/evabci.network.v1.Query/AttesterSignatures"

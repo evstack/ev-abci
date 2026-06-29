@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/gogoproto/proto"
 
 	"github.com/evstack/ev-abci/modules/network/types"
 )
@@ -38,6 +40,7 @@ type Keeper struct {
 	EpochBitmap           collections.Map[uint64, []byte]
 	AttesterSet           collections.KeySet[string]
 	AttesterInfo          collections.Map[string, types.AttesterInfo]
+	AttesterSetSnapshot   collections.Map[int64, []byte]
 	Signatures            collections.Map[collections.Pair[int64, string], []byte]
 	StoredAttestationInfo collections.Map[int64, types.AttestationBitmap]
 	LastAttestedHeight    collections.Item[int64]
@@ -71,6 +74,7 @@ func NewKeeper(
 		EpochBitmap:           collections.NewMap(sb, types.EpochBitmapPrefix, "epoch_bitmap", collections.Uint64Key, collections.BytesValue),
 		AttesterSet:           collections.NewKeySet(sb, types.AttesterSetPrefix, "attester_set", collections.StringKey),
 		AttesterInfo:          collections.NewMap(sb, types.AttesterInfoPrefix, "attester_info", collections.StringKey, codec.CollValue[types.AttesterInfo](cdc)),
+		AttesterSetSnapshot:   collections.NewMap(sb, types.AttesterSetSnapshotPrefix, "attester_set_snapshot", collections.Int64Key, collections.BytesValue),
 		Signatures:            collections.NewMap(sb, types.SignaturePrefix, "signatures", collections.PairKeyCodec(collections.Int64Key, collections.StringKey), collections.BytesValue),
 		StoredAttestationInfo: collections.NewMap(sb, types.StoredAttestationInfoPrefix, "stored_attestation_info", collections.Int64Key, codec.CollValue[types.AttestationBitmap](cdc)), // Initialize new collection
 		LastAttestedHeight:    collections.NewItem(sb, types.LastAttestedHeightKey, "last_attested_height", collections.Int64Value),
@@ -131,6 +135,20 @@ func (k Keeper) SetValidatorIndex(ctx sdk.Context, addr string, index uint16, po
 		return err
 	}
 	return k.ValidatorPower.Set(ctx, index, power)
+}
+
+// NextValidatorIndex returns the next unused bitmap index.
+func (k Keeper) NextValidatorIndex(ctx sdk.Context) (uint16, error) {
+	var next uint16
+	if err := k.ValidatorIndex.Walk(ctx, nil, func(_ string, index uint16) (bool, error) {
+		if index >= next {
+			next = index + 1
+		}
+		return false, nil
+	}); err != nil {
+		return 0, err
+	}
+	return next, nil
 }
 
 // GetValidatorIndex retrieves the validator index
@@ -210,6 +228,93 @@ func (k Keeper) GetAllAttesters(ctx sdk.Context) ([]string, error) {
 	return attesters, nil
 }
 
+// CurrentAttesterSetEntries returns the active attester set in CometBFT
+// validator-set order, with contiguous bitmap indices for this set.
+func (k Keeper) CurrentAttesterSetEntries(ctx sdk.Context) ([]types.AttesterSetEntry, error) {
+	attesters, err := k.GetAllAttesters(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return k.attesterSetEntriesForAddresses(ctx, attesters)
+}
+
+func (k Keeper) attesterSetEntriesForAddresses(ctx sdk.Context, addrs []string) ([]types.AttesterSetEntry, error) {
+	type sortableEntry struct {
+		info types.AttesterInfo
+		addr []byte
+	}
+
+	entries := make([]sortableEntry, 0, len(addrs))
+	for _, addr := range addrs {
+		info, err := k.GetAttesterInfo(ctx, addr)
+		if err != nil {
+			return nil, err
+		}
+		pk, err := info.GetPubKey()
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, sortableEntry{info: *info, addr: pk.Address()})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return bytes.Compare(entries[i].addr, entries[j].addr) < 0
+	})
+
+	out := make([]types.AttesterSetEntry, 0, len(entries))
+	for idx, entry := range entries {
+		out = append(out, types.AttesterSetEntry{
+			Authority:        entry.info.Authority,
+			ConsensusAddress: entry.info.ConsensusAddress,
+			Index:            uint32(idx),
+			Pubkey:           entry.info.Pubkey,
+		})
+	}
+	return out, nil
+}
+
+func (k Keeper) SetAttesterSetSnapshot(ctx sdk.Context, height int64) error {
+	entries, err := k.CurrentAttesterSetEntries(ctx)
+	if err != nil {
+		return err
+	}
+	bz, err := proto.Marshal(&types.QueryAttesterSetResponse{Entries: entries})
+	if err != nil {
+		return fmt.Errorf("marshal attester set snapshot: %w", err)
+	}
+	return k.AttesterSetSnapshot.Set(ctx, height, bz)
+}
+
+func (k Keeper) GetAttesterSetForHeight(ctx sdk.Context, height int64) ([]types.AttesterSetEntry, error) {
+	if height <= 0 {
+		return k.CurrentAttesterSetEntries(ctx)
+	}
+
+	var (
+		found          bool
+		snapshotHeight int64
+		snapshotBz     []byte
+	)
+	if err := k.AttesterSetSnapshot.Walk(ctx, nil, func(h int64, bz []byte) (bool, error) {
+		if h <= height && (!found || h > snapshotHeight) {
+			found = true
+			snapshotHeight = h
+			snapshotBz = bz
+		}
+		return false, nil
+	}); err != nil {
+		return nil, err
+	}
+	if !found {
+		return k.CurrentAttesterSetEntries(ctx)
+	}
+
+	var resp types.QueryAttesterSetResponse
+	if err := proto.Unmarshal(snapshotBz, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal attester set snapshot: %w", err)
+	}
+	return resp.Entries, nil
+}
+
 // GetCurrentEpoch returns the current epoch number
 func (k Keeper) GetCurrentEpoch(ctx sdk.Context) uint64 {
 	params := k.GetParams(ctx)
@@ -243,6 +348,16 @@ func (k Keeper) CalculateVotedPower(ctx sdk.Context, bitmap []byte) (uint64, err
 	return votedPower, nil
 }
 
+func (k Keeper) CalculateVotedPowerForAttesterSet(bitmap []byte, entries []types.AttesterSetEntry) uint64 {
+	var votedPower uint64
+	for _, entry := range entries {
+		if k.bitmapHelper.IsSet(bitmap, int(entry.Index)) {
+			votedPower++
+		}
+	}
+	return votedPower
+}
+
 // GetTotalPower returns the total attester power (all attesters have power 1)
 func (k Keeper) GetTotalPower(ctx sdk.Context) (uint64, error) {
 	attesters, err := k.GetAllAttesters(ctx)
@@ -266,6 +381,14 @@ func (k Keeper) CheckQuorum(ctx sdk.Context, votedPower, totalPower uint64) (boo
 // IsSoftConfirmed checks if a block at a given height is soft-confirmed
 // based on the attestation bitmap and quorum rules.
 func (k Keeper) IsSoftConfirmed(ctx sdk.Context, height int64) (bool, error) {
+	stored, err := k.StoredAttestationInfo.Get(ctx, height)
+	if err != nil && !errors.Is(err, collections.ErrNotFound) {
+		return false, fmt.Errorf("get stored attestation info: %w", err)
+	}
+	if err == nil {
+		return stored.SoftConfirmed, nil
+	}
+
 	bitmap, err := k.GetAttestationBitmap(ctx, height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
 		return false, fmt.Errorf("get attestation bitmap: %w", err)
@@ -372,36 +495,28 @@ func (k Keeper) GetAllSignaturesForHeight(ctx sdk.Context, height int64) (map[st
 		return signatures, nil // No attestations for this height
 	}
 
-	type indexedAttester struct {
-		addr  string
-		index uint16
-	}
-
-	var attesters []indexedAttester
-	if err := k.ValidatorIndex.Walk(ctx, nil, func(addr string, index uint16) (bool, error) {
-		attesters = append(attesters, indexedAttester{addr: addr, index: index})
-		return false, nil
-	}); err != nil {
-		return nil, fmt.Errorf("walk validator index: %w", err)
+	attesters, err := k.GetAttesterSetForHeight(ctx, height)
+	if err != nil {
+		return nil, fmt.Errorf("get attester set for height %d: %w", height, err)
 	}
 	sort.Slice(attesters, func(i, j int) bool {
-		return attesters[i].index < attesters[j].index
+		return attesters[i].Index < attesters[j].Index
 	})
 
 	for _, attester := range attesters {
-		if int(attester.index) >= len(bitmap)*8 {
+		if int(attester.Index) >= len(bitmap)*8 {
 			continue
 		}
 
-		if k.bitmapHelper.IsSet(bitmap, int(attester.index)) {
-			signature, err := k.GetSignature(ctx, height, attester.addr)
+		if k.bitmapHelper.IsSet(bitmap, int(attester.Index)) {
+			signature, err := k.GetSignature(ctx, height, attester.ConsensusAddress)
 			if err != nil && !errors.Is(err, collections.ErrNotFound) {
 				k.Logger(ctx).Error("failed to get signature for attester",
-					"height", height, "attester", attester.addr, "error", err)
+					"height", height, "attester", attester.ConsensusAddress, "error", err)
 				continue
 			}
 			if signature != nil {
-				signatures[attester.addr] = signature
+				signatures[attester.ConsensusAddress] = signature
 			}
 		}
 	}

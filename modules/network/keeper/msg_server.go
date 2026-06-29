@@ -11,6 +11,8 @@ import (
 	"cosmossdk.io/math"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
@@ -34,6 +36,15 @@ var _ types.MsgServer = msgServer{}
 func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.MsgAttestResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	attesterSet, err := k.GetAttesterSetForHeight(ctx, msg.Height)
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "get attester set")
+	}
+	index, found := attesterIndex(attesterSet, msg.ConsensusAddress)
+	if !found {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrUnauthorized, "consensus address %s not in attester set", msg.ConsensusAddress)
+	}
+
 	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
 		return nil, err
 	}
@@ -41,11 +52,6 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 	// Verify the vote: decode, internal checks, signature check.
 	if _, err := k.verifyVote(ctx, msg.ConsensusAddress, msg.Vote, msg.Height); err != nil {
 		return nil, err
-	}
-
-	index, found := k.GetValidatorIndex(ctx, msg.ConsensusAddress)
-	if !found {
-		return nil, sdkerr.Wrapf(sdkerrors.ErrNotFound, "validator index not found for %s", msg.ConsensusAddress)
 	}
 
 	// Height bounds
@@ -68,18 +74,14 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrap(err, "get attestation bitmap")
 	}
 	if bitmap == nil {
-		attesters, err := k.GetAllAttesters(ctx)
-		if err != nil {
-			return nil, err
-		}
-		bitmap = k.bitmapHelper.NewBitmap(len(attesters))
+		bitmap = k.bitmapHelper.NewBitmap(len(attesterSet))
 	}
 
-	if k.bitmapHelper.IsSet(bitmap, int(index)) {
+	if k.bitmapHelper.IsSet(bitmap, index) {
 		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "consensus address %s already attested for height %d", msg.ConsensusAddress, msg.Height)
 	}
 
-	k.bitmapHelper.SetBit(bitmap, int(index))
+	k.bitmapHelper.SetBit(bitmap, index)
 	if err := k.SetAttestationBitmap(ctx, msg.Height, bitmap); err != nil {
 		return nil, sdkerr.Wrap(err, "set attestation bitmap")
 	}
@@ -87,17 +89,20 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 		return nil, sdkerr.Wrap(err, "store signature")
 	}
 
-	votedPower, err := k.CalculateVotedPower(ctx, bitmap)
-	if err != nil {
-		return nil, sdkerr.Wrap(err, "calculate voted power")
-	}
-	totalPower, err := k.GetTotalPower(ctx)
-	if err != nil {
-		return nil, sdkerr.Wrap(err, "get total power")
-	}
+	votedPower := k.CalculateVotedPowerForAttesterSet(bitmap, attesterSet)
+	totalPower := uint64(len(attesterSet))
 	quorumReached, err := k.CheckQuorum(ctx, votedPower, totalPower)
 	if err != nil {
 		return nil, sdkerr.Wrap(err, "check quorum")
+	}
+	if err := k.StoredAttestationInfo.Set(ctx, msg.Height, types.AttestationBitmap{
+		Height:        msg.Height,
+		Bitmap:        bitmap,
+		VotedPower:    votedPower,
+		TotalPower:    totalPower,
+		SoftConfirmed: quorumReached,
+	}); err != nil {
+		return nil, sdkerr.Wrap(err, "store attestation info")
 	}
 	if quorumReached {
 		if err := k.UpdateLastAttestedHeight(ctx, msg.Height); err != nil {
@@ -110,13 +115,9 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 	epoch := k.GetCurrentEpoch(ctx)
 	epochBitmap := k.GetEpochBitmap(ctx, epoch)
 	if epochBitmap == nil {
-		attesters, err := k.GetAllAttesters(ctx)
-		if err != nil {
-			return nil, err
-		}
-		epochBitmap = k.bitmapHelper.NewBitmap(len(attesters))
+		epochBitmap = k.bitmapHelper.NewBitmap(len(attesterSet))
 	}
-	k.bitmapHelper.SetBit(epochBitmap, int(index))
+	k.bitmapHelper.SetBit(epochBitmap, index)
 	if err := k.SetEpochBitmap(ctx, epoch, epochBitmap); err != nil {
 		return nil, sdkerr.Wrap(err, "set epoch bitmap")
 	}
@@ -134,14 +135,84 @@ func (k msgServer) Attest(goCtx context.Context, msg *types.MsgAttest) (*types.M
 
 // JoinAttesterSet handles MsgJoinAttesterSet
 func (k msgServer) JoinAttesterSet(goCtx context.Context, msg *types.MsgJoinAttesterSet) (*types.MsgJoinAttesterSetResponse, error) {
-	return nil, sdkerr.Wrap(sdkerrors.ErrInvalidRequest,
-		"attester set changes disabled; the set is fixed at genesis")
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	pubKey, err := unpackMsgPubKey(msg.Pubkey)
+	if err != nil {
+		return nil, sdkerr.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
+	derivedConsensusAddress := sdk.ConsAddress(pubKey.Address()).String()
+	if msg.ConsensusAddress != derivedConsensusAddress {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest,
+			"consensus address %s does not match pubkey address %s",
+			msg.ConsensusAddress, derivedConsensusAddress)
+	}
+	if inSet, err := k.IsInAttesterSet(ctx, msg.ConsensusAddress); err != nil {
+		return nil, sdkerr.Wrap(err, "check attester set")
+	} else if inSet {
+		return nil, sdkerr.Wrapf(sdkerrors.ErrInvalidRequest, "validator already in attester set: %s", msg.ConsensusAddress)
+	}
+
+	info, err := types.NewAttesterInfo(msg.Authority, pubKey, ctx.BlockHeight())
+	if err != nil {
+		return nil, sdkerr.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
+	if err := k.SetAttesterInfo(ctx, msg.ConsensusAddress, info); err != nil {
+		return nil, sdkerr.Wrap(err, "set attester info")
+	}
+	nextIndex, err := k.NextValidatorIndex(ctx)
+	if err != nil {
+		return nil, sdkerr.Wrap(err, "get next validator index")
+	}
+	if err := k.SetValidatorIndex(ctx, msg.ConsensusAddress, nextIndex, 1); err != nil {
+		return nil, sdkerr.Wrap(err, "set validator index")
+	}
+	if err := k.SetAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
+		return nil, sdkerr.Wrap(err, "set attester set member")
+	}
+	if err := k.SetAttesterSetSnapshot(ctx, ctx.BlockHeight()+1); err != nil {
+		return nil, sdkerr.Wrap(err, "set attester set snapshot")
+	}
+	return &types.MsgJoinAttesterSetResponse{}, nil
 }
 
 // LeaveAttesterSet handles MsgLeaveAttesterSet
 func (k msgServer) LeaveAttesterSet(goCtx context.Context, msg *types.MsgLeaveAttesterSet) (*types.MsgLeaveAttesterSetResponse, error) {
-	return nil, sdkerr.Wrap(sdkerrors.ErrInvalidRequest,
-		"attester set changes disabled; the set is fixed at genesis")
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if err := k.assertValidValidatorAuthority(ctx, msg.ConsensusAddress, msg.Authority); err != nil {
+		return nil, err
+	}
+	if err := k.RemoveAttesterSetMember(ctx, msg.ConsensusAddress); err != nil {
+		return nil, sdkerr.Wrap(err, "remove attester set member")
+	}
+	if err := k.SetAttesterSetSnapshot(ctx, ctx.BlockHeight()+1); err != nil {
+		return nil, sdkerr.Wrap(err, "set attester set snapshot")
+	}
+	return &types.MsgLeaveAttesterSetResponse{}, nil
+}
+
+func unpackMsgPubKey(pubkey *codectypes.Any) (cryptotypes.PubKey, error) {
+	if pubkey == nil {
+		return nil, fmt.Errorf("pubkey not set")
+	}
+	if pk, ok := pubkey.GetCachedValue().(cryptotypes.PubKey); ok {
+		return pk, nil
+	}
+	var pk cryptotypes.PubKey
+	if err := types.ModuleCdc.InterfaceRegistry().UnpackAny(pubkey, &pk); err != nil {
+		return nil, fmt.Errorf("unpack pubkey: %w", err)
+	}
+	return pk, nil
+}
+
+func attesterIndex(entries []types.AttesterSetEntry, consensusAddress string) (int, bool) {
+	for _, entry := range entries {
+		if entry.ConsensusAddress == consensusAddress {
+			return int(entry.Index), true
+		}
+	}
+	return 0, false
 }
 
 func (k msgServer) assertValidValidatorAuthority(ctx sdk.Context, consensusAddress, authority string) error {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -44,6 +43,14 @@ func (q *queryServer) AttestationBitmap(c context.Context, req *types.QueryAttes
 	}
 
 	ctx := sdk.UnwrapSDKContext(c)
+
+	stored, err := q.keeper.StoredAttestationInfo.Get(ctx, req.Height)
+	if err != nil && !errors.Is(err, collections.ErrNotFound) {
+		return nil, fmt.Errorf("get stored attestation info: %w", err)
+	}
+	if err == nil {
+		return &types.QueryAttestationBitmapResponse{Bitmap: &stored}, nil
+	}
 
 	bitmapBytes, err := q.keeper.GetAttestationBitmap(ctx, req.Height)
 	if err != nil && !errors.Is(err, collections.ErrNotFound) {
@@ -164,6 +171,19 @@ func (q *queryServer) SoftConfirmationStatus(c context.Context, req *types.Query
 	}
 
 	ctx := sdk.UnwrapSDKContext(c)
+	stored, err := q.keeper.StoredAttestationInfo.Get(ctx, req.Height)
+	if err != nil && !errors.Is(err, collections.ErrNotFound) {
+		return nil, fmt.Errorf("get stored attestation info: %w", err)
+	}
+	if err == nil {
+		return &types.QuerySoftConfirmationStatusResponse{
+			IsSoftConfirmed: stored.SoftConfirmed,
+			VotedPower:      stored.VotedPower,
+			TotalPower:      stored.TotalPower,
+			QuorumFraction:  q.keeper.GetParams(ctx).QuorumFraction,
+		}, nil
+	}
+
 	isSoftConfirmed, err := q.keeper.IsSoftConfirmed(ctx, req.Height)
 	if err != nil {
 		return nil, err
@@ -245,23 +265,10 @@ func (q *queryServer) AttesterSet(goCtx context.Context, req *types.QueryAtteste
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	entries := []types.AttesterSetEntry{}
-	if err := q.keeper.ValidatorIndex.Walk(ctx, nil, func(addr string, idx uint16) (bool, error) {
-		info, err := q.keeper.GetAttesterInfo(ctx, addr)
-		if err != nil {
-			return false, err
-		}
-		entries = append(entries, types.AttesterSetEntry{
-			Authority:        info.Authority,
-			ConsensusAddress: addr,
-			Index:            uint32(idx),
-			Pubkey:           info.Pubkey,
-		})
-		return false, nil
-	}); err != nil {
+	entries, err := q.keeper.GetAttesterSetForHeight(ctx, req.Height)
+	if err != nil {
 		return nil, err
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Index < entries[j].Index })
 	return &types.QueryAttesterSetResponse{Entries: entries}, nil
 }
 

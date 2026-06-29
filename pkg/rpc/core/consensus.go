@@ -22,12 +22,12 @@ func Validators(ctx *rpctypes.Context, heightPtr *int64, _, _ *int) (*coretypes.
 		return nil, fmt.Errorf("failed to normalize height: %w", err)
 	}
 
-	// In attester mode, return the full fixed attester set. /commit uses the
-	// same set and marks missing signatures as absent, so the two endpoints must
-	// stay aligned for light-client verification.
+	// In attester mode, return the attester set for the requested height.
+	// /commit uses the same height-scoped set and marks missing signatures as
+	// absent, so the two endpoints must stay aligned for light-client verification.
 	if env.AttesterMode {
 		env.Logger.Info("Validators endpoint in attester mode - returning full attester set", "height", height)
-		entries, err := getAttesterSet(ctx.Context())
+		entries, err := getAttesterSet(ctx.Context(), int64(height))
 		if err != nil {
 			return nil, fmt.Errorf("get attester set: %w", err)
 		}

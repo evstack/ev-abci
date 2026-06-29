@@ -31,8 +31,8 @@ type GenesisState struct {
 	ValidatorIndices []ValidatorIndex `protobuf:"bytes,2,rep,name=validator_indices,json=validatorIndices,proto3" json:"validator_indices"`
 	// attestation_bitmaps contains historical attestation data
 	AttestationBitmaps []AttestationBitmap `protobuf:"bytes,3,rep,name=attestation_bitmaps,json=attestationBitmaps,proto3" json:"attestation_bitmaps"`
-	// attester_infos is the fixed attester set loaded at genesis. After chain
-	// start, the set is immutable (MsgJoin/MsgLeave are disabled).
+	// attester_infos is the active attester set loaded at genesis. After chain
+	// start, MsgJoinAttesterSet and MsgLeaveAttesterSet can update the active set.
 	AttesterInfos []AttesterInfo `protobuf:"bytes,4,rep,name=attester_infos,json=attesterInfos,proto3" json:"attester_infos"`
 }
 
