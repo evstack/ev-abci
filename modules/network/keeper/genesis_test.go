@@ -15,6 +15,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/testutil/integration"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/stretchr/testify/require"
@@ -109,6 +110,30 @@ func TestInitGenesisRejectsPubkeyAddressMismatch(t *testing.T) {
 	err := network.InitGenesis(ctx, k, gs)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "pubkey address mismatch")
+}
+
+func TestInitGenesisRejectsDuplicateConsensusAddressAfterNormalization(t *testing.T) {
+	k, ctx, _ := newKeeperForGenesis(t)
+
+	pk := cmted25519.GenPrivKey().PubKey().(cmted25519.PubKey)
+	info1 := mustAnyPubKey(t, pk)
+	info1.Authority = sdk.AccAddress(bytes.Repeat([]byte{0x11}, 20)).String()
+	info1.ConsensusAddress = sdk.ConsAddress(pk.Address()).String()
+
+	info2 := mustAnyPubKey(t, pk)
+	info2.Authority = sdk.AccAddress(bytes.Repeat([]byte{0x22}, 20)).String()
+	altAddr, err := bech32.ConvertAndEncode("otherprefixvalcons", pk.Address())
+	require.NoError(t, err)
+	info2.ConsensusAddress = altAddr
+
+	gs := types.GenesisState{
+		Params:        types.DefaultParams(),
+		AttesterInfos: []types.AttesterInfo{*info1, *info2},
+	}
+
+	err = network.InitGenesis(ctx, k, gs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate consensus address")
 }
 
 func TestExportGenesisRoundtripsAttesters(t *testing.T) {

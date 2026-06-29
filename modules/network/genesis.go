@@ -21,6 +21,7 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 	// Load attesters: validate pubkey/address match, then insert and assign indices.
 	attesters := make([]types.AttesterInfo, len(genState.AttesterInfos))
 	copy(attesters, genState.AttesterInfos)
+	seenConsensusAddresses := make(map[string]int, len(attesters))
 
 	for i := range attesters {
 		info := attesters[i]
@@ -44,6 +45,11 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		// stored value matches what ConsAddress().String() produces elsewhere
 		// in the module at runtime.
 		derived := sdk.ConsAddress(pk.Address()).String()
+		if previous, ok := seenConsensusAddresses[derived]; ok {
+			return fmt.Errorf("attester %d: duplicate consensus address %s after normalization (already used by attester %d)",
+				i, derived, previous)
+		}
+		seenConsensusAddresses[derived] = i
 		info.ConsensusAddress = derived
 		attesters[i] = info
 	}
