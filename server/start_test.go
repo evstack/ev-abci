@@ -13,8 +13,9 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
-	networktypes "github.com/evstack/ev-abci/modules/network/types"
 	"github.com/evstack/ev-node/pkg/genesis"
+
+	networktypes "github.com/evstack/ev-abci/modules/network/types"
 )
 
 type testNetworkKeeperBlockIDWirer struct {
