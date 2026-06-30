@@ -6,6 +6,7 @@ option go_package = "github.com/evstack/ev-abci/modules/network/types";
 
 import "gogoproto/gogo.proto";
 import "evabci/network/v1/types.proto";
+import "evabci/network/v1/attester.proto";
 
 // GenesisState defines the network module's genesis state.
 message GenesisState {
@@ -17,4 +18,8 @@ message GenesisState {
 
   // attestation_bitmaps contains historical attestation data
   repeated AttestationBitmap attestation_bitmaps = 3 [(gogoproto.nullable) = false];
+
+  // attester_infos is the fixed attester set loaded at genesis. After chain
+  // start, the set is immutable (MsgJoin/MsgLeave are disabled).
+  repeated AttesterInfo attester_infos = 4 [(gogoproto.nullable) = false];
 }

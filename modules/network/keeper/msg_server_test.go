@@ -3,6 +3,8 @@ package keeper
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -13,7 +15,10 @@ import (
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
+	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/testutil/integration"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -21,116 +26,61 @@ import (
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/stretchr/testify/assert"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/evstack/ev-abci/modules/network/types"
 )
 
-func TestJoinAttesterSet(t *testing.T) {
-	myValAddr := sdk.ValAddress("validator4")
-
-	type testCase struct {
-		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper)
-		msg    *types.MsgJoinAttesterSet
-		expErr error
-		expSet bool
-	}
-
-	tests := map[string]testCase{
-		"valid": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
-				validator := stakingtypes.Validator{
-					OperatorAddress: myValAddr.String(),
-					Status:          stakingtypes.Bonded,
-				}
-				err := sk.SetValidator(ctx, validator)
-				require.NoError(t, err, "failed to set validator")
-			},
-			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
-			expSet: true,
-		},
-		"invalid_addr": {
-			setup:  func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {},
-			msg:    &types.MsgJoinAttesterSet{Authority: "invalidAddr", ConsensusAddress: "invalidAddr"},
-			expErr: sdkerrors.ErrInvalidAddress,
-		},
-		"already set": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, sk *MockStakingKeeper) {
-				validator := stakingtypes.Validator{
-					OperatorAddress: myValAddr.String(),
-					Status:          stakingtypes.Bonded,
-				}
-				require.NoError(t, sk.SetValidator(ctx, validator))
-				require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
-			},
-			msg:    &types.MsgJoinAttesterSet{Authority: myValAddr.String(), ConsensusAddress: myValAddr.String()},
-			expErr: sdkerrors.ErrInvalidRequest,
-			expSet: true,
-		},
-	}
-
-	for name, spec := range tests {
-		t.Run(name, func(t *testing.T) {
-			sk := NewMockStakingKeeper()
-			server, keeper, ctx := newTestServer(t, &sk)
-
-			spec.setup(t, ctx, &keeper, &sk)
-
-			// when
-			rsp, err := server.JoinAttesterSet(ctx, spec.msg)
-			// then
-			if spec.expErr != nil {
-				require.ErrorIs(t, err, spec.expErr)
-				require.Nil(t, rsp)
-				exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
-				require.NoError(t, gotErr)
-				assert.Equal(t, exists, spec.expSet)
-				return
-			}
-			require.NoError(t, err)
-			require.NotNil(t, rsp)
-			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
-			require.NoError(t, gotErr)
-			assert.True(t, exists)
-
-			// Verify authority is stored correctly in AttesterInfo
-			info, infoErr := keeper.GetAttesterInfo(ctx, spec.msg.ConsensusAddress)
-			require.NoError(t, infoErr)
-			assert.Equal(t, spec.msg.Authority, info.Authority)
-		})
-	}
+type failingBlockIDProvider struct {
+	err error
 }
 
-func TestJoinAttesterSetMaxCap(t *testing.T) {
-	// Verify the constant is set to a sane value that is within uint16 range
-	require.LessOrEqual(t, MaxAttesters, int(^uint16(0)),
-		"MaxAttesters must fit in uint16 to avoid index overflow in BuildValidatorIndexMap")
+func (f failingBlockIDProvider) GetBlockID(_ context.Context, _ uint64) (*cmttypes.BlockID, error) {
+	return nil, f.err
+}
 
-	t.Run("join succeeds under cap", func(t *testing.T) {
-		sk := NewMockStakingKeeper()
-		server, keeper, ctx := newTestServer(t, &sk)
+type nilBlockIDProvider struct{}
 
-		// With an empty set, join should succeed
-		newAddr := sdk.ValAddress("new_attester")
-		msg := &types.MsgJoinAttesterSet{
-			Authority:        newAddr.String(),
-			ConsensusAddress: newAddr.String(),
-		}
+func (nilBlockIDProvider) GetBlockID(_ context.Context, _ uint64) (*cmttypes.BlockID, error) {
+	return nil, nil
+}
 
-		rsp, err := server.JoinAttesterSet(ctx, msg)
-		require.NoError(t, err)
-		require.NotNil(t, rsp)
+func TestJoinAttesterSetDisabled(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	server, _, ctx := newTestServer(t, &sk)
 
-		// Verify the attester was added
-		exists, err := keeper.AttesterSet.Has(ctx, newAddr.String())
-		require.NoError(t, err)
-		assert.True(t, exists)
-	})
+	msg := &types.MsgJoinAttesterSet{
+		Authority:        sdk.AccAddress([]byte("any-authority-20b")).String(),
+		ConsensusAddress: sdk.ConsAddress([]byte("any-cons-addr-20-b")).String(),
+	}
+	rsp, err := server.JoinAttesterSet(ctx, msg)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "attester set changes disabled")
+	require.Nil(t, rsp)
+}
+
+func TestLeaveAttesterSetDisabled(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	server, _, ctx := newTestServer(t, &sk)
+
+	msg := &types.MsgLeaveAttesterSet{
+		Authority:        sdk.AccAddress([]byte("any-authority-20b")).String(),
+		ConsensusAddress: sdk.ConsAddress([]byte("any-cons-addr-20-b")).String(),
+	}
+	rsp, err := server.LeaveAttesterSet(ctx, msg)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Nil(t, rsp)
 }
 
 func TestAttestVotePayloadValidation(t *testing.T) {
-	myValAddr := sdk.ValAddress("validator1")
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	blockHash := bytes.Repeat([]byte{0x01}, 32)
+
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	authorityAddr := sdk.AccAddress(pub.Address()).String()
 
 	specs := map[string]struct {
 		vote   []byte
@@ -144,32 +94,52 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 			vote:   nil,
 			expErr: sdkerrors.ErrInvalidRequest,
 		},
-		"short vote rejected": {
-			vote:   make([]byte, MinVoteLen-1),
+		"random bytes rejected": {
+			vote:   bytes.Repeat([]byte{0x01}, 64),
 			expErr: sdkerrors.ErrInvalidRequest,
 		},
-		"min-length vote accepted": {
-			vote: make([]byte, MinVoteLen),
-		},
-		"valid-length vote accepted": {
-			vote: make([]byte, 96),
+		"valid signed vote accepted": {
+			vote: nil, // populated below per-subtest
 		},
 	}
 
 	for name, spec := range specs {
 		t.Run(name, func(t *testing.T) {
 			sk := NewMockStakingKeeper()
-			server, keeper, ctx := newTestServer(t, &sk)
+			cdc := moduletestutil.MakeTestEncodingConfig().Codec
+			keys := storetypes.NewKVStoreKeys(types.StoreKey)
+			logger := log.NewTestLogger(t)
+			cms := integration.CreateMultiStore(keys, logger)
+			authority := authtypes.NewModuleAddress("gov")
+			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), &sk, nil, nil, authority.String())
+			keeper.SetBlockIDProvider(staticBlockIDProvider{hash: blockHash})
+			server := msgServer{Keeper: keeper}
+			ctx := sdk.NewContext(cms, cmtproto.Header{
+				ChainID: chainID,
+				Time:    time.Now().UTC(),
+				Height:  10,
+			}, false, logger).WithContext(t.Context())
+
 			require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
-			require.NoError(t, keeper.SetAttesterSetMember(ctx, myValAddr.String()))
-			require.NoError(t, keeper.SetAttesterInfo(ctx, myValAddr.String(), &types.AttesterInfo{Authority: myValAddr.String()}))
-			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+
+			sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+			require.NoError(t, err)
+			info, err := types.NewAttesterInfo(authorityAddr, sdkPk, 0)
+			require.NoError(t, err)
+			require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, consAddr))
+			require.NoError(t, keeper.SetValidatorIndex(ctx, consAddr, 0, 1))
+
+			vote := spec.vote
+			if name == "valid signed vote accepted" {
+				vote = signTestVote(t, chainID, 10, priv, blockHash)
+			}
 
 			msg := &types.MsgAttest{
-				Authority:        myValAddr.String(),
-				ConsensusAddress: myValAddr.String(),
+				Authority:        authorityAddr,
+				ConsensusAddress: consAddr,
 				Height:           10,
-				Vote:             spec.vote,
+				Vote:             vote,
 			}
 
 			rsp, err := server.Attest(ctx, msg)
@@ -184,68 +154,87 @@ func TestAttestVotePayloadValidation(t *testing.T) {
 	}
 }
 
-func TestLeaveAttesterSet(t *testing.T) {
-	ownerAddr := sdk.ValAddress("owner1")
-	otherAddr := sdk.ValAddress("other1")
+func TestAttest(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	authorityAddr := sdk.AccAddress(pub.Address()).String()
+	otherAddr := sdk.ValAddress("other_sender")
+	blockHash := bytes.Repeat([]byte{0x01}, 32)
 
 	type testCase struct {
-		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer)
-		msg    *types.MsgLeaveAttesterSet
+		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper)
+		msg    func() *types.MsgAttest
 		expErr error
 	}
 
 	tests := map[string]testCase{
 		"valid": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
 				t.Helper()
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
+				require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+				sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
 				require.NoError(t, err)
+				info, err := types.NewAttesterInfo(authorityAddr, sdkPk, 0)
+				require.NoError(t, err)
+				require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, consAddr))
+				require.NoError(t, keeper.SetValidatorIndex(ctx, consAddr, 0, 1))
 			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
+			msg: func() *types.MsgAttest {
+				return &types.MsgAttest{
+					Authority:        authorityAddr,
+					ConsensusAddress: consAddr,
+					Height:           10,
+					Vote:             signTestVote(t, chainID, 10, priv, blockHash),
+				}
 			},
 		},
 		"not_in_set": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
 				t.Helper()
 			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
+			msg: func() *types.MsgAttest {
+				return &types.MsgAttest{
+					Authority:        authorityAddr,
+					ConsensusAddress: consAddr,
+					Height:           10,
+					Vote:             bytes.Repeat([]byte{0x01}, 64),
+				}
 			},
 			expErr: sdkerrors.ErrUnauthorized,
 		},
 		"wrong_authority": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
+			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper) {
 				t.Helper()
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
+				sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
 				require.NoError(t, err)
+				info, err := types.NewAttesterInfo(authorityAddr, sdkPk, 0)
+				require.NoError(t, err)
+				require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+				require.NoError(t, keeper.SetAttesterSetMember(ctx, consAddr))
+				require.NoError(t, keeper.SetValidatorIndex(ctx, consAddr, 0, 1))
 			},
-			msg: &types.MsgLeaveAttesterSet{
-				Authority:        otherAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
+			msg: func() *types.MsgAttest {
+				return &types.MsgAttest{
+					Authority:        otherAddr.String(),
+					ConsensusAddress: consAddr,
+					Height:           10,
+					Vote:             bytes.Repeat([]byte{0x01}, 64),
+				}
 			},
 			expErr: sdkerrors.ErrUnauthorized,
 		},
 	}
-
 	for name, spec := range tests {
 		t.Run(name, func(t *testing.T) {
 			sk := NewMockStakingKeeper()
 			server, keeper, ctx := newTestServer(t, &sk)
 
-			spec.setup(t, ctx, &keeper, server)
+			spec.setup(t, ctx, &keeper)
 
-			rsp, err := server.LeaveAttesterSet(ctx, spec.msg)
+			rsp, err := server.Attest(ctx, spec.msg())
 			if spec.expErr != nil {
 				require.ErrorIs(t, err, spec.expErr)
 				require.Nil(t, rsp)
@@ -253,94 +242,82 @@ func TestLeaveAttesterSet(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.NotNil(t, rsp)
-
-			// Verify actually removed from attester set
-			exists, gotErr := keeper.AttesterSet.Has(ctx, spec.msg.ConsensusAddress)
-			require.NoError(t, gotErr)
-			assert.False(t, exists)
 		})
 	}
 }
 
-func TestAttest(t *testing.T) {
-	ownerAddr := sdk.ValAddress("attester_owner")
-	otherAddr := sdk.ValAddress("other_sender")
+func TestAttestDuplicateDoesNotOverwriteState(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	authorityAddr := sdk.AccAddress(pub.Address()).String()
+	blockHash := bytes.Repeat([]byte{0x01}, 32)
 
-	type testCase struct {
-		setup  func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer)
-		msg    *types.MsgAttest
-		expErr error
-	}
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: blockHash})
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+	require.NoError(t, registerTestAttester(ctx, &keeper, authorityAddr, consAddr, pub, 0))
 
-	tests := map[string]testCase{
-		"valid": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
-				t.Helper()
-				require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
-			},
-			msg: &types.MsgAttest{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
-				Height:           10,
-				Vote:             bytes.Repeat([]byte{0x01}, 64),
-			},
-		},
-		"not_in_set": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
-				t.Helper()
-			},
-			msg: &types.MsgAttest{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
-				Height:           10,
-				Vote:             bytes.Repeat([]byte{0x01}, 64),
-			},
-			expErr: sdkerrors.ErrUnauthorized,
-		},
-		"wrong_authority": {
-			setup: func(t *testing.T, ctx sdk.Context, keeper *Keeper, server msgServer) {
-				t.Helper()
-				joinMsg := &types.MsgJoinAttesterSet{
-					Authority:        ownerAddr.String(),
-					ConsensusAddress: ownerAddr.String(),
-				}
-				_, err := server.JoinAttesterSet(ctx, joinMsg)
-				require.NoError(t, err)
-				require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
-			},
-			msg: &types.MsgAttest{
-				Authority:        otherAddr.String(),
-				ConsensusAddress: ownerAddr.String(),
-				Height:           10,
-				Vote:             bytes.Repeat([]byte{0x01}, 64),
-			},
-			expErr: sdkerrors.ErrUnauthorized,
-		},
-	}
-	for name, spec := range tests {
-		t.Run(name, func(t *testing.T) {
-			sk := NewMockStakingKeeper()
-			server, keeper, ctx := newTestServer(t, &sk)
+	firstVote := signTestVoteAt(t, chainID, 10, priv, blockHash, testTimeUTC())
+	_, err := server.Attest(ctx, &types.MsgAttest{
+		Authority:        authorityAddr,
+		ConsensusAddress: consAddr,
+		Height:           10,
+		Vote:             firstVote,
+	})
+	require.NoError(t, err)
 
-			spec.setup(t, ctx, &keeper, server)
+	secondVote := signTestVoteAt(t, chainID, 10, priv, blockHash, testTimeUTC().Add(time.Second))
+	_, err = server.Attest(ctx, &types.MsgAttest{
+		Authority:        authorityAddr,
+		ConsensusAddress: consAddr,
+		Height:           10,
+		Vote:             secondVote,
+	})
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "already attested")
 
-			rsp, err := server.Attest(ctx, spec.msg)
-			if spec.expErr != nil {
-				require.ErrorIs(t, err, spec.expErr)
-				require.Nil(t, rsp)
-				return
-			}
-			require.NoError(t, err)
-			require.NotNil(t, rsp)
-		})
-	}
+	storedVote, err := keeper.GetSignature(ctx, 10, consAddr)
+	require.NoError(t, err)
+	require.Equal(t, firstVote, storedVote)
+
+	bitmap, err := keeper.GetAttestationBitmap(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, keeper.bitmapHelper.PopCount(bitmap))
+	require.True(t, keeper.bitmapHelper.IsSet(bitmap, 0))
+}
+
+func TestAttestRejectedVoteDoesNotWriteBitmapOrSignature(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	authorityAddr := sdk.AccAddress(pub.Address()).String()
+	sequencerHash := bytes.Repeat([]byte{0xaa}, 32)
+	forgedHash := bytes.Repeat([]byte{0xff}, 32)
+
+	sk := NewMockStakingKeeper()
+	server, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: sequencerHash})
+	require.NoError(t, keeper.SetParams(ctx, types.DefaultParams()))
+	require.NoError(t, registerTestAttester(ctx, &keeper, authorityAddr, consAddr, pub, 0))
+
+	_, err := server.Attest(ctx, &types.MsgAttest{
+		Authority:        authorityAddr,
+		ConsensusAddress: consAddr,
+		Height:           10,
+		Vote:             signTestVote(t, chainID, 10, priv, forgedHash),
+	})
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+
+	_, err = keeper.GetAttestationBitmap(ctx, 10)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+
+	hasSignature, err := keeper.HasSignature(ctx, 10, consAddr)
+	require.NoError(t, err)
+	require.False(t, hasSignature)
 }
 
 func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.Context) {
@@ -351,6 +328,10 @@ func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.
 	cms := integration.CreateMultiStore(keys, logger)
 	authority := authtypes.NewModuleAddress("gov")
 	keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+	// Default-wire the block ID provider so Attest tests work without extra
+	// boilerplate. Tests that exercise BlockID-mismatch rejection override
+	// with their own provider before calling Attest.
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: bytes.Repeat([]byte{0x01}, 32)})
 	server := msgServer{Keeper: keeper}
 	ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: "test-chain", Time: time.Now().UTC(), Height: 10}, false, logger).
 		WithContext(t.Context())
@@ -358,8 +339,6 @@ func newTestServer(t *testing.T, sk *MockStakingKeeper) (msgServer, Keeper, sdk.
 }
 
 func TestAttestHeightBounds(t *testing.T) {
-	myValAddr := sdk.ValAddress("validator1")
-	ownerAddr := sdk.ValAddress("attester_owner")
 	shortRetentionParams := types.DefaultParams()
 	shortRetentionParams.PruneAfter = 15
 	epochRetentionParams := types.DefaultParams()
@@ -423,16 +402,24 @@ func TestAttestHeightBounds(t *testing.T) {
 	}
 	for name, spec := range specs {
 		t.Run(name, func(t *testing.T) {
+			chainID := "test-chain"
+			priv := cmted25519.GenPrivKey()
+			pub := priv.PubKey().(cmted25519.PubKey)
+			consAddr := sdk.ConsAddress(pub.Address()).String()
+			authorityAddr := sdk.AccAddress(pub.Address()).String()
+
 			sk := NewMockStakingKeeper()
 			cdc := moduletestutil.MakeTestEncodingConfig().Codec
 			keys := storetypes.NewKVStoreKeys(types.StoreKey)
 			logger := log.NewTestLogger(t)
 			cms := integration.CreateMultiStore(keys, logger)
 			authority := authtypes.NewModuleAddress("gov")
-			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), sk, nil, nil, authority.String())
+			keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), &sk, nil, nil, authority.String())
+			blockHash := bytes.Repeat([]byte{0x01}, 32)
+			keeper.SetBlockIDProvider(staticBlockIDProvider{hash: blockHash})
 			server := msgServer{Keeper: keeper}
 			ctx := sdk.NewContext(cms, cmtproto.Header{
-				ChainID: "test-chain",
+				ChainID: chainID,
 				Time:    time.Now().UTC(),
 				Height:  spec.blockHeight,
 			}, false, logger).WithContext(t.Context())
@@ -443,20 +430,23 @@ func TestAttestHeightBounds(t *testing.T) {
 			}
 			require.NoError(t, keeper.SetParams(ctx, params))
 
-			joinMsg := &types.MsgJoinAttesterSet{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: myValAddr.String(),
-			}
-			_, err := server.JoinAttesterSet(ctx, joinMsg)
+			// Register the attester directly via keeper (no MsgJoin)
+			sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
 			require.NoError(t, err)
-			require.NoError(t, keeper.BuildValidatorIndexMap(ctx))
+			info, err := types.NewAttesterInfo(authorityAddr, sdkPk, 0)
+			require.NoError(t, err)
+			require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+			require.NoError(t, keeper.SetAttesterSetMember(ctx, consAddr))
+			require.NoError(t, keeper.SetValidatorIndex(ctx, consAddr, 0, 1))
 
-			// when
+			// Build a signed vote for the expected height
+			voteBytes := signTestVote(t, chainID, spec.attestH, priv, blockHash)
+
 			msg := &types.MsgAttest{
-				Authority:        ownerAddr.String(),
-				ConsensusAddress: myValAddr.String(),
+				Authority:        authorityAddr,
+				ConsensusAddress: consAddr,
 				Height:           spec.attestH,
-				Vote:             make([]byte, MinVoteLen),
+				Vote:             voteBytes,
 			}
 			rsp, err := server.Attest(ctx, msg)
 			if spec.expErr != nil {
@@ -468,6 +458,32 @@ func TestAttestHeightBounds(t *testing.T) {
 			require.NotNil(t, rsp)
 		})
 	}
+}
+
+func TestGetAllSignaturesForHeightUsesValidatorIndexOrder(t *testing.T) {
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	const height int64 = 42
+	indexZeroAddr := "z-index-zero"
+	indexOneAddr := "a-index-one"
+	signature := []byte("signature-for-index-zero")
+
+	require.NoError(t, keeper.SetAttesterSetMember(ctx, indexZeroAddr))
+	require.NoError(t, keeper.SetAttesterSetMember(ctx, indexOneAddr))
+	require.NoError(t, keeper.SetValidatorIndex(ctx, indexZeroAddr, 0, 1))
+	require.NoError(t, keeper.SetValidatorIndex(ctx, indexOneAddr, 1, 1))
+
+	bitmap := keeper.bitmapHelper.NewBitmap(2)
+	keeper.bitmapHelper.SetBit(bitmap, 0)
+	require.NoError(t, keeper.SetAttestationBitmap(ctx, height, bitmap))
+	require.NoError(t, keeper.SetSignature(ctx, height, indexZeroAddr, signature))
+
+	signatures, err := keeper.GetAllSignaturesForHeight(ctx, height)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]byte{
+		indexZeroAddr: signature,
+	}, signatures)
 }
 
 func TestPruneOldBitmapsRemovesAllAttestationStateBelowRetentionWindow(t *testing.T) {
@@ -615,4 +631,377 @@ func (m MockStakingKeeper) GetLastValidators(ctx context.Context) (validators []
 
 func (m MockStakingKeeper) GetLastTotalPower(ctx context.Context) (math.Int, error) {
 	return math.NewInt(int64(len(m.activeSet))), nil
+}
+
+func TestVerifyVote(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	// 32-byte block hash (CanonicalizeBlockID requires 32 bytes or empty)
+	blockHash := bytes.Repeat([]byte{0xbb}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+	// Override the default provider so the "valid" spec's BlockID.Hash
+	// matches the sequencer's stored hash.
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: blockHash})
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	validBytes := signTestVote(t, chainID, 42, priv, blockHash)
+
+	specs := map[string]struct {
+		consAddr string
+		vote     []byte
+		msgH     int64
+		expErr   error
+	}{
+		"valid": {
+			consAddr: consAddr,
+			vote:     validBytes,
+			msgH:     42,
+		},
+		"wrong chain id": {
+			consAddr: consAddr,
+			vote:     signTestVote(t, "other-chain", 42, priv, blockHash),
+			msgH:     42,
+			expErr:   sdkerrors.ErrUnauthorized,
+		},
+		"wrong height": {
+			consAddr: consAddr,
+			vote:     validBytes,
+			msgH:     99,
+			expErr:   sdkerrors.ErrInvalidRequest,
+		},
+		"random 64 bytes": {
+			consAddr: consAddr,
+			vote:     bytes.Repeat([]byte{0x01}, 64),
+			msgH:     42,
+			expErr:   sdkerrors.ErrInvalidRequest, // unmarshal may succeed but checks fail
+		},
+		"signed by different key": {
+			consAddr: consAddr,
+			vote:     signTestVote(t, chainID, 42, cmted25519.GenPrivKey(), blockHash),
+			msgH:     42,
+			expErr:   sdkerrors.ErrUnauthorized,
+		},
+		"prevote type": {
+			consAddr: consAddr,
+			vote: func() []byte {
+				v := cmtproto.Vote{
+					Type:             cmtproto.PrevoteType,
+					Height:           42,
+					Round:            0,
+					BlockID:          cmtproto.BlockID{Hash: blockHash, PartSetHeader: cmtproto.PartSetHeader{}},
+					Timestamp:        testTimeUTC(),
+					ValidatorAddress: pub.Address(),
+				}
+				sb := cmttypes.VoteSignBytes(chainID, &v)
+				sig, _ := priv.Sign(sb)
+				v.Signature = sig
+				bz, _ := proto.Marshal(&v)
+				return bz
+			}(),
+			msgH:   42,
+			expErr: sdkerrors.ErrInvalidRequest,
+		},
+		"non-zero round": {
+			consAddr: consAddr,
+			vote: func() []byte {
+				v := cmtproto.Vote{
+					Type:             cmtproto.PrecommitType,
+					Height:           42,
+					Round:            1,
+					BlockID:          cmtproto.BlockID{Hash: blockHash, PartSetHeader: cmtproto.PartSetHeader{}},
+					Timestamp:        testTimeUTC(),
+					ValidatorAddress: pub.Address(),
+				}
+				sb := cmttypes.VoteSignBytes(chainID, &v)
+				sig, _ := priv.Sign(sb)
+				v.Signature = sig
+				bz, _ := proto.Marshal(&v)
+				return bz
+			}(),
+			msgH:   42,
+			expErr: sdkerrors.ErrInvalidRequest,
+		},
+		"unknown consensus address": {
+			consAddr: sdk.ConsAddress(bytes.Repeat([]byte{0x77}, 20)).String(),
+			vote:     validBytes,
+			msgH:     42,
+			expErr:   sdkerrors.ErrNotFound,
+		},
+	}
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+			_, err := keeper.VerifyVoteForTest(sdkCtx, spec.consAddr, spec.vote, spec.msgH)
+			if spec.expErr != nil {
+				require.ErrorIs(t, err, spec.expErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestVerifyVote_RejectsMismatchedBlockIDHash is a regression for the
+// attester-forged-BlockID vector: the attester produces a self-consistent
+// signed vote but over a BlockID.Hash that does not match what the
+// sequencer stored for the height. The 07-tendermint light client would
+// later reject the reconstructed commit; MsgAttest must fail fast here.
+func TestVerifyVote_RejectsMismatchedBlockIDHash(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	sequencerHash := bytes.Repeat([]byte{0xaa}, 32)
+	forgedHash := bytes.Repeat([]byte{0xff}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(staticBlockIDProvider{hash: sequencerHash})
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+
+	// Attester signs a well-formed vote but over the forged hash.
+	forgedVote := signTestVote(t, chainID, 42, priv, forgedHash)
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, forgedVote, 42)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "does not match sequencer BlockID")
+
+	// Control: the same machinery accepts a vote over the real hash.
+	realVote := signTestVote(t, chainID, 42, priv, sequencerHash)
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, realVote, 42)
+	require.NoError(t, err)
+}
+
+func TestVerifyVote_RejectsMismatchedBlockIDPartSetHeader(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	blockHash := bytes.Repeat([]byte{0xaa}, 32)
+	storedPartSetHash := bytes.Repeat([]byte{0x11}, 32)
+	forgedPartSetHash := bytes.Repeat([]byte{0x22}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(staticBlockIDProvider{
+		hash: blockHash,
+		partSetHeader: cmttypes.PartSetHeader{
+			Total: 1,
+			Hash:  storedPartSetHash,
+		},
+	})
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+	forgedBlockID := cmtproto.BlockID{
+		Hash: blockHash,
+		PartSetHeader: cmtproto.PartSetHeader{
+			Total: 1,
+			Hash:  forgedPartSetHash,
+		},
+	}
+	forgedVote := signTestVoteWithBlockID(t, chainID, 42, priv, forgedBlockID)
+
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, forgedVote, 42)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "does not match sequencer BlockID")
+}
+
+func TestVerifyVote_RejectsBlockIDProviderError(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	blockHash := bytes.Repeat([]byte{0x01}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(failingBlockIDProvider{err: errors.New("store unavailable")})
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, signTestVote(t, chainID, 10, priv, blockHash), 10)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "get block ID for height 10")
+	require.Contains(t, err.Error(), "store unavailable")
+}
+
+func TestVerifyVote_RejectsNilProviderBlockID(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+	blockHash := bytes.Repeat([]byte{0x01}, 32)
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+	keeper.SetBlockIDProvider(nilBlockIDProvider{})
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, signTestVote(t, chainID, 10, priv, blockHash), 10)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "block ID for height 10 not found")
+}
+
+func TestVerifyVote_RejectsMalformedBlockID(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+
+	sk := NewMockStakingKeeper()
+	_, keeper, ctx := newTestServer(t, &sk)
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	malformedBlockID := cmtproto.BlockID{
+		Hash: bytes.Repeat([]byte{0x01}, 31),
+		PartSetHeader: cmtproto.PartSetHeader{
+			Total: 1,
+			Hash:  bytes.Repeat([]byte{0x02}, 32),
+		},
+	}
+	vote := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           10,
+		Round:            0,
+		BlockID:          malformedBlockID,
+		Timestamp:        testTimeUTC(),
+		ValidatorAddress: pub.Address(),
+		ValidatorIndex:   0,
+		Signature:        bytes.Repeat([]byte{0x03}, 64),
+	}
+	voteBytes, err := proto.Marshal(&vote)
+	require.NoError(t, err)
+
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, voteBytes, 10)
+	require.ErrorIs(t, err, sdkerrors.ErrInvalidRequest)
+	require.Contains(t, err.Error(), "invalid vote BlockID")
+}
+
+// TestVerifyVote_RejectsUnwiredProvider guards against a misconfigured app
+// where SetBlockIDProvider is never called — MsgAttest must fail closed
+// rather than silently accept every vote.
+func TestVerifyVote_RejectsUnwiredProvider(t *testing.T) {
+	chainID := "test-chain"
+	priv := cmted25519.GenPrivKey()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	consAddr := sdk.ConsAddress(pub.Address()).String()
+
+	sk := NewMockStakingKeeper()
+	cdc := moduletestutil.MakeTestEncodingConfig().Codec
+	keys := storetypes.NewKVStoreKeys(types.StoreKey)
+	logger := log.NewTestLogger(t)
+	cms := integration.CreateMultiStore(keys, logger)
+	authority := authtypes.NewModuleAddress("gov")
+	// Intentionally do NOT call SetBlockIDProvider.
+	keeper := NewKeeper(cdc, runtime.NewKVStoreService(keys[types.StoreKey]), &sk, nil, nil, authority.String())
+	ctx := sdk.NewContext(cms, cmtproto.Header{ChainID: chainID, Time: time.Now().UTC(), Height: 10}, false, logger).
+		WithContext(t.Context())
+
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	require.NoError(t, err)
+	info, err := types.NewAttesterInfo(sdk.AccAddress(pub.Address()).String(), sdkPk, 0)
+	require.NoError(t, err)
+	require.NoError(t, keeper.SetAttesterInfo(ctx, consAddr, info))
+
+	voteBytes := signTestVote(t, chainID, 10, priv, bytes.Repeat([]byte{0x01}, 32))
+	sdkCtx := ctx.WithBlockHeader(cmtproto.Header{ChainID: chainID})
+
+	_, err = keeper.VerifyVoteForTest(sdkCtx, consAddr, voteBytes, 10)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "provider not wired")
+}
+
+func registerTestAttester(
+	ctx sdk.Context,
+	keeper *Keeper,
+	authorityAddr string,
+	consAddr string,
+	pub cmted25519.PubKey,
+	index uint16,
+) error {
+	sdkPk, err := cryptocodec.FromCmtPubKeyInterface(pub)
+	if err != nil {
+		return fmt.Errorf("convert consensus pubkey: %w", err)
+	}
+	info, err := types.NewAttesterInfo(authorityAddr, sdkPk, 0)
+	if err != nil {
+		return fmt.Errorf("create attester info: %w", err)
+	}
+	if err := keeper.SetAttesterInfo(ctx, consAddr, info); err != nil {
+		return fmt.Errorf("set attester info: %w", err)
+	}
+	if err := keeper.SetAttesterSetMember(ctx, consAddr); err != nil {
+		return fmt.Errorf("set attester set member: %w", err)
+	}
+	if err := keeper.SetValidatorIndex(ctx, consAddr, index, 1); err != nil {
+		return fmt.Errorf("set validator index: %w", err)
+	}
+	return nil
+}
+
+func signTestVoteAt(
+	t *testing.T,
+	chainID string,
+	height int64,
+	priv cmted25519.PrivKey,
+	blockIDHash []byte,
+	timestamp time.Time,
+) []byte {
+	t.Helper()
+	pub := priv.PubKey().(cmted25519.PubKey)
+	v := cmtproto.Vote{
+		Type:             cmtproto.PrecommitType,
+		Height:           height,
+		Round:            0,
+		BlockID:          cmtproto.BlockID{Hash: blockIDHash, PartSetHeader: cmtproto.PartSetHeader{}},
+		Timestamp:        timestamp,
+		ValidatorAddress: pub.Address(),
+		ValidatorIndex:   0,
+	}
+	sb := cmttypes.VoteSignBytes(chainID, &v)
+	sig, err := priv.Sign(sb)
+	require.NoError(t, err)
+	v.Signature = sig
+	out, err := proto.Marshal(&v)
+	require.NoError(t, err)
+	return out
 }

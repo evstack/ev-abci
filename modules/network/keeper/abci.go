@@ -116,9 +116,8 @@ func (k Keeper) processEpochEnd(ctx sdk.Context, epoch uint64) error {
 		return fmt.Errorf("pruning old data at epoch %d: %w", epoch, err)
 	}
 
-	if err := k.BuildValidatorIndexMap(ctx); err != nil {
-		return fmt.Errorf("rebuilding validator index map at epoch %d: %w", epoch, err)
-	}
+	// Validator indices are established at genesis and never mutate at runtime
+	// (MsgJoin/MsgLeave are disabled). Nothing to rebuild here.
 	return nil
 }
 

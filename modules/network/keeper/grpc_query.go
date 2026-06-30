@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -235,6 +236,33 @@ func (q *queryServer) LastAttestedHeight(c context.Context, req *types.QueryLast
 	return &types.QueryLastAttestedHeightResponse{
 		Height: height,
 	}, nil
+}
+
+// AttesterSet queries the full ordered attester set
+func (q *queryServer) AttesterSet(goCtx context.Context, req *types.QueryAttesterSetRequest) (*types.QueryAttesterSetResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	entries := []types.AttesterSetEntry{}
+	if err := q.keeper.ValidatorIndex.Walk(ctx, nil, func(addr string, idx uint16) (bool, error) {
+		info, err := q.keeper.GetAttesterInfo(ctx, addr)
+		if err != nil {
+			return false, err
+		}
+		entries = append(entries, types.AttesterSetEntry{
+			Authority:        info.Authority,
+			ConsensusAddress: addr,
+			Index:            uint32(idx),
+			Pubkey:           info.Pubkey,
+		})
+		return false, nil
+	}); err != nil {
+		return nil, err
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Index < entries[j].Index })
+	return &types.QueryAttesterSetResponse{Entries: entries}, nil
 }
 
 // AttesterInfo queries the attester information including public key

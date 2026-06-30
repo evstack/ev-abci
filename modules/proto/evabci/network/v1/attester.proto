@@ -21,4 +21,9 @@ message AttesterInfo {
 
   // joined_height is the height at which the attester joined
   int64 joined_height = 3;
+
+  // consensus_address is the bech32 cosmosvalcons1... derived from pubkey.
+  // Redundant with pubkey but persisted so the keeper's collections key
+  // (consensus address) matches the stored struct.
+  string consensus_address = 4 [(cosmos_proto.scalar) = "cosmos.AddressString"];
 }

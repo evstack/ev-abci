@@ -54,12 +54,39 @@ import (
 	"github.com/evstack/ev-node/pkg/store"
 	rollkittypes "github.com/evstack/ev-node/types"
 
+	"github.com/evstack/ev-abci/modules/network/types"
 	"github.com/evstack/ev-abci/pkg/adapter"
 	"github.com/evstack/ev-abci/pkg/rpc"
 	"github.com/evstack/ev-abci/pkg/rpc/core"
 	execsigner "github.com/evstack/ev-abci/pkg/signer"
 	execstore "github.com/evstack/ev-abci/pkg/store"
 )
+
+// networkKeeperBlockIDWirer is the minimal interface an application must
+// expose so the ev-abci server can attach the adapter block store to the
+// network module's keeper. Applications satisfy it by declaring a method
+// that accepts the BlockIDProvider and forwards it to the network keeper.
+type networkKeeperBlockIDWirer interface {
+	SetNetworkKeeperBlockIDProvider(types.BlockIDProvider)
+}
+
+func wireNetworkKeeperBlockIDProvider(
+	app any,
+	provider types.BlockIDProvider,
+	attesterMode bool,
+	sdkLogger log.Logger,
+) error {
+	if w, ok := app.(networkKeeperBlockIDWirer); ok {
+		w.SetNetworkKeeperBlockIDProvider(provider)
+		return nil
+	}
+	if attesterMode {
+		return errors.New("app does not implement networkKeeperBlockIDWirer; MsgAttest will reject votes in attester mode")
+	}
+
+	sdkLogger.Warn("app does not implement networkKeeperBlockIDWirer; MsgAttest will reject votes if attester mode is enabled")
+	return nil
+}
 
 const (
 	flagTraceStore = "trace-store"
@@ -435,6 +462,12 @@ func setupNodeAndExecutor(
 		appGenesis,
 		opts...,
 	)
+
+	// Give the network module's MsgAttest handler access to the adapter's
+	// block store so it can pin each vote to the sequencer's real BlockID.
+	if err := wireNetworkKeeperBlockIDProvider(app, executor.Store, srvCtx.Viper.GetBool(FlagAttesterMode), sdkLogger); err != nil {
+		return nil, nil, cleanupFn, err
+	}
 
 	cmtApp := sdkserver.NewCometABCIWrapper(app)
 	clientCreator := proxy.NewLocalClientCreator(cmtApp)

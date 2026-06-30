@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/math"
@@ -258,6 +260,59 @@ func TestCommit_VerifyCometBFTLightClientCompatibility_MultipleBlocks(t *testing
 			trustedHeader = commitResult.SignedHeader
 		}
 	}
+}
+
+func TestGetAttesterSignaturesReturnsQueryError(t *testing.T) {
+	require := require.New(t)
+
+	mockApp := new(MockApp)
+	previousEnv := env
+	t.Cleanup(func() {
+		env = previousEnv
+		mockApp.AssertExpectations(t)
+	})
+
+	env = &Environment{
+		Adapter: &adapter.Adapter{App: mockApp},
+		Logger:  cmtlog.NewNopLogger(),
+	}
+
+	mockApp.On("Query", mock.Anything, mock.MatchedBy(func(req *abci.RequestQuery) bool {
+		return req.Path == "/evabci.network.v1.Query/AttesterSignatures"
+	})).Return(nil, errors.New("query unavailable")).Once()
+
+	signatures, err := getAttesterSignatures(context.Background(), 10)
+
+	require.Nil(signatures)
+	require.ErrorContains(err, "query attester signatures")
+	require.ErrorContains(err, "query unavailable")
+}
+
+func TestGetAttesterSignaturesReturnsNonOKQueryCode(t *testing.T) {
+	require := require.New(t)
+
+	mockApp := new(MockApp)
+	previousEnv := env
+	t.Cleanup(func() {
+		env = previousEnv
+		mockApp.AssertExpectations(t)
+	})
+
+	env = &Environment{
+		Adapter: &adapter.Adapter{App: mockApp},
+		Logger:  cmtlog.NewNopLogger(),
+	}
+
+	mockApp.On("Query", mock.Anything, mock.MatchedBy(func(req *abci.RequestQuery) bool {
+		return req.Path == "/evabci.network.v1.Query/AttesterSignatures"
+	})).Return(&abci.ResponseQuery{Code: 7, Log: "signature store unavailable"}, nil).Once()
+
+	signatures, err := getAttesterSignatures(context.Background(), 10)
+
+	require.Nil(signatures)
+	require.ErrorContains(err, "attester signatures query failed")
+	require.ErrorContains(err, "code 7")
+	require.ErrorContains(err, "signature store unavailable")
 }
 
 func createTestBlock(height uint64, chainID string, baseTime time.Time, validatorAddress []byte, validatorHash []byte, offset int) (*types.Data, types.Header) {
